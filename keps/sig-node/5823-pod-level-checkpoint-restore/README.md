@@ -411,114 +411,160 @@ ContainerCheckpoint API.
 
 #### CheckpointPod
 
-Proposed CRI API extension for CheckpointPod:
+Proposed CRI API extension for CheckpointPod. Both RPCs are methods on the existing
+`RuntimeService`, because checkpoint and restore need the runtime's sandbox and container state.
 
 ```proto
 service RuntimeService {
     ...
-    // CheckpointPod creates a Pod-level checkpoint. If the pod sandbox does not
-    // exist or the checkpoint operation fails, the call returns an error.
+    // CheckpointPod creates a Pod-level checkpoint. The caller must set a
+    // deadline on the call. If the pod sandbox does not exist, the deadline is
+    // exceeded, or the checkpoint operation fails, the call returns an error.
+    // The pod sandbox and containers must be running when the call starts. The
+    // runtime must pause every selected container before capturing any of
+    // them, keep all selected containers paused until every selected
+    // container has been captured, and resume all of them before returning on
+    // success, error, or deadline expiry. This produces one consistent
+    // pod-wide cut while ensuring the runtime never returns a frozen pod.
     rpc CheckpointPod(CheckpointPodRequest) returns (CheckpointPodResponse) {}
     ...
-}
-
-// PostCheckpointState selects the state the Pod's processes should be left
-// in once the checkpoint image has been written.
-enum PostCheckpointState {
-    // RUNNING leaves the Pod's processes running after the snapshot has
-    // been written ("live snapshot" semantics). This is the default.
-    POST_CHECKPOINT_STATE_RUNNING = 0;
-    // STOPPED leaves the Pod stopped once the checkpoint is complete. The CRI
-    // enum reserves this value so runtimes may implement it ahead of Kubernetes,
-    // but in alpha the kubelet only ever sends RUNNING (see Post-Checkpoint State
-    // Semantics).
-    POST_CHECKPOINT_STATE_STOPPED = 1;
 }
 
 message CheckpointPodRequest {
     // ID of the pod sandbox to be checkpointed.
     string pod_sandbox_id = 1;
-    // Directory the runtime writes the checkpoint into. A Pod checkpoint is a
-    // collection of runtime-defined files (not a single archive object); their
-    // layout and format are opaque to Kubernetes. The runtime writes them under
-    // this directory and nowhere else (the kubelet owns it for storage accounting
-    // and path confinement).
-    string path = 2;
-    // (No timeout field: the kubelet bounds the operation with the gRPC call
-    // deadline, set from PodCheckpoint.spec.timeoutSeconds. The runtime honours
-    // the context deadline and cleans up partial artifacts when it fires.)
+    // Absolute path to an existing, empty directory where the runtime must
+    // write the checkpoint. The caller owns the directory, makes it writable by
+    // the runtime, and should restrict access to the caller and runtime. The
+    // runtime must not remove the directory. A Pod checkpoint is a collection
+    // of runtime-defined files; their layout and format are opaque to the
+    // caller. The runtime must not write outside this directory and must remove
+    // partial artifacts before returning an error.
+    string output_path = 2;
+    // IDs of the containers to include in the checkpoint. The list must be
+    // non-empty, must not contain duplicates, and must contain exactly the
+    // running containers selected by the caller. Every container must belong to
+    // `pod_sandbox_id` and be running; otherwise the runtime must fail the
+    // request without producing a checkpoint.
+    repeated string container_ids = 3;
+    // Optional opaque runtime-specific checkpoint options supplied by the CRI
+    // caller. Keys are interpreted in the scope of the pod sandbox's runtime
+    // handler. The runtime must reject unsupported or invalid keys and values
+    // rather than silently ignore them. Options must not contain secrets.
     //
-    // Checkpoint options passed to the container runtime.
-    // Reserved for runtime-specific pass-through configuration; behaviour
-    // that the CRI itself must branch on belongs in dedicated fields.
+    // These options apply only while creating the checkpoint. If an option
+    // changes what is required to restore the checkpoint, the runtime must
+    // encode that requirement in its checkpoint data; the caller does not copy
+    // checkpoint options into RestorePodRequest.options.
     map<string, string> options = 4;
-    // State the runtime MUST leave the Pod's processes in after the
-    // checkpoint archive has been written. Defaults to RUNNING (the Pod is
-    // left running). Runtimes that cannot honour the requested state SHOULD
-    // return an error. See Post-Checkpoint State Semantics for the
-    // end-to-end contract.
-    PostCheckpointState post_checkpoint_state = 5;
 }
 
-// Empty: the checkpoint is written under the request's `path` directory, which
-// the caller (kubelet) provided and already knows, so there is no separate
-// location or object name to return.
 message CheckpointPodResponse {}
 ```
 
-The kubelet bounds the checkpoint by setting the gRPC call deadline from
-`PodCheckpoint.spec.timeoutSeconds` (rather than passing a timeout field in the request). When the
-deadline fires, the runtime's context is cancelled; the runtime should abort, clean up any
+There is no timeout field: the kubelet bounds the checkpoint with the gRPC call deadline, derived
+from `PodCheckpoint.spec.timeoutSeconds` and capped by the kubelet's configured checkpoint timeout
+(see [PodCheckpoint](#podcheckpoint)). Because the runtime keeps the containers paused for the
+whole capture, the deadline also bounds how long the Pod can stay frozen. When the deadline fires,
+the runtime's context is cancelled; the runtime must abort, resume the containers, remove any
 partially created checkpoint artifacts, and return an error. The kubelet handles that error by
 cleaning up and recording the failure on the `PodCheckpoint` status as `CheckpointFailed` (see
 [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)).
+
+The runtime always leaves the Pod running after the checkpoint. There is no field to select a
+different post-checkpoint state in alpha; one will be added to the request together with the
+`Stopped` behavior (see [Post-Checkpoint State Semantics](#post-checkpoint-state-semantics)).
 
 #### RestorePod
 
 ```proto
 service RuntimeService {
     ...
-    // RestorePod restores a pod sandbox from a checkpoint
+    // RestorePod prepares a pod sandbox and containers from a checkpoint. The
+    // caller must set a deadline on the call. On success, every returned
+    // container must be in the CREATED state and must not have executed the
+    // restored process; the caller invokes its pre-start hooks and then calls
+    // StartContainer for each returned ID. On error, the runtime must remove
+    // any sandbox and containers created by the call before returning.
     rpc RestorePod(RestorePodRequest) returns (RestorePodResponse) {}
     ...
 }
 
 message RestorePodRequest {
-    // Directory containing the checkpoint to restore from: the directory the
-    // runtime wrote during CheckpointPod (a collection of runtime-defined files).
-    string path = 1;
+    // Absolute path to the directory containing the checkpoint data to restore.
+    // The runtime must not modify the checkpoint data. The data format and
+    // layout are runtime-defined.
+    string checkpoint_path = 1;
     // Pod sandbox configuration supplied by the kubelet, with node-local restore-time
     // updates (new Pod UID, cgroup parent path, log directory). Pod-spec equality between
     // the live Pod and status.checkpointedPodTemplate of the referenced PodCheckpoint is
     // enforced at API-server admission (and re-checked by the kubelet before this call);
     // arbitrary user overrides are not permitted.
     PodSandboxConfig config = 2;
-    // (No timeout field: as with CheckpointPod, the kubelet bounds the operation
-    // with the gRPC call deadline rather than a request field.)
+    // Runtime handler to use for restoring the pod sandbox and its containers.
+    // The handler selects the configured runtime implementation that interprets
+    // the runtime-specific checkpoint data. The selected handler must be
+    // compatible with the checkpoint; the runtime must reject a checkpoint it
+    // cannot restore. An empty value selects the default handler, as for
+    // RunPodSandboxRequest. The runtime must reject an unknown non-empty handler.
+    string runtime_handler = 3;
+    // Optional opaque runtime-specific restore options supplied by the CRI
+    // caller. Keys are interpreted in the scope of `runtime_handler`. The
+    // runtime must reject unsupported or invalid keys and values rather than
+    // silently ignore them. Options must not contain secrets.
     //
-    // Restore options passed to the container runtime.
+    // These options apply only to this restore attempt. They must not be
+    // inferred from CheckpointPodRequest.options or treated as defaults stored
+    // with the checkpoint. The runtime may separately read requirements encoded
+    // in its own checkpoint data.
     map<string, string> options = 4;
-    // Container configurations for all containers in the pod.
-    // This includes mount configurations that tell the runtime where to mount
-    // host paths (e.g., /etc/hosts, termination logs, volumes) into the containers.
-    // The runtime should match containers from the checkpoint with these configs
-    // by container name and apply the mount configurations.
+    // Complete restore-time configurations for all containers represented by
+    // the checkpoint. The list must be non-empty. Every entry must have a
+    // non-empty, unique metadata name, and those names must be the exact set of
+    // container names in the checkpoint. The runtime must match containers by
+    // metadata name. The checkpoint is authoritative for filesystem and
+    // process state. Image, command, args, working directory, environment, and
+    // process credentials describe the expected checkpointed process; they
+    // must not start or mutate it, and any mismatch the runtime can validate
+    // must fail the restore. The runtime applies restore-time settings outside
+    // checkpoint-owned process state, including labels, annotations, mounts,
+    // devices, Linux resources, logging, and security constraints, and must
+    // fail settings incompatible with the checkpoint.
     repeated ContainerConfig container_configs = 5;
 }
 
+message RestoredContainer {
+    // Name from the restored container's ContainerMetadata. This identifies
+    // which requested container configuration produced the runtime ID.
+    string name = 1;
+    // Non-empty runtime ID of the restored container.
+    string container_id = 2;
+}
+
 message RestorePodResponse {
-    // ID of the restored pod sandbox
+    // Non-empty ID of the restored pod sandbox.
     string pod_sandbox_id = 1;
+    // Restored containers in CREATED state, without having executed the
+    // restored process (see RestorePod). This must contain exactly one entry
+    // for every request.container_configs entry. Names and container IDs
+    // must each be non-empty and unique.
+    repeated RestoredContainer restored_containers = 2;
 }
 ```
 
+`RestorePod` is split from starting the containers so the kubelet keeps its normal container start
+path: the runtime creates the sandbox and the containers from the checkpoint, and the kubelet then
+runs its internal pre-start hooks (for example CPU and memory manager setup) and calls the existing
+`StartContainer` RPC for each returned container, which resumes the restored processes.
+
 As with checkpoint, the kubelet bounds the restore with the gRPC call deadline rather than a
 request field. When it fires the runtime should abort, clean up any partially restored artifacts,
-and return an error. The kubelet cleans up, records the failure as an event on the restore Pod,
-and leaves the Pod `Pending` so the restore is retried on the next sync; restore is driven
-declaratively by `spec.restoreFrom`, so there is no synchronous caller to return the error to. The
-admission, authorization, and pod-template-equality semantics around restore are described in
-[Restore Mechanism](#restore-mechanism), not here.
+and return an error. If a pre-start hook or `StartContainer` fails after `RestorePod` succeeded,
+the kubelet removes the restored sandbox and containers. In both cases the kubelet records the
+failure as an event on the restore Pod and leaves the Pod `Pending` so the restore is retried on
+the next sync; restore is driven declaratively by `spec.restoreFrom`, so there is no synchronous
+caller to return the error to. The admission, authorization, and pod-template-equality semantics
+around restore are described in [Restore Mechanism](#restore-mechanism), not here.
 
 ### Kubelet Checkpoint and Restore Handling
 
@@ -549,8 +595,9 @@ The kubelet's checkpoint handling (the canonical execution flow referenced elsew
    the original instance was replaced; the kubelet fails the checkpoint with `Ready=False`, reason
    `SourcePodReplaced`, rather than checkpointing the new instance, and records the resolved UID in
    `status.sourcePodUID`.
-5. Requests the `RUNNING` post-checkpoint state from the CRI. Alpha always leaves the source Pod
-   running, so this is fixed; the `Stopped` behavior and its user-facing field are deferred to the
+5. Selects the containers to checkpoint (all regular containers and running restartable init
+   containers) and passes their IDs in `container_ids`. The runtime always leaves the source Pod
+   running after the checkpoint; the `Stopped` behavior and its fields are deferred to the
    migration follow-up (see [Post-Checkpoint State Semantics](#post-checkpoint-state-semantics)).
 6. Captures the source Pod's metadata and spec, strips node-local and cluster-specific fields (see
    [Pod Specification and Metadata](#pod-specification-and-metadata)), and writes the result to
@@ -663,13 +710,12 @@ type PodReference struct {
 	UID *types.UID `json:"uid,omitempty"`
 }
 
-// Note: alpha leaves the source Pod running after a checkpoint, so the kubelet
-// always requests the RUNNING post-checkpoint state from the CRI. The user-facing
-// choice (a postCheckpointState field on PodCheckpointSpec) is intentionally not
-// added to the API yet; it will be introduced together with the "Stopped"
-// behavior in the migration follow-up, when it is actually used. The CRI enum
-// (CheckpointPodRequest.post_checkpoint_state) reserves the value ahead of that so
-// runtimes can implement it. See Post-Checkpoint State Semantics.
+// Note: alpha leaves the source Pod running after a checkpoint; the CRI
+// CheckpointPod contract always resumes the containers. The user-facing choice
+// (a postCheckpointState field on PodCheckpointSpec) and the matching CRI field
+// are intentionally not added yet; they will be introduced together with the
+// "Stopped" behavior in the migration follow-up, when they are actually used.
+// See Post-Checkpoint State Semantics.
 
 // PodCheckpointStatus reports the observed state of the checkpoint operation.
 // (There is no top-level observedGeneration: the spec is immutable, so the
@@ -912,7 +958,7 @@ sequenceDiagram
     User->>API: create PodCheckpoint (sourcePod.name, optional sourcePod.uid)
     API-->>Kubelet: watch event (kubelet matches sourcePod.name to a local Pod)
     Kubelet->>Kubelet: validate readiness, pin sourcePod.uid,<br/>suspend probes, capture checkpointedPodTemplate
-    Kubelet->>CRI: CheckpointPod(sandboxID, RUNNING)
+    Kubelet->>CRI: CheckpointPod(sandboxID, containerIDs)
     CRI-->>Kubelet: archive written
     Kubelet->>API: status Ready=True/CheckpointCompleted, nodeName=self<br/>(NodeRestriction: source Pod must be on this node)
     KCM-->>API: watch for lifecycle only (finalizers, GC) — off this path
@@ -1206,9 +1252,13 @@ its checkpoint root, the sandbox config, and
 per-container `ContainerConfig` entries carrying mount information (`/etc/hosts`,
 termination log paths, and any volumes already supported by the runtime). The runtime
 restores the sandbox and all containers from the archive, attaches the network namespace
-via CNI, and returns the new sandbox ID. The normal `SyncPod` container start steps
-(`startContainer` for init, regular, and ephemeral containers) are skipped: the restored
-containers are already running inside the restored sandbox.
+via CNI, and returns the new sandbox ID together with the restored containers, which are in the
+`CREATED` state and have not run yet. The kubelet does not create containers from their images as
+it would for a fresh Pod. For each restored container, in Pod-spec order, it runs its internal
+pre-start hooks and calls `StartContainer`, which resumes the restored processes. Completed
+non-restartable init containers are not restored and are not re-run. If a hook or
+`StartContainer` fails, the kubelet removes the restored sandbox and containers and the restore
+is retried (see Failure rollback below).
 
 **Step 7 - Status converges.** The kubelet updates Pod status:
 
@@ -1216,7 +1266,8 @@ containers are already running inside the restored sandbox.
 - The `Restoring=True` condition is cleared once the sandbox is up and container statuses
   are `Running`.
 - An event `RestoreSucceeded` is recorded on the Pod.
-- Container `restartCount` continues from the value captured in the checkpoint.
+- Container `restartCount` starts at 0: the restored Pod is a new Pod with a new UID, and its
+  containers have not been restarted.
 
 The Pod is now indistinguishable from any other `Running` Pod for controllers, schedulers,
 and monitoring tooling. `spec.restoreFrom` remains on the Pod as a record of provenance and
@@ -1247,10 +1298,11 @@ events and conditions.
 ### Post-Checkpoint State Semantics
 
 The post-checkpoint state selects what happens to the source Pod once the archive has been
-written. In the CRI it is a typed enum (rather than a boolean or an `options` key) so the runtime
-and kubelet can branch on it without parsing opaque pass-through configuration, and so additional
-states can be added later. Alpha always uses `Running`, and the Kubernetes API does not expose the
-choice yet.
+written. Alpha always uses `Running`: the `CheckpointPod` CRI contract requires the runtime to
+resume every container before it returns, and neither the CRI nor the Kubernetes API exposes a
+choice yet. When `Stopped` is added, the choice will be a dedicated, typed CRI field (rather than
+a boolean or an `options` key) so the runtime and kubelet can branch on it without parsing opaque
+pass-through configuration, and so additional states can be added later.
 
 - **Running (default).** After the archive is written, the runtime resumes execution
   of all processes in the Pod and the containers continue running. This is the right mode
@@ -1261,11 +1313,9 @@ choice yet.
 - **Stopped (reserved; not implemented in alpha).** The intent of `Stopped` is that, after
   the archive is written, the source Pod is not resumed but instead released so a restore
   can take over elsewhere. This is a migration concern, and **cross-node restore and live
-  migration are Non-Goals for alpha** (see [Non-Goals](#non-goals)). The value is defined in
-  the CRI enum for forward compatibility, but in alpha the kubelet always requests `Running` and
-  never sends `Stopped`, and there is no Kubernetes API field for a user to request it (see
-  [Checkpoint Handling](#checkpoint-handling)). It becomes user-selectable when the migration
-  follow-up implements it.
+  migration are Non-Goals for alpha** (see [Non-Goals](#non-goals)). In alpha there is no CRI or
+  Kubernetes API field to request it (see [Checkpoint Handling](#checkpoint-handling)). It becomes
+  selectable when the migration follow-up implements it.
 
 **Why `Stopped` is deferred.** "Terminate the source Pod but leave the object" is exactly
 the terminated-but-not-deleted state that Graceful Node Shutdown and its follow-ons had to
@@ -1289,16 +1339,12 @@ the source Pod analogous to GNS, and integration with controller replacement and
 detach, are deferred to the migration follow-up and will be designed with SIG Apps and SIG
 Storage.
 
-**CRI field.** A dedicated `post_checkpoint_state` field of enum type `PostCheckpointState`
-on `CheckpointPodRequest` (see [CheckpointPod](#checkpointpod)). The CRI enum retains the
-`STOPPED` value so runtimes may implement it ahead of Kubernetes, but in alpha the kubelet
-only ever sends `RUNNING`.
-
-**Kubernetes API.** There is no `postCheckpointState` field on `PodCheckpoint` in alpha. Because alpha
-always leaves the source Pod running, the field would have a single legal value and do nothing, so
-it is not added to the API yet. It will be introduced together with the `Stopped` behavior in the
-migration follow-up, when it is actually used. Until then the kubelet always requests `RUNNING`
-from the CRI.
+**CRI and Kubernetes API fields.** There is no post-checkpoint-state field on
+`CheckpointPodRequest` or `PodCheckpoint` in alpha. Because alpha always leaves the source Pod
+running, such a field would have a single legal value and do nothing. Both fields will be
+introduced together with the `Stopped` behavior in the migration follow-up, when they are actually
+used. Adding an optional field to the request later is backward compatible: a runtime that does
+not know it keeps the Pod running, which is the alpha behavior.
 
 **Interaction with restore.** The post-checkpoint state affects only the checkpoint side and
 has no effect on the restore path: the archive contents are identical regardless of what
@@ -2346,15 +2392,6 @@ operator should:
 
 These are design questions to resolve during implementation; they do not change the alpha API
 shape described above.
-
-- **Should `CheckpointPod` and `RestorePod` be their own CRI service rather than methods on
-  `RuntimeService`?** A separate service — alongside the existing `RuntimeService` and
-  `ImageService` — could let checkpoint and restore be implemented by a component other than the
-  container runtime, and would make testing and development easier by allowing an independent
-  implementation or test double. The trade-off to tease out is that checkpoint/restore still needs
-  deep runtime cooperation (freezing containers, driving CRIU through the OCI runtime, access to
-  sandbox and container state), and a separate service means the kubelet has to discover and dial a
-  second endpoint with its own version negotiation. To be decided during implementation.
 
 - **When the allocated Pod has a pending desired change (e.g. an in-place resize in progress),
   should the checkpoint also record that intent and reapply it on restore?** The checkpoint
