@@ -1124,16 +1124,7 @@ In order to verify this feature is working, one should first inspect the kubelet
 
 When usage metrics and/or podresources API (or any other suitable APIs) and/or surface data in the statuses are implemented, those metrics/API/statuses could be used (planned for Beta) to verify feature is working for their instance.
 
-Until those metrics/API/statuses are implemented (planned for Beta), it is possible to determine the feature if functioning properly as follows:
-
-- User should create a guaranteed QoS Pod with integer CPU requests.
-- Inspect the `/var/lib/kubelet/cpu_manager_state` and check `Baseline` and `Entries` CPU set, for the created Pods running container.
-- Upon creation `Baseline` should be equal to `Entries`, the currently set of CPUs exclusively allocated checkpointed. If `Baseline` exist and is not nil, it means the feature is enabled and working.
-- The user can also check the CPU affinity of the created Pod, from within the running container to confirm.
-- Afterwards the user should attempt to increase the number of CPUs, within the limits of the node, patching the created guaranteed QoS Pod.
-- Upon success, the user can check the CPU affinity of the resized Pod, from within the running container to confirm assigned CPU set is increased keeping baseline CPU set.
-
-When the usage metrics/API/statuses are implemented (planned for Beta), the user should not need to inspect the `/var/lib/kubelet/cpu_manager_state` but instead watch the values of those metrics/API/statuses after successful resizes.
+For alpha it will be prioritized the introduction of one metric to determine the feature is functioning properly.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
