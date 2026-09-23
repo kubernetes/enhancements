@@ -400,7 +400,7 @@ latency (2-5x) on the Kubernetes apiservers", which is why a 128 KB size floor w
 ([KEP-2338 README][kep-2338]). Mitigations here are level 1, a configurable floor defaulting to 1 KiB,
 pooled coder state, per-resource opt-in, and DEFLATE's asymmetry: decompression performs no match
 search, only Huffman decoding and byte copies, so on real Pods it runs 1.7-2.0x faster than
-compression. A watch-cache-initialisation benchmark is an alpha deliverable.
+compression. A watch-cache-initialisation benchmark is a beta deliverable.
 
 APF could under-charge LIST memory. The resource size estimator records stored bytes, and that
 figure bounds the memory API Priority and Fairness believes a LIST will occupy, while the memory
@@ -656,9 +656,12 @@ etcd watches, and inflation there is bounded by the resource's write rate.
 The correction is for the estimator to scale its average by an expansion factor observed on reads, a
 moving average over actual plaintext-to-stored pairs, floored at 1.0 so the result can only ever be more
 conservative than today's number. Any wrapper sitting between the estimator and the compression layer
-has to pass that factor through, or the correction is silently lost. A residual remains and is out of
-scope: the expansion from plaintext to decoded object graph was already unaccounted for before this
-KEP.
+has to pass that factor through, or the correction is silently lost.
+
+It lands at beta rather than with the feature, so alpha ships with the gap open: a cluster that both
+compresses a resource and relies on the size-based LIST cost estimate will have APF under-charge
+etcd-delegated LISTs of that resource roughly in proportion to its ratio. The process-wide inflation cap
+still bounds total memory, so the consequence is unfair admission rather than unbounded growth.
 
 ### Error classification and version skew
 
@@ -777,21 +780,18 @@ All of the following are required for **alpha**.
   package that assembles the transformer chain, because the mistake being guarded against is a wiring
   one, either installing the write path where it should be inert or leaving the read path out, and
   neither is visible from inside the compression package's own tests.
-- The APF correction, in three parts:
-  - the observed plaintext-to-stored factor itself, including that it never falls below 1.0;
-  - that the resource size estimator multiplies its average by that factor, and that the raised average
-    reaches API Priority and Fairness as additional seats;
-  - that every transformer wrapping the compression one re-exposes the factor. The store finds the
-    factor by testing whether its transformer implements an optional method, so a wrapper that neither
-    implements nor delegates it makes that test come back negative, and the store falls back to 1.0
-    with nothing logged and nothing failing.
-
-  The size-based LIST cost estimate is itself a feature gate, on by default since v1.34 but still
-  disableable. With it off, APF charges a LIST by object count, which compression does not change, so a
-  case covering that records that there is nothing for the correction to do.
 - Configuration validation.
 - Concurrency under `-race`, since the compressor and decompressor state is pooled and shared across
   requests.
+
+The LIST cost correction for API Priority and Fairness is beta work, so its tests arrive with it rather
+than at alpha: the observed plaintext-to-stored factor, including that it never falls below 1.0; the
+estimator multiplying its average by that factor, and the raised average reaching APF as additional
+seats; and every transformer wrapping the compression one re-exposing the factor, since the store finds
+it by testing whether its transformer implements an optional method, so a wrapper that neither implements
+nor delegates it makes that test come back negative and the store silently falls back to 1.0. A case with
+the size-based LIST cost estimate disabled records that APF then charges by object count, which
+compression does not change.
 
 Coverage of the packages the implementation touches, measured before any of it lands:
 
@@ -853,7 +853,7 @@ with access to the raw etcd bytes, or invisible by design.
 
 ##### Scale test
 
-Four runs, all required for alpha.
+Four runs, all required for beta.
 
 1. The watch-cache initialisation benchmark with a compression axis. It already seeds a large number of
    Pods into a live etcd and times the cacher from construction to ready, which is the worst read case
@@ -870,8 +870,6 @@ against 2 isolates what compression costs alongside encryption.
 
 Run 4 has no precedent to build on: no existing scalability job enables encryption at rest, so that
 configuration has to be added to the job before the run is possible at all.
-
-Backward-compatible scalability improvements that these runs suggest are beta work, not alpha.
 
 ### Graduation Criteria
 
@@ -902,6 +900,9 @@ Targeted at v1.38.
   release of read-before-write skew. If the answer is a checksum, a mismatch needs a classification
   distinct from a format error, so that it stays eligible for the unsafe-deletion flow of KEP-3926.
 - [ ] Six metrics registered at ALPHA stability, matching the metrics list in `kep.yaml`.
+- [ ] No read failure this layer introduces is reported as a corrupt object, enforced both where the
+  error is classified and where the unsafe-deletion flow reads the object, so KEP-3926 cannot be turned
+  into a way to destroy an undamaged value.
 - [ ] The release note and the flag help carry the downgrade-forfeit warning above. If open question 1
   is decided against a checksum, they also carry the caveat that a frame's only integrity protection is
   the encryption provider's, which means none at all under AES-CBC or with encryption disabled.
@@ -928,8 +929,9 @@ Targeted at v1.39.
 - [ ] A downgrade procedure documented and exercised in the migration suite: deselect the resource,
   restart, migrate, and only then downgrade, asserting afterwards that no stored value begins with the
   frame discriminator.
-- [ ] A scale test, with a policy covering a large resource, showing no regression against the existing
-  API call latency SLOs. The same run with an empty policy confirms an inert installation costs nothing.
+- [ ] The four scale runs in the [Test Plan](#test-plan) completed and their comparisons published.
+- [ ] The LIST cost correction for API Priority and Fairness implemented and tested, so a compressed
+  resource no longer lets APF under-charge etcd-delegated LISTs by its compression ratio.
 - [ ] Operator documentation for each metric stating what a non-zero value means and the action to take:
   converged, skew or tampering, or investigate rather than roll back. No ratio or byte-count metric added.
 - [ ] Feedback gathered from alpha adopters on which resources they selected, how they drove the
@@ -1165,6 +1167,21 @@ No workload is affected. Only how kube-apiserver stores bytes changes, and etcd 
 either way. No interleaving can corrupt data, because a read is decided by the stored bytes rather than
 by the reading apiserver's configuration, so a mid-rollout fleet needs no coordination.
 
+The operation a rollout actually disturbs is storage migration, and the two interact badly if the
+configuration changes while a migration is running. Selecting a resource marks every object above the
+floor stale, which is what makes the next write genuinely rewrite it. But a migration is a single pass
+over one snapshot: it never revisits an object, it skips anything whose resource version is above the
+watermark it took at the start, and it treats a patch that returned success as a rewrite without
+re-reading. Every object it had already passed was patched against an apiserver still on the old policy,
+so those patches changed nothing and were counted as migrated regardless. Nothing corrects that later. A
+run cannot be repeated, because its spec and its watermark are immutable and `Succeeded` cannot be unset,
+so the run reports success over a resource left half converged.
+
+The ordering is therefore not optional: roll the configuration out to every apiserver, confirm the
+rollout, then create the migration. An operator who changes it mid-migration has to treat that run's
+result as meaningless for the resource and create another, which is accepted and runs after the first
+with a fresh watermark.
+
 Every remaining failure lands on the control plane. A configuration mistake fails startup rather than
 degrading: a malformed file, an unknown algorithm, an unreadable path, a `minSize` outside its legal
 range, or a selector already claimed by an earlier entry. A rolling update
@@ -1311,7 +1328,7 @@ them. Whether that saving offsets the compression cost is TODO; the scale test i
 
 Network traffic to etcd decreases with the wire size.
 
-Admission control needs correcting separately, since it charges a LIST by stored bytes while the memory it
+Admission control needs correcting separately, at beta, since it charges a LIST by stored bytes while the memory it
 occupies is the plaintext; see [API Priority and Fairness](#api-priority-and-fairness-and-size-accounting).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?

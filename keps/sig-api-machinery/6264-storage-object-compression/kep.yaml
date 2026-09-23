@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scalability
-status: provisional
+status: implementable
 creation-date: 2026-09-02
 reviewers:
   - "@deads2k"
