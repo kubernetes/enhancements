@@ -84,6 +84,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Shard Key](#shard-key)
   - [Consistent Hashing (Key Range)](#consistent-hashing-key-range)
   - [Client Request](#client-request)
+  - [Client Library Support (<code>client-go</code>)](#client-library-support-client-go)
   - [Server Design](#server-design)
   - [Hashing Implementation](#hashing-implementation)
   - [Test Plan](#test-plan)
@@ -343,6 +344,12 @@ operator (`||`) implemented by the CEL evaluator.
 - `shardRange(...)`: A CEL function that specifies the field to hash and the start
   (inclusive) / end (exclusive) hex bounds (`hexStart <= x < hexEnd`) of hash values.
 
+### Client Library Support (`client-go`)
+
+For Beta, `k8s.io/apimachinery/pkg/sharding` and `k8s.io/client-go/tools/cache` will provide built-in support for sharded informers and reflectors:
+- **Shard Range Construction**: Helper utilities in `apimachinery/pkg/sharding` to construct `sharding.Selector` instances and format `ListOptions.ShardSelector` expressions for a given shard index and total shard count.
+- **Automatic Client-Side Fallback**: When configured with a `sharding.Selector`, `Reflector` automatically attaches `ShardSelector` to outgoing `LIST` and `WATCH` requests and inspects `ListMeta.ShardInfo` on responses. If `ShardInfo` is absent (e.g., when communicating with an API server that has `ShardedListAndWatch` disabled), `Reflector` transparently filters incoming objects client-side using `sharding.Selector.Matches` before updating the local cache store.
+
 ### Server Design
 
 Currently, the Cacher broadcasts events to all watchers that match a simple Label/Field selector.
@@ -412,9 +419,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/apimachinery/pkg/sharding`: Parsing, hashing, and range evaluation.
-- `k8s.io/apiserver/pkg/sharding`: CEL expression evaluation.
-- `k8s.io/apiserver/pkg/storage/cacher`: Watch cache filtering and dispatch.
+- `k8s.io/apimachinery/pkg/sharding`: FNV-1a hashing, field extraction, and range selector evaluation (`hash_test.go`, `accessor_test.go`, `selector_test.go`).
+- `k8s.io/apiserver/pkg/sharding`: `shardRange` CEL expression parsing and validation (`parser_test.go`).
+- `k8s.io/apiserver/pkg/storage`: `SelectionPredicate` shard matching, `ShardInfo` population, and pagination `continue` token binding (`selection_predicate_test.go`, `continue_test.go`).
+- `k8s.io/apiserver/pkg/storage/cacher` & `etcd3`: Watch cache list/watch filtering and etcd watcher filtering (`cacher_whitebox_test.go`, `watcher_test.go`).
 
 ##### Integration tests
 
@@ -440,7 +448,8 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- **Watch Sharding Test**: Ensure that sharded watches with different ranges function.
+- [`test/integration/apiserver/sharding_test.go`](https://github.com/kubernetes/kubernetes/blob/b8a17e1ce84/test/integration/apiserver/sharding_test.go): [TestGrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=TestSharded), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=TestSharded)
+  - `TestShardedList`, `TestShardedWatch`, `TestShardedListFeatureGateDisabled`, `TestShardedListComplete`, `TestShardedListByNamespace`, `TestShardedListAllResources`
 
 ##### e2e tests
 
@@ -459,7 +468,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- `test/e2e/apimachinery/sharding.go`: Verify multi-shard `LIST` (disjoint completeness, pagination, and `ListMeta.ShardInfo` echo) and `WATCH` event filtering (`ADDED`/`MODIFIED`/`DELETED`) by `object.metadata.uid` and `object.metadata.namespace`.
 
 ### Graduation Criteria
 
@@ -674,7 +683,7 @@ will rollout across nodes.
 
 During a rolling upgrade or rollback in a high-availability control plane, some `kube-apiserver` instances may have `ShardedListAndWatch` enabled while others have it disabled. A client connecting to an un-upgraded or rolled-back API server will receive the full, un-sharded stream without `ListMeta.ShardInfo`.
 
-Sharding-aware clients inspect `ListMeta.ShardInfo` on `LIST` and initial `WATCH` responses to confirm whether server-side filtering was applied. If `ShardInfo` is absent, clients fall back to client-side filtering using the common `k8s.io/apimachinery/pkg/sharding` evaluator so they do not process out-of-shard objects or violate mutual exclusion. Workloads that do not specify `shardSelector` are completely unaffected.
+In Beta, `client-go` informers and reflectors configured with a shard selector handle this fallback automatically: they inspect `ListMeta.ShardInfo` and apply client-side filtering via `k8s.io/apimachinery/pkg/sharding` whenever `ShardInfo` is absent, ensuring out-of-shard objects are never added to the local store. Workloads that do not specify `shardSelector` are completely unaffected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -740,7 +749,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-Latency for sharded watches should be comparable to standard watches.
+- p99 `apiserver_request_duration_seconds` for `LIST` and `WATCH` requests with `shardSelector` is within 5% of (or lower than) equivalent requests without `shardSelector`.
+- p99 watch event dispatch latency (`apiserver_watch_events_dispatch_duration_seconds{stage="total"}`) for unsharded watchers on the same resource remains within 5% of baseline when concurrent sharded watches are active.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
