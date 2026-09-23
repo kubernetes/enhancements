@@ -1089,6 +1089,14 @@ via Node Declared Features, can avoid nodes that do not support restore; see
 the first component to discover that the chosen node cannot satisfy the restore. No placeholder
 Pod, no separate object lifecycle, and no `nodes/proxy` permission for restore.
 
+The user does not set `spec.nodeName`, and the restore Pod's spec does not need to name a node.
+Requiring it would force users to copy a node name into a Pod template and edit it for every
+checkpoint, doing the scheduler's job by hand. Admission derives the node from the
+`PodCheckpoint` instead. For alpha the injected affinity pins the Pod to the single node that holds
+the checkpoint. The planned follow-up is a restore-aware scheduler plugin that, to start, keeps
+this behavior and later also filters on what a node needs to run the checkpoint (CRIU, kernel,
+runtime, and driver versions); see [Open Questions](#open-questions).
+
 `spec.restoreFrom` is a name reference. After API-server admission (which authorizes the
 requester for the `restore` verb on the referenced `PodCheckpoint`, injects a node-affinity
 constraint pinning the Pod to the checkpoint's node, and validates pod-template equality against
@@ -1303,6 +1311,21 @@ container runtime cleans up any partial sandbox, and the kubelet records a Pod e
 the reasons above and a `Restoring=False` condition. The Pod stays `Pending` and the kubelet
 retries with backoff, the same as it does for `FailedCreatePodSandBox` or `ImagePullBackOff`; it
 is not moved to `Failed`.
+
+**Incompatible node software.** Restore expects the node software to be the same as when the
+checkpoint was taken: kubelet, container runtime, OCI runtime, CRIU or gVisor, kernel, and device
+drivers. Even on the same node this can change between checkpoint and restore (for example after a
+CRIU or GPU driver upgrade). Kubernetes does not check this itself: the container runtime and CRIU
+decide whether a checkpoint can be restored, and return an error from `RestorePod` if it cannot.
+The kubelet records that error as a `RestoreFailed` event and a `Restoring=False` condition with
+the runtime's message, and the Pod stays `Pending` like any other restore failure. A runtime may
+later accept checkpoints from older versions if it is backward compatible. To make this
+detectable, runtimes should record a version for their checkpoint format and the versions of the
+software the checkpoint depends on (for example the runtime and CRIU versions and the container
+configuration) in the checkpoint data, and check them on restore. Restoring after any of this
+software has changed is undefined behavior unless the runtime explicitly supports it; the expected
+practice is to take a new checkpoint after an upgrade. Filtering nodes by these
+versions before scheduling is part of the scheduler follow-up (see [Open Questions](#open-questions)).
 
 A restore that cannot proceed yet on the node leaves the Pod `Pending` and is retried; it is not
 failed outright. For example, once cross-node transfer lands, the checkpoint data may not be on the
@@ -2133,7 +2156,9 @@ API, Pods carrying `spec.restoreFrom`, and the kubelet-exposed checkpoint/restor
     `CheckpointFailed`.
   - Event reasons on the restored Pod: `RestoreSucceeded` on success; on the failure or retry
     paths the reason names the cause — `CheckpointNotReady`, `CheckpointWrongNode`,
-    `PodSpecMismatch`, `CheckpointDataMissing`, or `RestoreInProgress` (transient, while the Pod
+    `PodSpecMismatch`, `CheckpointDataMissing`, `RestoreFailed` (the runtime rejected the
+    restore, for example because of incompatible node software; the message carries the
+    runtime's error), or `RestoreInProgress` (transient, while the Pod
     waits on the kubelet's restore serialization lock). The Pod stays `Pending` and is retried for
     the non-terminal cases (see [End-to-end restore walkthrough](#end-to-end-restore-walkthrough)).
     A spec mismatch is normally surfaced earlier still: admission rejects the Pod create
@@ -2402,6 +2427,13 @@ details). For now, we leave it here.
     that supports normal Pods supports restore as well.
   - Diagnostics: `kubectl describe pod` on the restore Pod and CNI plugin logs.
   - Testing: an e2e test against at least one CNI implementation.
+- Restore fails because the node software changed since the checkpoint.
+  - Detection: the restore Pod stays `Pending` with a `RestoreFailed` event and a
+    `Restoring=False` condition carrying the runtime's error.
+  - Mitigation: take a new checkpoint after the upgrade.
+  - Diagnostics: kubelet logs the `RestorePod` error; runtime and CRIU logs show which check
+    failed.
+  - Testing: an e2e test that restores after the runtime or CRIU version changes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -2455,9 +2487,14 @@ shape described above.
   cannot process the snapshot. Some of these signals (CRIU/gVisor versions in particular) are not
   exposed to the control plane today, so surfacing them (for example through Node Declared Features
   or node status) is a prerequisite worth designing early, even though portability across
-  heterogeneous environments is a [Non-Goal](#non-goals) for alpha. A likely shape is a scheduler
-  plugin backed by the checkpoint controller that hints at compatible nodes. Node migration is large
-  enough to be its own KEP, designed with SIG Scheduling.
+  heterogeneous environments is a [Non-Goal](#non-goals) for alpha. A likely shape is a restore-aware
+  scheduler plugin backed by the checkpoint controller that hints at compatible nodes. It would
+  start by pinning a restore to the node the checkpoint came from, and then add compatibility
+  checks. DRA was also discussed: it can express GPU compatibility, but software versions such as
+  CRIU and the kernel are not devices, and relying on DRA would require a DRA driver on every
+  cluster that uses restore. Node migration is large enough to be its own KEP, designed with SIG
+  Scheduling. Other SIGs with future use cases (for example SIG Autoscaling, for creating replicas
+  from a checkpoint) will be consulted so the API can cover them later.
 
 ## Drawbacks
 
@@ -2522,6 +2559,11 @@ checkpoint/restore:
   kubelet swaps `createPodSandbox()` for `restorePodSandbox()` when `spec.restoreFrom` is
   set. The trade-off is a small Pod spec addition, which is justified by the simplification
   on every other axis.
+
+- **Requiring `spec.nodeName` in the restore Pod.** Having users set the checkpoint's node in the
+  restore Pod, bypassing the scheduler, was rejected. It forces users to copy node names into Pod
+  templates and update them for every checkpoint. Admission derives the node from the
+  `PodCheckpoint` instead, and the scheduler places the Pod.
 
 - **`PodCheckpoint` as a CRD.** Shipping `PodCheckpoint` as a CRD (in an out-of-tree
   controller bundle) was considered and rejected for the in-tree KEP scope. As a CRD, the
