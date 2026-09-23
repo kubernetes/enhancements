@@ -143,10 +143,10 @@ Supporting In-place cpu resource resize for Guaranteed QoS pods is crucial becau
 
 For example in a [Data Plane Development Kit (DPDK)](https://www.dpdk.org/) based high-speed data packet networking application, at application startup:
  + DPDK libraries are initialized in the `main logical core (lcore 0)`. Please note that in DPDK, `lcore` refers to a logical execution unit of the processor, sometimes called a hardware thread.
- + `worker and I/O logical cores ( lcore > 0)` are also initialized, to handle packet processing and run on application's workload at RX and TX logical cores ( depending on the application ).
+ + `worker and I/O logical cores (lcore > 0)` are also initialized, to handle packet processing and run on application's workload at RX and TX logical cores (depending on the application).
  + Those initial `DPDK logical cores` must be maintained during applications lifecycle, by design of core DPDK Environment Abstraction Layer (EAL) to ensure no disrupton.
 
-Currently, in-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy ( issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262) ).
+Currently, in-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy (issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262)).
 
 This proposal aims to implement this capability, which was a planned (but out-of-scope) enhancement for the In-Place Resource Resize feature.
 
@@ -162,11 +162,11 @@ know that this has succeeded?
 * Ensure CPU request and limit equality is maintained when a Guaranteed QoS Pod alongside CPU Manager static policy is resized successfully.
 * Preserve the properties of the configured Topology Manager, CPU Manager during resize.
 * Support CPU limit increase without container restart keeping "baseline CPUs" values (during pod creation on the Node),
-  + maintains "baseline CPUs" NUMA affinity ( during pod creation of the Node ),
+  + maintains "baseline CPUs" NUMA affinity (during pod creation of the Node),
   + expands upon the "baseline CPUs" NUMA affinity, if needed, respecting the constraints of the topology manager policy in use.
 * Support CPU limit decrease without container restart up to "baseline CPUs" (during pod creation on the Node),
   + maintains "baseline CPUs" NUMA affinity,
-  + maintains parts or whole of previously expanded upon the "baseline CPUs" NUMA affinity ( from a previous CPU limit increase ), if needed, respecting the constraints of the topology manager policy in use.
+  + maintains parts or whole of previously expanded upon the "baseline CPUs" NUMA affinity (from a previous CPU limit increase), if needed, respecting the constraints of the topology manager policy in use.
 
 
 ### Non-Goals
@@ -184,17 +184,17 @@ and make progress.
 
 [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager) introduced Topology Manager in `kubelet` for topology aligned resource allocation choices for a container. As of Kubernetes 1.35, the following policies are available:
 
-* `none` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
-* `best-effort` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
-* `restricted` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
-* `single-numa-mode` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `none` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `best-effort` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `restricted` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `single-numa-mode` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
 
-`TopologyManagerPolicyOptions` feature gate ( it is enabled by default ), allows the selection of topology manager allocation policies. As of kubernetes 1.35, the following policy options are visible by default provided that `TopologyManagerPolicyOptions` feature gate is enabled:
+`TopologyManagerPolicyOptions` feature gate (it is enabled by default), allows the selection of topology manager allocation policies. As of kubernetes 1.35, the following policy options are visible by default provided that `TopologyManagerPolicyOptions` feature gate is enabled:
 
-* `prefer-closest-numa-modes` ( GA, visible by default ) (1.32 or higher) [KEP-3545](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3545-improved-multi-numa-alignment)
-* `max-allowable-numa-modes` ( GA, visible by default ) (1.31 or higher)  [KEP-4622](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4622-topologymanager-max-allowable-numa-nodes) 
+* `prefer-closest-numa-modes` (GA, visible by default) (1.32 or higher) [KEP-3545](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3545-improved-multi-numa-alignment)
+* `max-allowable-numa-modes` (GA, visible by default) (1.31 or higher)  [KEP-4622](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4622-topologymanager-max-allowable-numa-nodes) 
 
-[KEP-3570](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager) introduced the CPU Manager in `kubelet` for assigning pod containers to sets of CPUs on the local node. According to this KEP _“Kubernetes ships with two CPU Manager policies, only one policy is active at a time on a given node, chosen by the operator via Kubelet configuration. The policies are __none__ (default) and __static__ ( allows pods with certain resource characteristics to be granted increased CPU affinity and exclusivity on the node ).”_
+[KEP-3570](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager) introduced the CPU Manager in `kubelet` for assigning pod containers to sets of CPUs on the local node. According to this KEP _“Kubernetes ships with two CPU Manager policies, only one policy is active at a time on a given node, chosen by the operator via Kubelet configuration. The policies are __none__ (default) and __static__ (allows pods with certain resource characteristics to be granted increased CPU affinity and exclusivity on the node).”_
 
 ![alt text](./cpu_manager_policies_pod_types.png "CPU Manager Policies Pod types")
 
@@ -220,7 +220,7 @@ The remaining options are independent and can be combined:
 * strict-cpu-reservation,
 * prefer-align-cpus-by-uncorecache
 
-The full combination matrix as of v1.35 , results to 34 feasible combinations. 64 logical combinations minus 30 combinations because they are not feasible ( 21-24, 29-32, 37-40, 45-48, 53-56, 61-64 ) as of v1.35. 
+The full combination matrix as of v1.35 , results to 34 feasible combinations. 64 logical combinations minus 30 combinations because they are not feasible (21-24, 29-32, 37-40, 45-48, 53-56, 61-64) as of v1.35. 
 
 From the remaining 34 feasible combinations:
 - Combination #35, is GA enabled by default
@@ -304,7 +304,7 @@ The Kubelet requires the total CPU reservation from `--kube-reserved` or `--syst
 
 ### Kubelet interaction with Topology Manager
 
-In the below two sections we present sequence diagrams during Pod Admission and current behavior upon an InPlacePodVertical Scaling attempt of a Guaranteed QoS Pod with static CPU Manager policy enabled ( Kubernetes v1.35 is used at the time of writing of this KEP )
+In the below two sections we present sequence diagrams during Pod Admission and current behavior upon an InPlacePodVertical Scaling attempt of a Guaranteed QoS Pod with static CPU Manager policy enabled (Kubernetes v1.35 is used at the time of writing of this KEP)
 
 ### Pod Admission Topology Manager interactions
 
@@ -316,13 +316,13 @@ Please note, the order of allocations and the order on which the resource manage
 
 ### Current behavior
 
-In-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy ( issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262) ). Any attempt of in-place resize for Guaranteed QoS pods with static CPU policy will fail and update status to `Infeasible`.
+In-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy (issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262)). Any attempt of in-place resize for Guaranteed QoS pods with static CPU policy will fail and update status to `Infeasible`.
 
 Kubernetes v1.32 [#128287](https://github.com/kubernetes/kubernetes/pull/128287) introduced `InPlacePodVerticalScalingExclusiveCPUs` feature gate to enable/disable in-place resize for guaranteedQOS pods with static CPU policy. 
 
 With this KEPs implementation, when `InPlacePodVerticalScalingExclusiveCPUs` is enabled, [Resize CPU and Memory Resources assigned to Containers Node Policies limitation](https://kubernetes.io/docs/tasks/configure-pod-container/resize-container-resources/#limitations) is resolved thus Pods managed by static CPU policies can be resized in-place.
 
-[Feature gate dependency functionality](https://github.com/kubernetes/kubernetes/pull/133697) will be leveraged to validate `InPlacePodVerticalScalingExclusiveCPUs` dependencies ( `InPlacePodVerticalScaling` and `CPUManager` ) at startup.
+[Feature gate dependency functionality](https://github.com/kubernetes/kubernetes/pull/133697) will be leveraged to validate `InPlacePodVerticalScalingExclusiveCPUs` dependencies (`InPlacePodVerticalScaling` and `CPUManager`) at startup.
 
 ## Proposal
 
@@ -349,7 +349,7 @@ As it was decided in [SIG Node meeting discussing static CPU policy support](htt
 * Must ensure reserved CPUs from [Kubelet CPU reservation](#kubelet-cpu-reservation) are kept during resize
 * Must work for all [Supported CPU Static Policy Options Combination matrix](#supported-cpu-static-policy-options-combination-matrix)
 
-[CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) `CPUManagerCheckpoint` struct to store exclusive cpu/pod assignments, will be used by `InPlacePodVerticalScalingExclusiveCPUs`, to checkpoint per-container data embedded in `CPUManagerCheckpoint`. More specifically introduction of the inner map item `Baselines` to checkpoint the corresponding _historical data_ of "baseline CPUs" exclusively allocated to a _running container_ ( `ContainerCPUs Checkpoint` for sort ), is meant to make internal upgrade and adaptation easier as we need to track the "baseline CPUs" set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP. The corresponding _current_ set of CPUs exclusively allocated to a _running container_ will be checkpointed to `Entries` field embedded in `CheckpointData` section in `CPUManagerCheckpoint` structure keeping the same structure used as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
+[CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) `CPUManagerCheckpoint` struct to store exclusive cpu/pod assignments, will be used by `InPlacePodVerticalScalingExclusiveCPUs`, to checkpoint per-container data embedded in `CPUManagerCheckpoint`. More specifically introduction of the inner map item `Baselines` to checkpoint the corresponding _historical data_ of "baseline CPUs" exclusively allocated to a _running container_ (`ContainerCPUs Checkpoint` for sort), is meant to make internal upgrade and adaptation easier as we need to track the "baseline CPUs" set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP. The corresponding _current_ set of CPUs exclusively allocated to a _running container_ will be checkpointed to `Entries` field embedded in `CheckpointData` section in `CPUManagerCheckpoint` structure keeping the same structure used as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
 
 When the CPU Manager, under a static policy, generates a NUMA Topology hint for a Guaranteed pod undergoing an in place CPU pod-resize, it follows these rules to determine the new affinity:
 
@@ -363,10 +363,10 @@ Please refer to [Alternatives](#alternatives) section in this KEP for more infor
 
 As it was decided in [SIG Node meeting discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg), CPU limit decrease of a running container of a Guaranteed Pod managed of Static CPU Policy: 
 
-* Must not allow decrease of number of CPUs below the CPUs allocated upon creation of the Guaranteed Pod ( “baseline CPUs” ) for the running container in question, instead infeasible error should be returned.
-* Allow the decrease of number of CPUs up to the CPUs allocated upon creation of the Guaranteed Pod ( "baseline CPUs" ) of a running container of a Guaranteed Pod keeping "baseline CPUs".
-* Same rules for NUMA Topology applicable for CPU Limit increase should apply for CPU Limit decrease ( Current behavior with Pod Admit ).
-* Retained CPUs ( "resized CPUs" ) can be a subset of the previous "resized CPUs", and "baseline CPUs" must be kept i.e. `baselineCPUs < resizedCPUS_A_UpSize, baselineCPUs <= resizedCPUS_B_DownSize < resizedCPUS_A_UpSize`.
+* Must not allow decrease of number of CPUs below the CPUs allocated upon creation of the Guaranteed Pod (“baseline CPUs”) for the running container in question, instead infeasible error should be returned.
+* Allow the decrease of number of CPUs up to the CPUs allocated upon creation of the Guaranteed Pod ("baseline CPUs") of a running container of a Guaranteed Pod keeping "baseline CPUs".
+* Same rules for NUMA Topology applicable for CPU Limit increase should apply for CPU Limit decrease (Current behavior with Pod Admit).
+* Retained CPUs ("resized CPUs") can be a subset of the previous "resized CPUs", and "baseline CPUs" must be kept i.e. `baselineCPUs < resizedCPUS_A_UpSize, baselineCPUs <= resizedCPUS_B_DownSize < resizedCPUS_A_UpSize`.
 * Downsize does not need to be an upsize in reverse for example below is a valid flow.
 ```
   upsize: baseline = 4 -> 8 -> 12
@@ -378,7 +378,7 @@ As it was decided in [SIG Node meeting discussing static CPU policy support](htt
 In the following section we will present examples demonstrating the proposed behavior based 
 on feedback provided during the [SIG Node meeting discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg). An implementation is available at [Kubernetes PR #129719](https://github.com/kubernetes/kubernetes/pull/129719) with a screencast demonstration in the description of this PR and update.
 
-For the examples we assume a working node which consists of 6 physical CPUs with simultaneous multithreading level 2 resulting in a total of 12 virtual CPUs ( 0 - 11 ). Virtual CPUs 0-5 use NUMA Node 0 and Virtual CPUs 6-11 use NUMA Node 1. The hardware topology of such a machine is given in the following diagram.
+For the examples we assume a working node which consists of 6 physical CPUs with simultaneous multithreading level 2 resulting in a total of 12 virtual CPUs (0 - 11). Virtual CPUs 0-5 use NUMA Node 0 and Virtual CPUs 6-11 use NUMA Node 1. The hardware topology of such a machine is given in the following diagram.
 
 ![alt_text](./hardware_topology_diagram.png "Hardware Topology Diagram")
 
@@ -429,7 +429,7 @@ For this example we assume a node with 16 CPUs without kubelet reserved CPUs
   "dataChecksum": <computed data checksum>
 }
 ```
-First a one container QoS Guaranteed PoD ( gu-pod-1 ), managed by CPU Static policy with 2 CPUs is created. baseline has the assigned cpu 1-2, resized is empty, default cpuset 0,3-15.
+First a one container QoS Guaranteed PoD (gu-pod-1), managed by CPU Static policy with 2 CPUs is created. baseline has the assigned cpu 1-2, resized is empty, default cpuset 0,3-15.
 
 For educational purposes, in the example we use gu-pod-1-uid, in a real scenario it would be the podUID of gu-pod-1
 
@@ -482,7 +482,7 @@ Next the Pods CPUs are decreased by 2 CPUs, baseline is kept 1-2, entries update
 }
 ```
 
-Now, a QoS Guaranteed PoD ( gu-pod-2 ), managed by CPU Static policy with two containers with 4 CPUs is created. 
+Now, a QoS Guaranteed PoD (gu-pod-2), managed by CPU Static policy with two containers with 4 CPUs is created. 
 
 For educational purposes, in the example we use gu-pod-2-uid, in a real scenario it would be the podUID of gu-pod-2
 
@@ -547,7 +547,7 @@ Based on [feasible CPU Static Policy Options Combination matrix](#feasible-cpu-s
 
 Based on those tests and feedback received, supported CPU Static Policy Options Combination matrix might be updated, in such case this section will have the updated supported combination matrix. 
 
-Another option would be this KEP to focus on GA and Beta combinations only ( for alpha ) . This will reduce the number of combinations to fifteen:
+Another option would be this KEP to focus on GA and Beta combinations only (for alpha) . This will reduce the number of combinations to fifteen:
 
 | index | full-pcpus-only GA (GA, visible by default) (1.33 or higher) | distribute-cpus-across-numa (alpha, hidden by default) | align-by-socket (alpha, hidden by default) (1.25 or higher) | distribute-cpus-across-cores (alpha, hidden by default) (1.31 or higher) | strict-cpu-reservation GA (GA, visible by default) (1.35 or higher) | prefer-align-cpus-by-uncorecache (beta, visible by default) (1.34 or higher)<br><br><br> | Comment                       |
 | ----- | ------------------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------- |
@@ -613,7 +613,7 @@ To effectively address the needs of both users and Kubernetes components for the
     * protect against CPU leaks by failing early, when "baseline CPUs" and or reusableCPUs are not a subset of the available CPUs
     * to pass to [takeByTopologyNUMADistributed](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/cpu_assignment.go#L830) or [takeByTopologyNUMAPacked](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/cpu_assignment.go#L726) the `reusableCPUsForResize` and `mustKeepCPUsForResize`.
 
-Should the node not be able to resize, could be either during allocation or feasibility checks ( kubelet decides if it is capable of performing the resize ) or during the actuation ( kubelet actually performs the resize ) as per [KEP-1287 (In-place Resource Resize)](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources#summary).  
+Should the node not be able to resize, could be either during allocation or feasibility checks (kubelet decides if it is capable of performing the resize) or during the actuation (kubelet actually performs the resize) as per [KEP-1287 (In-place Resource Resize)](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources#summary).  
 
 About Error handling, please see [What happens on CPU Resize failures](#what-happens-on-cpu-resize-failures) for more details.
 
@@ -623,7 +623,7 @@ The PodResizeInProgress condition should be set to Error with the error message,
 
 As it was decided in [SIG Node meeting discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg), 
 
-* CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed locally in the worker node ( please refer to Static CPU Management Policy Support for more details ) we use the term “baseline” ( or "promised" ) CPUs in the rest of this document to refer to those CPUs.
+* CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed locally in the worker node (please refer to Static CPU Management Policy Support for more details) we use the term “baseline” (or "promised") CPUs in the rest of this document to refer to those CPUs.
 * Use of existing CPU Manager checkpoint should be used for storing the “resized” CPUs after a successful resize.
 
 To satisfy this requirement, CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed, for this to happen [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) need to introduce CPUManagerCheckpoint struct to store cpu/pod assignments.
@@ -640,7 +640,7 @@ structure, more specifically:
 * `Entries` field will store the _current_ set of CPUs allocated to a _container_ keeping the same structure used
    as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
 * `Baselines` field will store the _historical data_ of "baseline CPUs" exclusively allocated to a _container_
-   ( for alpha it will be the baseline CPUset only stored ) with the necessary format.
+   (for alpha it will be the baseline CPUset only stored) with the necessary format.
 
 Final naming in the implementation can change slightly without changing concepts as expressed in this KEP.
 
@@ -894,7 +894,7 @@ enhancement:
 keeping the same user experience introduced with [CPUManager V4 format](https://github.com/kubernetes/kubernetes/pull/139102)
 
 The `Entries` field in embedded `CPUManagerCheckpointV2` section must be filled with currently allocated CPU sets
-( Baseline if there was no resize, Resized if there was a resize ) when `InPlacePodVerticalScalingExclusiveCPUs` feature is enabled.
+(Baseline if there was no resize, Resized if there was a resize) when `InPlacePodVerticalScalingExclusiveCPUs` feature is enabled.
 
 This will allow the assignment to be read properly if the checkpoint file is saved in a newer kubelet and loaded
 by the old kubelet, thus file reading will succeed without needed to drain the node or remove the file anymore.
@@ -967,8 +967,8 @@ well as the [existing list] of feature gates.
 * [x] Feature gate (also fill in values in `kep.yaml`)
   + Feature gate name: `InPlacePodVerticalScalingExclusiveCPUs`
   + Components depending on the feature gate: kubelet
-  + `InPlacePodVerticalScaling` feature must be enabled ( enabled by default )
-  + CPU Manager policy must be set to `static` ( `none` is the default policy )
+  + `InPlacePodVerticalScaling` feature must be enabled (enabled by default)
+  + CPU Manager policy must be set to `static` (`none` is the default policy)
   + Introduced in v1.32, alpha
 * [x] Other
   + Describe the mechanism: 
@@ -1029,7 +1029,7 @@ The following unit test covers what happens if I disable a feature gate after ha
 objects written with the new field (in this case, the field should persist).
 
 * Under pkg/kubelet/test/e2e_node
-  - cpu_manager_test.go ( updated )
+  - cpu_manager_test.go (updated)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1122,9 +1122,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 In order to verify this feature is working, one should first inspect the kubelet configuration and ensure that all required feature gates are enabled as described in [Summary](#summary). 
 
-When usage metrics and/or podresources API (or any other suitable APIs) and/or surface data in the statuses are implemented, those metrics/API/statuses could be used ( planned for Beta ) to verify feature is working for their instance.
+When usage metrics and/or podresources API (or any other suitable APIs) and/or surface data in the statuses are implemented, those metrics/API/statuses could be used (planned for Beta) to verify feature is working for their instance.
 
-Until those metrics/API/statuses are implemented ( planned for Beta ), it is possible to determine the feature if functioning properly as follows:
+Until those metrics/API/statuses are implemented (planned for Beta), it is possible to determine the feature if functioning properly as follows:
 
 - User should create a guaranteed QoS Pod with integer CPU requests.
 - Inspect the `/var/lib/kubelet/cpu_manager_state` and check `Baseline` and `Entries` CPU set, for the created Pods running container.
@@ -1133,7 +1133,7 @@ Until those metrics/API/statuses are implemented ( planned for Beta ), it is pos
 - Afterwards the user should attempt to increase the number of CPUs, within the limits of the node, patching the created guaranteed QoS Pod.
 - Upon success, the user can check the CPU affinity of the resized Pod, from within the running container to confirm assigned CPU set is increased keeping baseline CPU set.
 
-When the usage metrics/API/statuses are implemented ( planned for Beta ), the user should not need to inspect the `/var/lib/kubelet/cpu_manager_state` but instead watch the values of those metrics/API/statuses after successful resizes.
+When the usage metrics/API/statuses are implemented (planned for Beta), the user should not need to inspect the `/var/lib/kubelet/cpu_manager_state` but instead watch the values of those metrics/API/statuses after successful resizes.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1388,7 +1388,7 @@ Introduction of a new field with `mustKeepCPUs` in API, solution was rejected be
 
 Introduction of `LIFO cpuset` functionality in `cpu_assignement.go` solution was rejected because:
 
-+ Modification of `cpuset package` to support Last In First Out ( LIFO ) was rejected because existing [cpuset go package](https://pkg.go.dev/k8s.io/utils/cpuset) is used widely, thus a `cpuset package` modification would impact users beyond Kubernetes.
++ Modification of `cpuset package` to support Last In First Out (LIFO) was rejected because existing [cpuset go package](https://pkg.go.dev/k8s.io/utils/cpuset) is used widely, thus a `cpuset package` modification would impact users beyond Kubernetes.
 + Creation of a new `LIFO cpuset go package` only for this KEP was considered an overkill.
 
 ### Option 3: Use NRI solution
