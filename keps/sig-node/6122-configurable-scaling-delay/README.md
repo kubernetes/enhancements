@@ -17,7 +17,7 @@
   - [Implementation](#implementation)
     - [Pod API Extension](#pod-api-extension)
     - [Node Declared Features Integration](#node-declared-features-integration)
-      - [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart)
+      - [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart)
     - [Scale Down Delay in CPU Manager](#scale-down-delay-in-cpu-manager)
       - [Scale-Down Delay Timing](#scale-down-delay-timing)
       - [Consecutive Scaling](#consecutive-scaling)
@@ -155,13 +155,9 @@ My application does not require a preparation window before CPUs are removed: it
 
 ### Risks and Mitigations
 
-**A pod's grace period is not honored by the node:** A pod that sets `scaleDownGracePeriodSeconds` could run on a kubelet that does not enforce it, and have its cpuset changed with no preparation window.
-
-**Mitigation:** kube-apiserver rejects the field while the gate is disabled, so it cannot be set in a cluster that does not support the feature, and the scheduler only places such pods on nodes that declare it. A node whose gate is disabled does not admit such a pod at all. What remains is a kubelet downgraded to a version that does not know the field: it admits the pod and ignores the field, so operators should remove the field before such a downgrade — see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
-
 **Disabling the feature gate on a node that runs pods using it:** the kubelet re-admits its pods when it restarts, so disabling `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` on a node fails the pods there that set `scaleDownGracePeriodSeconds`. This is the standard Node Declared Features behavior, and it applies to workloads that are latency-sensitive by definition.
 
-**Mitigation:** drain the pods that set the field before disabling the gate on a node, so that they are rescheduled onto nodes that still declare the feature. See [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
+**Mitigation:** drain the pods that set the field before disabling the gate on a node, so that they are rescheduled onto nodes that still declare the feature. See [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart).
 
 **Workload may not complete preparations within the delay window:** The kubelet guarantees only that the cpuset will not be applied before `scaleDownGracePeriodSeconds` has elapsed. There is no synchronization mechanism between the workload and kubelet — if the workload fails to complete its preparations (e.g., workload migration, draining tasks) within the delay window, the cpuset change is applied anyway. This is an inherent limitation of keeping kubelet independent from workload state.
 
@@ -250,7 +246,7 @@ When the `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` feature gate is 
 
 Once the feature graduates to GA and the feature gate is removed, every kubelet honors the field unconditionally and the declared feature is no longer needed.
 
-##### Re-admission after a kubelet restart
+##### Non-admission after a kubelet restart
 
 Changing the feature gate requires restarting the kubelet, and KEP-5328 re-evaluates every pod the node is running when it restarts. A pod that requires a feature the node no longer declares fails admission and is moved to `Failed`. This feature follows that default rather than working around it.
 
@@ -332,7 +328,7 @@ A container with no persisted entry needs no special handling. For an entry that
 
 | Check | Decision |
 |---|---|
-| The feature gate is disabled | The pod owning the entry sets `scaleDownGracePeriodSeconds`, so it is moved to `Failed` on re-admission; see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart) |
+| The feature gate is disabled | The pod owning the entry sets `scaleDownGracePeriodSeconds`, so it is moved to `Failed` on re-admission; see [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart) |
 | The boot ID differs from the current one | The node rebooted, so every container process is new and was never notified: drop the entry. If the pod spec still requests fewer CPUs, admission treats it as a new resize and the container gets a fresh, full grace period |
 | The CPU request in the pod spec matches the number of assignments in the checkpoint | The scale-down was reverted while the kubelet was down: drop the entry. No CPUs were ever released |
 | The CPU request does not match the number of preAssignments | The request changed again while the kubelet was down: treat it as [Consecutive Scaling](#consecutive-scaling), allocating a new cpuset and starting a new grace period only if this is still a scale-down |
@@ -484,9 +480,9 @@ N/A
 
 The two downgrade paths differ in whether the target version knows the field at all.
 
-**The target version has the field, with the feature gate disabled.** On kube-apiserver the field is preserved on existing pods and rejected on new ones, so a pod already using it keeps the field and can still be resized. On a node, the gate being disabled means the node stops declaring the feature, and the pods there that set the field are failed once its kubelet restarts; drain them first, as described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
+**The target version has the field, with the feature gate disabled.** On kube-apiserver the field is preserved on existing pods and rejected on new ones, so a pod already using it keeps the field and can still be resized. On a node, the gate being disabled means the node stops declaring the feature, and the pods there that set the field are failed once its kubelet restarts; drain them first, as described in [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart).
 
-**The target version does not have the field.** The field becomes unknown to kube-apiserver and is dropped, so pods keep running but lose the grace period without any error. A kubelet downgraded below the version that introduced the feature behaves the same way: it does not know the feature, so it neither declares nor requires it, and it admits the pod and silently ignores the field. This is the only configuration in which a pod keeps running while its grace period is quietly dropped. A kubelet that has the feature but runs with the gate disabled is a different case: it never serves such a pod at all, because it rejects it at admission or fails it on restart. Operators should therefore remove the field from pod specs, or drain the pods that set it, before downgrading a node below that version, so that the loss of the guarantee is a deliberate change rather than a silent one.
+**The target version does not have the field.** The field becomes unknown to kube-apiserver and is dropped from pod specs. A kubelet downgraded below the version that introduced the feature behaves the same way: it does not know the feature, so it neither declares nor requires it, and it admits the pod and ignores the field. No guarantee is quietly broken by this, because in-place resizing of exclusive CPUs becomes available in the same release as the grace period: such a kubelet cannot change a cpuset in place either, and reports the resize `Infeasible`. Operators should still remove the field from pod specs before such a downgrade, so that giving up the feature is a deliberate change.
 
 **CPU Manager checkpoint.** The pending scale-down is stored as an optional field of the existing v4 checkpoint payload, added the way KEP-5554 added `Baselines`. A kubelet that knows v4 but not this field ignores it, and `Entries` still holds the cpuset the container currently owns, so a checkpoint written by a newer kubelet is read by an older one without draining the node or deleting the file. Ignoring the field only means the pending scale-down is forgotten: the container keeps the cpuset it holds, and the resize is processed again according to that kubelet's own capabilities.
 
@@ -494,11 +490,11 @@ The two downgrade paths differ in whether the target version knows the field at 
 
 This feature involves coordination between kube-apiserver (field validation), the kubelet (enforcing the delay and declaring the feature) and the scheduler (node filtering via Node Declared Features).
 
-**New apiserver, older kubelet.** The apiserver accepts `scaleDownGracePeriodSeconds`. An older kubelet — the [version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubelet) allows it to lag the apiserver by up to three minor versions — does not have the code for it, so it would apply a scale-down with no preparation window. Node Declared Features prevents this for pods the scheduler places: such a kubelet does not declare `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`, so the scheduler does not put these pods on it. It does not cover a pod that reaches such a node another way — `spec.nodeName` set directly, or the node's kubelet downgraded below this version while the pod runs. There the kubelet admits the pod and ignores the field, and the grace period is lost without an error; see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy). This is the only remaining exposure, and it exists solely for a kubelet that predates the feature.
+**New apiserver, older kubelet.** The apiserver accepts `scaleDownGracePeriodSeconds`. An older kubelet — the [version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubelet) allows it to lag the apiserver by up to three minor versions — does not have the code for the field and does not declare `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`, so the scheduler does not place these pods on it. If a pod reach the node another way, by `spec.nodeName` or a kubelet downgrade under a running pod, the kubelet admits it and ignores the field. The grace period still cannot be broken there: in-place resizing of exclusive CPUs becomes available in the same release as this feature, so a kubelet that does not know the field cannot change a cpuset in place either and reports such a resize `Infeasible`.
 
 **Old apiserver, newer kubelet.** Not a supported configuration, since the [version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubelet) requires that the kubelet not be newer than kube-apiserver. Were it to occur anyway, the apiserver would not know the field and would drop it as unknown, so the kubelet would never see it and would behave as before.
 
-**Apiserver ON, kubelet OFF.** The pod is admitted by kube-apiserver, but the node does not declare the feature and the scheduler avoids it. A pod that reaches such a node anyway — a static pod, or one that bypassed the scheduler — is rejected by the kubelet, and a pod already running there when the gate is disabled is failed once the kubelet restarts; see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart). Unlike the older kubelet above, this one knows the feature, so no pod setting the field ever runs there without its grace period: either it is kept away, or it is rejected, or it is failed — never silently served.
+**Apiserver ON, kubelet OFF.** The pod is admitted by kube-apiserver, but the node does not declare the feature and the scheduler avoids it. A pod that reaches such a node anyway — a static pod, or one that bypassed the scheduler — is rejected by the kubelet, and a pod already running there when the gate is disabled is failed once the kubelet restarts; see [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart). This kubelet knows the feature, so no pod setting the field ever runs there: it is kept away by the scheduler, rejected at admission, or failed on restart.
 
 **Apiserver OFF, kubelet ON.** New pods setting the field are rejected by the apiserver, so it never reaches the kubelet. A pod that already carries the field keeps it and is still honored, since validation permits a value already in use. Static pods bypass the apiserver, so a static pod setting the field is honored by the kubelet regardless of the gate on the apiserver.
 
@@ -542,7 +538,7 @@ Yes. Disabling it on kube-apiserver disrupts no workload. Disabling it on a node
 
 **Disabling on kube-apiserver:** new pods setting `scaleDownGracePeriodSeconds` are rejected, while pods that already set it keep the field and keep running, since validation permits a value already in use. Their grace periods are still honored, because the nodes they run on still declare the feature.
 
-**Disabling on kubelet:** the node stops declaring the feature, so the scheduler places no further pods setting the field there. Disabling the gate requires restarting the kubelet, and the pods on that node which set the field are failed on restart, as described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart). Draining those pods before disabling the gate avoids it. A pending scale-down persisted in the CPU Manager checkpoint is discarded together with the pod's allocation.
+**Disabling on kubelet:** the node stops declaring the feature, so the scheduler places no further pods setting the field there. Disabling the gate requires restarting the kubelet, and the pods on that node which set the field are failed on restart, as described in [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart). Draining those pods before disabling the gate avoids it. A pending scale-down persisted in the CPU Manager checkpoint is discarded together with the pod's allocation.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -660,9 +656,9 @@ No new in-cluster or external services. The feature relies on the following, all
     - Impact of its degraded performance or high-error rates on the feature: N/A, a kubelet configuration.
 - Node Declared Features ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features), GA since v1.37)
   - Usage description: the kubelet declares the feature and the scheduler uses it to filter nodes for pods that set `scaleDownGracePeriodSeconds`.
-    - Impact of its outage on the feature: a pod may be placed on a node that does not declare the feature, where the kubelet rejects it at admission and the scheduler retries elsewhere. A kubelet that does not know the feature at all applies no such check and ignores the field. The same applies to pods placed without the scheduler, such as static pods.
+    - Impact of its outage on the feature: a pod may be placed on a node that does not declare the feature, where the kubelet rejects it at admission and the scheduler retries elsewhere. A kubelet that does not know the feature at all applies no such check, but it cannot resize exclusive CPUs either, so no grace period is at stake. The same applies to pods placed without the scheduler, such as static pods.
     - Impact of its degraded performance or high-error rates on the feature: a stale node status could misroute pods for as long as the declared features are out of date, with the same bounded consequence.
-  - Consequence of the framework's admission model: a node that stops declaring the feature fails the pods running there that require it, which is why disabling the gate on a node calls for draining those pods first; see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
+  - Consequence of the framework's admission model: a node that stops declaring the feature fails the pods running there that require it, which is why disabling the gate on a node calls for draining those pods first; see [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart).
 
 No new container runtime capability is required: applying a cpuset already goes through the existing CRI `UpdateContainerResources` call.
 
@@ -726,7 +722,7 @@ Two things do depend on the apiserver. The resize completion is reported only on
 
 The SLOs concern when the new cpuset is applied relative to a pod's grace period.
 
-If a cpuset is applied sooner than the grace period, check whether the node declares the feature and whether its kubelet knows it at all — a kubelet older than this feature admits the pod and ignores the field, which tells that case apart from an actual defect.
+If a cpuset is applied sooner than the grace period, check first that the node declares the feature. A node that does not declare it never runs such a pod, so wherever this is observable at all it is a defect rather than a configuration problem.
 
 If it is applied far later than the grace period, the wait beyond it is bounded by the CPU Manager reconcile period, so check that configuration first, then look for kubelet restarts during the window and for a pending scale-down discarded on restore.
 
@@ -840,7 +836,7 @@ The following alternatives were considered:
 ### 11. Keep running pods through a feature gate rollback
 
 * **Description**: When the kubelet restarts with the gate disabled, re-admit the running pod instead of rejecting it. The pod would stay up and simply stop being served the feature: its next scale-down would be applied without the delay, reported through the `PodResizeInProgress` condition and a `ScaleDownGracePeriodNotHonored` event. This required extending Node Declared Features, so that a feature could see whether a pod is being created or re-admitted. The extension was prototyped in [kubernetes/kubernetes#142329](https://github.com/kubernetes/kubernetes/pull/142329), with the gap described in [kubernetes/kubernetes#142328](https://github.com/kubernetes/kubernetes/issues/142328).
-* **Why Rejected**: SIG-Node agreed to neither the behavior nor the extension, holding firmly that a node with the gate disabled does not support the feature, and that pods requiring it have to be removed. Both the issue and the pull request were closed. This KEP therefore follows the framework's default, and bounds the cost by draining the pods that set the field before the gate is disabled on a node, as described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart). Dropping the approach also removed the `ScaleDownGracePeriodNotHonored` event and the condition message that went with it, because no case is left that would produce them.
+* **Why Rejected**: SIG-Node agreed to neither the behavior nor the extension, holding firmly that a node with the gate disabled does not support the feature, and that pods requiring it have to be removed. Both the issue and the pull request were closed. This KEP therefore follows the framework's default, and bounds the cost by draining the pods that set the field before the gate is disabled on a node, as described in [Non-admission after a kubelet restart](#non-admission-after-a-kubelet-restart). Dropping the approach also removed the `ScaleDownGracePeriodNotHonored` event and the condition message that went with it, because no case is left that would produce them.
 
 **Note:** The scale-down delay approach was selected during the KEP review process (discussed in SIG Node meetings and document reviews) as it provides a simple, deterministic guarantee without requiring workload-kubelet synchronization. Within a running kubelet the approach is free of races: both the delay check and the cpuset actuation happen sequentially in the CPUManager's reconcile loop. The one real race — losing a pending scale-down when the kubelet restarts — is addressed by persisting it in the CPU Manager checkpoint (see [Kubelet Restart](#kubelet-restart)).
 
