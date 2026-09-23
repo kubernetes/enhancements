@@ -29,6 +29,7 @@
       - [Scalability follow-up (post-alpha): node-scoped watch](#scalability-follow-up-post-alpha-node-scoped-watch)
   - [Restore Mechanism](#restore-mechanism)
     - [End-to-end restore walkthrough](#end-to-end-restore-walkthrough)
+  - [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)
   - [Post-Checkpoint State Semantics](#post-checkpoint-state-semantics)
   - [Checkpoint Content](#checkpoint-content)
     - [Pod Specification and Metadata](#pod-specification-and-metadata)
@@ -605,7 +606,10 @@ The kubelet's checkpoint handling (the canonical execution flow referenced elsew
    [Pod Specification and Metadata](#pod-specification-and-metadata)), and writes the result to
    `status.checkpointedPodTemplate` for the spec-equality check used on restore (see
    [Restore Mechanism](#restore-mechanism)). The kubelet reads the live Pod object directly.
-7. Suspends the Pod's probes, resolves the CRI sandbox ID, and calls the `CheckpointPod` CRI API
+7. Sets the `Checkpointing=True` Pod condition (which makes the API server reject changes to the
+   source Pod's spec until it is cleared; see
+   [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)),
+   suspends the Pod's probes, resolves the CRI sandbox ID, and calls the `CheckpointPod` CRI API
    in the background, writing the archive into a new directory under the kubelet's checkpoint
    root named after the `PodCheckpoint` UID (for example
    `/var/lib/kubelet/pod-checkpoints/checkpoint-{podCheckpointUID}`). The kubelet creates the
@@ -616,7 +620,7 @@ The kubelet's checkpoint handling (the canonical execution flow referenced elsew
 8. On completion, writes the result to the `PodCheckpoint` status (see
    [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)): `Ready=True`/`CheckpointCompleted`
    with `checkpointLocation` on success, or `Ready=False`/`CheckpointFailed` with a reason on
-   failure.
+   failure. It then clears `Checkpointing`.
 
 Restore is likewise declarative. There is no restore HTTP endpoint: restore is driven through
 `pod.Spec.restoreFrom` and the kubelet's normal `SyncPod` path (see
@@ -1125,6 +1129,11 @@ at admission. The kubelet runs the equality check again before the CRI restore a
    mismatched Pod at creation, with the offending field reported to the user, instead of admitting a
    Pod the node would only reject later.
 
+   The equality check is done as much as possible at admission, where the user gets a synchronous
+   error. It is implemented as a single shared function that the admission plugin and the kubelet
+   both call, so the two checks cannot drift apart. Admission also rejects later updates that would
+   break the match (see [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)).
+
    Admission rejects the Pod with `Forbidden` if the referenced `PodCheckpoint` does not exist or
    is not `Ready`: until then there is no `status.nodeName` to build the node affinity from and no
    template to compare against. The `restore` authorization is checked first, so the error does not
@@ -1337,6 +1346,43 @@ conditions.
 This differs from references to ConfigMaps, Secrets, or PersistentVolumeClaims, which can be created
 after the Pod that uses them. A restore Pod must reference a `PodCheckpoint` that is already
 `Ready`, because admission needs the checkpoint's node and template to place and validate the Pod.
+
+### Pod updates during checkpoint and restore
+
+A checkpoint captures the Pod as it runs, and a restore recreates it from that capture, so neither
+works if the Pod spec changes in the middle. Several Pod fields are mutable today (for example
+container images, resources through in-place resize, and scheduling directives while the Pod is
+gated), and Dynamic Containers will add more. The rule is the same for both sides: the fields that
+describe what runs in the Pod must not change while the operation is in progress.
+
+- **Source Pod, during a checkpoint.** While the Pod has the `Checkpointing=True` condition, the
+  API server rejects updates that change the Pod's spec, including resize requests and new
+  Ephemeral Containers, with a `Conflict` error that names the checkpoint. The kubelet sets the
+  condition before it captures `checkpointedPodTemplate`. An update that was accepted just before
+  the condition was written is handled by the kubelet's per-Pod in-flight guard: the kubelet does
+  not apply it until the checkpoint finishes, so the capture is never a mix of old and new state
+  (see [Pod Specification and Metadata](#pod-specification-and-metadata)). The checkpoint does not
+  depend on the source Pod afterwards: once it is taken, the source Pod may change freely, and
+  restores are compared with `status.checkpointedPodTemplate`, not with the live source Pod.
+- **Restore Pod, before it is running.** Admission checks the restore Pod against the checkpoint
+  at create time, but a user could change the Pod right after it is created and before the kubelet
+  restores it. So for a Pod with `spec.restoreFrom` set, the `PodRestoreAuthorization` plugin
+  also runs on update: until the restore has completed (the Pod is `Running` and `Restoring` is
+  cleared) it rejects any change to a field that the equality check compares (`spec.restoreFrom`
+  itself is immutable). The only allowed changes are the ones the restore flow itself makes (scheduler binding
+  and removing scheduling gates). Scheduling directives cannot be changed either, because they
+  would conflict with the injected node affinity. The kubelet's equality check before `RestorePod`
+  remains the backstop.
+
+Normal Pods have the same issue: changing runtime fields before a Pod is running can cause races
+in the kubelet. Kubernetes does not consistently block this today, and fixing it for all Pods is
+outside the scope of this KEP.
+
+Requiring every field to match is deliberately strict. A likely way to relax it later is to
+compare only the fields that make up what is running in the Pod: the fields that go through the
+kubelet's allocation step, as in-place resize and Dynamic Containers do, and not fields such as
+`activeDeadlineSeconds`. This depends on that set of fields being defined, which is being
+discussed separately; until then every field must match (see [Open Questions](#open-questions)).
 
 ### Post-Checkpoint State Semantics
 
@@ -1611,8 +1657,10 @@ is a different security model. Mitigations:
   preventing post-creation namespace-escape attempts and ensuring the pinned instance cannot
   be swapped after the object is admitted. `spec.restoreFrom` can only be set when the Pod is
   created and is immutable, so a restore Pod cannot be pointed at a different checkpoint after
-  admission has checked it. To restore from a different `PodCheckpoint` (rollback, or warm start
-  from a newer snapshot), create a new Pod.
+  admission has checked it (see
+  [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)). To
+  restore from a different `PodCheckpoint` (rollback, or warm start from a newer snapshot), create
+  a new Pod.
 - Pod-spec equality is validated against `status.checkpointedPodTemplate`, which is
   written by the kubelet at checkpoint time and immutable to users (see [Status and spec separation](#status-and-spec-separation)),
   so a user cannot forge the record being compared against. The API server enforces this equality
@@ -1758,6 +1806,11 @@ Unit tests must cover at least:
   checkpoint is started).
 - Cgroup freeze and unfreeze sequence ordering and error recovery.
 - Pod condition `Checkpointing=True` is set and cleared around the operation.
+- Pod update validation: spec changes to a Pod with `Checkpointing=True` are rejected; changes
+  to `spec.restoreFrom` or to compared fields of a restore Pod are rejected until the restore
+  completes, while scheduler binding and removing scheduling gates are allowed.
+- The shared Pod-spec equality function returns the same result for the admission plugin and the
+  kubelet, and ignores exactly the documented restore-introduced fields.
 
 ##### Integration tests
 
@@ -1789,6 +1842,8 @@ kubelet integration suite. The following scenarios must pass before Alpha:
   `spec.restoreFrom` and the injected node affinity), admits one that matches, and injects the
   required node affinity targeting `status.nodeName` (rejecting a user-supplied conflicting
   `spec.nodeName`/affinity).
+- Restore Pod updates: after a restore Pod is admitted, an update that changes a container image
+  is rejected while the Pod is `Pending`.
 
 ##### e2e tests
 
@@ -1838,6 +1893,9 @@ Beta adds:
   authoritatively validates Pod-spec equality against `status.checkpointedPodTemplate`.
 - `PodCheckpoint` creation rejected at admission when the source Pod is missing, not `Running`,
   being deleted, or does not match `spec.sourcePod.uid`.
+- Pod update rules implemented: source Pod spec changes are rejected while `Checkpointing=True`,
+  and restore Pod changes that would break the equality check are rejected until the restore
+  completes.
 - Field selectors `spec.sourcePod.name` and `status.nodeName` registered on the `PodCheckpoint`
   REST storage, so checkpoints can be listed by source Pod or by node.
 - Pod-snapshot-controller implemented.
@@ -1970,8 +2028,9 @@ you need any help or guidance.
       validates the
       `restoreFrom` Pod-spec field, and runs the `PodRestoreAuthorization` admission plugin
       (the `restore`-verb authorization, the injected node-affinity constraint pinning the Pod to
-      the checkpoint's node, and the
-      authoritative pod-template equality check).
+      the checkpoint's node, the
+      authoritative pod-template equality check, and rejecting Pod updates during checkpoint and
+      restore).
     - `kube-controller-manager` - runs the in-tree pod-snapshot-controller that reconciles
       `PodCheckpoint` lifecycle (finalizers and garbage collection); it is not on the checkpoint
       execution path.
@@ -2468,6 +2527,12 @@ shape described above.
   change so the restored Pod resumes converging toward it, versus restoring the allocated state and
   leaving the user to re-issue the resize/update. To be decided during implementation, and it
   becomes more pressing as features like Dynamic Containers widen the allocated-vs-desired gap.
+
+- **Which fields must match between the checkpoint and the restore Pod?** Alpha requires every
+  compared field to match. A possible relaxation is to compare only the fields that make up what
+  is running in the Pod (the fields that go through the kubelet's allocation step, as used by
+  in-place resize and Dynamic Containers). This depends on that set of fields being defined
+  first; see [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore).
 
 - **Timing of the Node Declared Features dependency.** Restore relies on the scheduler (and
   checkpoint-create admission) to avoid nodes that cannot satisfy a restore, which is best driven by
