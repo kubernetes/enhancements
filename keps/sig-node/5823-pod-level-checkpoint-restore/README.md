@@ -736,7 +736,7 @@ type PodCheckpointStatus struct {
 	// nodeName is the node where the source Pod was running when checkpointed
 	// and where the checkpoint data resides.
 	// +optional
-	NodeName string `json:"nodeName,omitempty"`
+	NodeName *string `json:"nodeName,omitempty"`
 
 	// sourcePodUID is the UID of the Pod instance the kubelet actually
 	// checkpointed (or is checkpointing). It is recorded when the kubelet picks
@@ -769,29 +769,27 @@ type PodCheckpointStatus struct {
 	// captured from the source Pod at checkpoint time. It is the authoritative
 	// record a restore Pod's spec is validated against. Node-local and
 	// cluster-specific fields (e.g. nodeName, status, uid, resourceVersion,
-	// managedFields) are excluded so the template stays portable.
+	// managedFields) are excluded so the template stays portable. The kubelet
+	// sets it once; later status updates cannot modify or clear it.
+	// Images of checkpointed containers (regular containers and restartable
+	// init containers) are recorded as the resolved image digest references
+	// reported by the runtime, so a restoring Pod must use those same image
+	// references rather than the original tags. Images of completed
+	// non-restartable init containers are unchanged, because those containers
+	// are not restored.
 	// +optional
 	CheckpointedPodTemplate *core.PodTemplateSpec `json:"checkpointedPodTemplate,omitempty"`
 
-	// checkpointedContainers lists the checkpointed regular (non-init) containers
-	// as a visibility convenience; the authoritative set is in
-	// checkpointedPodTemplate. Named to parallel checkpointedPodTemplate, since
-	// these describe the checkpointed Pod, not the PodCheckpoint object.
+	// checkpointedContainers lists the containers captured in the checkpoint:
+	// all regular containers plus any running restartable init (sidecar)
+	// containers, as a convenience for clients. Container names are unique
+	// within a Pod, so a single list covers both. Completed non-restartable init
+	// containers are not captured; on restore they are reflected as completed
+	// and not re-run. The authoritative record is checkpointedPodTemplate.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
 	CheckpointedContainers []PodCheckpointContainerStatus `json:"checkpointedContainers,omitempty"`
-
-	// checkpointedInitContainers lists the checkpointed init containers, kept
-	// separate from checkpointedContainers to mirror PodStatus. It records the
-	// completed non-restartable init containers and any running restartable init
-	// containers (sidecars). On restore, completed init containers are reflected as
-	// completed and are not re-run; running sidecars are restored running and
-	// remain restartable init containers.
-	// +optional
-	// +listType=map
-	// +listMapKey=name
-	CheckpointedInitContainers []PodCheckpointContainerStatus `json:"checkpointedInitContainers,omitempty"`
 
 	// conditions represents the latest observations of the checkpoint's state.
 	// The "Ready" condition is the single source of truth for checkpoint
@@ -806,8 +804,6 @@ type PodCheckpointStatus struct {
 type PodCheckpointContainerStatus struct {
 	// name of the checkpointed container.
 	Name string `json:"name"`
-	// image the container was running at checkpoint time.
-	Image string `json:"image"`
 }
 
 // CheckpointSource describes where a checkpoint's data is stored. It is a
@@ -916,21 +912,20 @@ status:
         app: my-app
       annotations: {}
     spec:
+      initContainers:
+      # Completed non-restartable init container: not captured, image unchanged.
+      - name: setup
+        image: my-app-init:latest
       containers:
+      # Checkpointed container: image recorded as the resolved digest reference.
       - name: main
-        image: my-app:latest
+        image: registry.example.com/my-app@sha256:9b2d4f6a8c0e1f3a5b7d9c1e3f5a7b9d0c2e4f6a8b0d2c4e6f8a0b2d4c6e8f0a
       # ...remaining scheduling constraints, resource requirements, and
       # security contexts captured from the source Pod.
-  # Regular (non-init) containers captured in the checkpoint (visibility
-  # convenience; the full set is in checkpointedPodTemplate).
+  # Containers captured in the checkpoint: regular containers and running
+  # sidecars (visibility convenience; the full set is in checkpointedPodTemplate).
   checkpointedContainers:
   - name: main
-    image: my-app:latest
-  # Init containers captured in the checkpoint, kept separate to mirror PodStatus:
-  # completed non-restartable init containers and any running sidecars.
-  checkpointedInitContainers:
-  - name: setup
-    image: my-app-init:latest
   # The "Ready" condition is the single source of truth for checkpoint state.
   # Its status/reason/message carry the checkpoint progress detail:
   #   pending      -> status: "False", reason: Pending
@@ -1154,7 +1149,9 @@ status:
     spec:
       containers:
       - name: app
-        image: registry.example.com/myapp:v1.4.0
+        # Resolved digest of the image the container ran (the source Pod used
+        # registry.example.com/myapp:v1.4.0).
+        image: registry.example.com/myapp@sha256:4e6a8c0b2d4f6e8a0c2b4d6f8e0a2c4b6d8f0e2a4c6b8d0f2e4a6c8b0d2f4e6a
       # ...scheduling constraints, resources, and security contexts as captured.
   conditions:
   - type: Ready
@@ -1182,7 +1179,8 @@ spec:
   # node and the scheduler binds the Pod there.
   containers:
   - name: app
-    image: registry.example.com/myapp:v1.4.0
+    # Must be the digest reference recorded in the checkpoint, not the tag.
+    image: registry.example.com/myapp@sha256:4e6a8c0b2d4f6e8a0c2b4d6f8e0a2c4b6d8f0e2a4c6b8d0f2e4a6c8b0d2f4e6a
     # ...rest of spec must match the spec inside myapp-snapshot-01
 ```
 
@@ -1412,14 +1410,20 @@ the kubelet drops fields that are node-local or specific to the source cluster b
 `spec.nodeName`, `nodeSelector` and affinity entries that name specific nodes, and the Pod
 `status`, `uid`, `resourceVersion`, and `managedFields`. The equality check on restore skips these
 same fields, plus `spec.restoreFrom`, which the restore Pod sets but the source Pod never had.
-Container statuses, including containers that have already finished, are recorded separately in
-the runtime archive and the `status.checkpointedContainers` and `status.checkpointedInitContainers`
-lists.
+The containers captured in the checkpoint are listed in `status.checkpointedContainers`.
+
+The images of the checkpointed containers (regular containers and running sidecars) are recorded
+in the template as the resolved image digest references reported by the runtime, not as the tags
+in the source Pod. The checkpoint was taken from the exact image the container was running, and a
+tag can point at a different image by the time the Pod is restored. A restore Pod must therefore
+use the digest references from `status.checkpointedPodTemplate`; the equality check rejects the
+original tags. Images of completed non-restartable init containers are left as they were, because
+those containers are not restored.
 
 Checkpointing requires all non-restartable init containers to have completed; restartable init
-containers (sidecars) may still be running. The completed init containers and the running sidecars
-are recorded in `status.checkpointedInitContainers` (kept separate from regular containers, mirroring
-`PodStatus`). On restore, the running sidecars are restored running and remain restartable init
+containers (sidecars) may still be running. The running sidecars are captured and listed in
+`status.checkpointedContainers` together with the regular containers (container names are unique
+within a Pod); the completed init containers are not captured. On restore, the running sidecars are restored running and remain restartable init
 containers, while the completed init containers are reflected as completed from the captured state
 and are not re-run. Checkpointing a Pod whose non-restartable init containers are still running is
 out of scope for the initial implementation.
