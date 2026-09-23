@@ -147,13 +147,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+This feature adds no new REST API endpoints, so the GA endpoint conformance requirements do
+not apply. The e2e test depends on a credential provider plugin binary and a kubelet
+credential provider configuration file existing on the node, neither of which a conformance
+test can assume, so the test is not promoted to conformance.
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -731,7 +736,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 There is an existing e2e test for kubelet credential providers using gcp credential provider.
 
-- test/e2e_node/image_credential_provider.go: https://testgrid.k8s.io/sig-node-kubelet#kubelet-credential-provider
+- [test/e2e/common/node/image_credential_provider.go](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/image_credential_provider.go) — `ImageCredentialProvider should be able to create pod with image credentials fetched from external credential provider`
+- [testgrid](https://testgrid.k8s.io/sig-node-kubelet#kubelet-credential-provider)
+- [triage history](https://storage.googleapis.com/k8s-triage/index.html?test=ImageCredentialProvider)
 
 As part of alpha implementation, the [e2e test has been updated](https://github.com/kubernetes/kubernetes/commit/2090a01e0a495301432276216bbf9af102fc431c) to cover the new credential provider configuration and the new behavior of the kubelet when the `TokenAttributes` field is set.
 
@@ -827,6 +834,14 @@ in back-to-back releases.
 
 - Gather feedback
   - Cloudsmith has developed a [new credential provider plugin](https://github.com/cloudsmith-io/cloudsmith-kubernetes-credential-provider) that authenticates with cloudsmith registries using service account tokens. [Blog](https://github.com/cloudsmith-io/cloudsmith-kubernetes-credential-provider), [Demo video](https://github.com/cloudsmith-io/cloudsmith-kubernetes-credential-provider), [Feedback on slack](https://kubernetes.slack.com/archives/C0EN96KUY/p1750373833832959).
+- No major outstanding bugs reported during beta.
+- `KubeletServiceAccountTokenForCredentialProviders` is locked to enabled in the kubelet and
+  `ServiceAccountNodeAudienceRestriction` is locked to enabled in KAS. Both gates remain
+  present but non-functional for at least 2 releases before removal.
+- e2e tests for the service account token flow have been running without non-infra related
+  flakes, and are linked in the test plan above.
+- `cacheType` is a required field for plugins that opt into service account tokens, so the
+  caching scope (per-token or per-service-account) is always explicit.
 
 ### Upgrade / Downgrade Strategy
 
@@ -843,6 +858,15 @@ enhancement:
 -->
 
 This feature is feature gated so explicit opt-in is required on upgrade and explicit opt-out is required on downgrade.
+
+As of v1.38 both `KubeletServiceAccountTokenForCredentialProviders` and
+`ServiceAccountNodeAudienceRestriction` are locked to enabled and can no longer be disabled.
+Opting into service account tokens for a given provider is still explicit, because it requires
+setting `tokenAttributes` in the kubelet credential provider configuration. A cluster that
+does not set `tokenAttributes` on any provider sees no behavior change.
+
+Downgrading to a release where the gates are still unlocked keeps working, provided the
+allowed audiences remain granted in KAS; see the version skew notes below.
 
 ### Version Skew Strategy
 
@@ -933,6 +957,11 @@ The KAS feature gate doesn't need to be enabled for the kubelet feature to work.
 
 If the KAS feature gate is not enabled, there will be no validation of the audience requested by the kubelet, and the kubelet will be able to request tokens for any audience. This is not recommended.
 
+As of v1.38 both gates are GA and locked to enabled, so the feature can no longer be disabled
+via feature gates. The gates remain present but non-functional for at least 2 releases before
+being removed. Disabling the behavior for a given provider is still possible by removing
+`tokenAttributes` from that provider's entry in the kubelet credential provider configuration.
+
 ###### Does enabling the feature change any default behavior?
 
 <!--
@@ -971,6 +1000,12 @@ These steps need to be performed on all nodes in the cluster.
 After restarting the kubelet on all nodes, remove the allowed audiences for which the kubelet is allowed to generate service account tokens for image pulls in KAS by
 removing the previous `ClusterRole` or `Role` with the `request-serviceaccounts-token-audience` verb, along with the corresponding `ClusterRoleBinding` or `RoleBinding` that binds the role to the kubelet.
 
+As of v1.38 step 2 is no longer available, because the gates are locked to enabled. Steps 1 and
+3 are still sufficient to stop the kubelet from using service account tokens for image pulls,
+since a provider only participates when `tokenAttributes` is set on it. This is why
+`disable-supported` remains `true`: the opt-in for this feature is the provider configuration
+rather than the feature gate.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 No impact. The credential provider will continue to use the configuration set in the kubelet credential provider configuration.
@@ -990,7 +1025,13 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Feature enablement/disablement unit/integration tests will be added.
+Feature enablement/disablement is covered by unit tests in the kubelet credential provider
+packages, which exercise the provider with the feature gate enabled and disabled and with
+`tokenAttributes` set and unset. Config validation tests cover rejection of `tokenAttributes`
+when the feature is not enabled.
+
+Once the gates are locked to enabled at GA, the disablement paths are no longer reachable and
+the corresponding tests are removed along with the gates.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1030,7 +1071,16 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-No, upgrade->downgrade->upgrade were not tested. Manual validation will be done prior to promoting this feature to beta in v1.34.
+Yes. Manual validation of the upgrade->downgrade->upgrade path was performed prior to beta in
+v1.34, and the feature has been enabled by default since then without upgrade or rollback
+issues being reported.
+
+The order of operations matters on downgrade: `ServiceAccountNodeAudienceRestriction` has been
+beta and enabled by default in KAS since v1.33, one release ahead of the kubelet feature going
+beta, precisely so that a cluster downgrading the kubelet does not land on a KAS that rejects
+the audiences the kubelet was configured to request. Nodes must have `tokenAttributes` removed
+from the credential provider configuration before the kubelet is downgraded to a release
+without this feature.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1127,7 +1177,15 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-TBA.
+No additional metrics are planned. The existing
+`kubelet_credential_provider_plugin_errors` and
+`kubelet_credential_provider_plugin_duration` metrics are labelled by plugin name, so a plugin
+configured to use service account tokens can be isolated from one that is not, and
+`kubelet_credential_provider_config_info` exposes the configuration hash for drift detection.
+
+A metric for credential cache hit rate was considered and not added: the cache is in-memory
+and per-node, the cardinality would scale with service accounts or tokens, and a low hit rate
+is already observable as elevated plugin call duration and count.
 
 ### Dependencies
 
@@ -1300,6 +1358,37 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Kubelet requests a token for an audience that is not allowed in KAS
+  - Detection: image pulls fail for images handled by the plugin; kubelet logs show the
+    TokenRequest being rejected by KAS.
+  - Mitigations: grant the audience via a `ClusterRole` or `Role` with the
+    `request-serviceaccounts-token-audience` verb bound to the kubelet, or remove
+    `tokenAttributes` from the provider configuration.
+  - Diagnostics: kubelet logs at default verbosity show the token request error; KAS audit
+    logs show the rejected TokenRequest.
+  - Testing: covered by `TestNodeRestrictionServiceAccountAudience` in
+    `test/integration/auth/node_test.go`.
+
+- Credential provider plugin fails to exchange the service account token for registry credentials
+  - Detection: `kubelet_credential_provider_plugin_errors` increases for that plugin and image
+    pulls fail.
+  - Mitigations: check the plugin's own dependency (for example the cloud provider STS
+    endpoint); fall back to a provider configuration that does not use service account tokens.
+  - Diagnostics: kubelet logs include the plugin stderr output.
+  - Testing: plugin error paths are covered by unit tests in the kubelet credential provider
+    package.
+
+- Plugin declares `cacheType: ServiceAccount` but returns pod-specific credentials
+  - Detection: pods using the same service account intermittently fail to pull images, or pull
+    images they should not have access to.
+  - Mitigations: set `cacheType: Token` for that provider and restart the kubelet to drop the
+    in-memory cache.
+  - Diagnostics: compare the credentials the plugin returns for two pods that share a service
+    account.
+  - Testing: cache key selection per `cacheType` is covered by unit tests. The kubelet cannot
+    detect a plugin misdeclaring its own caching scope, which is why the field is required
+    rather than defaulted.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 - check logs of kubelet
@@ -1320,6 +1409,7 @@ Major milestones might include:
 
 1.33: Alpha release
 1.34: Beta release
+1.38: GA release
 
 ## Drawbacks
 
