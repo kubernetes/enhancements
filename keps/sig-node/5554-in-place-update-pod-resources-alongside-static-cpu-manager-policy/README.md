@@ -1347,6 +1347,13 @@ Major milestones might include:
 * when the KEP was retired or superseded
 -->
 
+- 2024-03-05: Initial discussion in [sig-node weekly meeting](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.vkfugk6pprmu#heading=h.59p60wpwoqld)
+- 2024-11-08: [Introduction of KEPs feature gate to unblock development in Kubernetes v1.32](https://github.com/kubernetes/kubernetes/pull/128287) signaling SIG acceptance.
+- 2025-09-21: [Enhancement issue created](https://github.com/kubernetes/enhancements/issues/5554)
+- 2025-10-07: Proposal discussion in [sig-node weekly meeting](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.0#heading=h.kilnl8l3uhq)
+- 2025-01-20: Initial [KEP PR created](https://github.com/kubernetes/kubernetes/pull/129719)
+- 2026-02-16: [SIG agreement on a proposed design](https://github.com/kubernetes/enhancements/pull/5555)
+- 2026-07-16: [Alpha implementation PR created](https://github.com/kubernetes/kubernetes/pull/140629) targeting v1.38
 
 ## Drawbacks
 
