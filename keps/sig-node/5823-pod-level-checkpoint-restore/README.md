@@ -1471,6 +1471,11 @@ filesystem writable layers, and the checkpoint images needed to recreate the pro
 resume their execution. The exact contents and format of this archive are determined by
 the container runtime and are opaque to Kubernetes.
 
+This KEP does not define the file layout of checkpoints because it differs between implementations
+(for example CRIU-based runtimes, gVisor, and Kata Containers). Each runtime that implements
+`CheckpointPod` documents the files it writes under the checkpoint directory (per-container data,
+Pod-level metadata, and the CRIU or gVisor images).
+
 #### Shared Pod Resources
 
 This KEP focuses on providing the fundamental building blocks for capturing and restoring the execution
