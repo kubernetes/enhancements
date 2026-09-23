@@ -604,9 +604,12 @@ The kubelet's checkpoint handling (the canonical execution flow referenced elsew
    `status.checkpointedPodTemplate` for the spec-equality check used on restore (see
    [Restore Mechanism](#restore-mechanism)). The kubelet reads the live Pod object directly.
 7. Suspends the Pod's probes, resolves the CRI sandbox ID, and calls the `CheckpointPod` CRI API
-   in the background, writing the archive under the kubelet's checkpoint root (for example
-   `/var/lib/kubelet/pod-checkpoints/checkpoint-{podName}_{namespace}-{timestamp}`). It records the
-   location in `status.checkpointLocation` as the node-local source (`type: NodeLocal` with
+   in the background, writing the archive into a new directory under the kubelet's checkpoint
+   root named after the `PodCheckpoint` UID (for example
+   `/var/lib/kubelet/pod-checkpoints/checkpoint-{podCheckpointUID}`). The kubelet creates the
+   directory exclusively and fails the checkpoint if it already exists, so two checkpoints can
+   never write to the same directory, and names do not depend on clocks or on Pod names. It records
+   the location in `status.checkpointLocation` as the node-local source (`type: NodeLocal` with
    `nodeLocal.path` relative to that root), not as an absolute host path.
 8. On completion, writes the result to the `PodCheckpoint` status (see
    [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)): `Ready=True`/`CheckpointCompleted`
@@ -860,6 +863,7 @@ apiVersion: node.k8s.io/v1alpha1
 kind: PodCheckpoint
 metadata:
   name: my-checkpoint
+  uid: 0f6c2a8e-5b1d-4e7a-9c3f-8d2b4a6e1f05
 spec:
   sourcePod:
     # Name of the running Pod to checkpoint.
@@ -885,7 +889,7 @@ status:
   checkpointLocation:
     type: NodeLocal
     nodeLocal:
-      path: checkpoint-my-app_default-2026-03-10T20:38:11Z
+      path: checkpoint-0f6c2a8e-5b1d-4e7a-9c3f-8d2b4a6e1f05
   # Time the checkpoint completed (archive written / became Ready), set by the
   # kubelet. Used for freshness and retention/GC; distinct from
   # metadata.creationTimestamp (when the PodCheckpoint object was created).
@@ -1128,12 +1132,13 @@ kind: PodCheckpoint
 metadata:
   name: myapp-snapshot-01
   namespace: team-a
+  uid: 3c9e1f7a-2d4b-4a6c-8e0f-5b7d9a1c3e42
 status:
   nodeName: node-1
   checkpointLocation:
     type: NodeLocal
     nodeLocal:
-      path: checkpoint-myapp_team-a-2026-05-28T10:14:22Z
+      path: checkpoint-3c9e1f7a-2d4b-4a6c-8e0f-5b7d9a1c3e42
   checkpointedPodTemplate:
     metadata:
       labels:
@@ -2361,11 +2366,6 @@ details). For now, we leave it here.
     that supports normal Pods supports restore as well.
   - Diagnostics: `kubectl describe pod` on the restore Pod and CNI plugin logs.
   - Testing: an e2e test against at least one CNI implementation.
-- Clock skew on checkpoint filename timestamp.
-  - Detection: filename collisions or overwritten checkpoints.
-  - Mitigation: include a monotonically increasing suffix alongside the timestamp.
-  - Diagnostics: kubelet logs the full generated path.
-  - Testing: a unit test on path generation.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
