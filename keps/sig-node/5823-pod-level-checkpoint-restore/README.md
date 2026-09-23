@@ -464,7 +464,9 @@ message CheckpointPodResponse {}
 
 There is no timeout field: the kubelet bounds the checkpoint with the gRPC call deadline, derived
 from `PodCheckpoint.spec.timeoutSeconds` and capped by the kubelet's configured checkpoint timeout
-(see [PodCheckpoint](#podcheckpoint)). Because the runtime keeps the containers paused for the
+(`podCheckpointTimeout` in the kubelet configuration, default 15 seconds; see
+[PodCheckpoint](#podcheckpoint)). The cluster administrator sets the ceiling per node, so users
+cannot keep a Pod frozen for longer than the node allows. Because the runtime keeps the containers paused for the
 whole capture, the deadline also bounds how long the Pod can stay frozen. When the deadline fires,
 the runtime's context is cancelled; the runtime must abort, resume the containers, remove any
 partially created checkpoint artifacts, and return an error. The kubelet handles that error by
@@ -686,8 +688,13 @@ type PodCheckpointSpec struct {
 	// +optional
 	SourcePod *PodReference `json:"sourcePod,omitempty"`
 
-	// timeoutSeconds is the maximum time the checkpoint operation may take.
-	// A nil value or 0 means the container runtime default is used.
+	// timeoutSeconds is the maximum number of seconds the checkpoint operation
+	// may take, between 1 and 3600. If unset, the kubelet's configured
+	// checkpoint timeout (podCheckpointTimeout) is used; values larger than
+	// that configured ceiling are clamped to it. The kubelet enforces the
+	// effective timeout with the CRI call deadline, which bounds how long the
+	// Pod can stay frozen. Immutable, because the operation's deadline is fixed
+	// when it starts.
 	// +optional
 	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
 }
@@ -872,8 +879,9 @@ spec:
     # (reason SourcePodReplaced) unless the live Pod named above has this UID,
     # so a recreated same-name Pod is never checkpointed by mistake.
     uid: 7b2c1e4a-0e3a-4f1b-9c2d-2a5f6e8d1234
-  # Optional timeout in seconds (0 = use container runtime default).
-  timeoutSeconds: 30
+  # Optional timeout in seconds (1-3600). If unset, the kubelet's
+  # podCheckpointTimeout is used; larger values are clamped to it.
+  timeoutSeconds: 10
   # Note: alpha always leaves the source Pod running. A user-facing
   # postCheckpointState field is not part of the API yet; it arrives with the
   # "Stopped" behavior in the migration follow-up.
@@ -1702,7 +1710,8 @@ Unit tests must cover at least:
 - Pod phase precondition (checkpoint rejected unless the Pod is `Running` with all init
   containers completed).
 - Timeout enforcement (the kubelet sets the CRI call's gRPC deadline from
-  `spec.timeoutSeconds`, and an expiry is recorded on the `PodCheckpoint` as `CheckpointFailed`).
+  `spec.timeoutSeconds`, uses `podCheckpointTimeout` when it is unset and clamps larger values to
+  it, and an expiry is recorded on the `PodCheckpoint` as `CheckpointFailed`).
 - Feature gate disabled: the kubelet does not watch or act on `PodCheckpoint` objects (no
   checkpoint is started).
 - Cgroup freeze and unfreeze sequence ordering and error recovery.
@@ -2304,8 +2313,9 @@ details). For now, we leave it here.
 - Checkpoint timeout.
   - Detection: `kubelet_pod_checkpoint_operations_total{result="failure"}` increases; the
     `Ready` condition is `False` with reason `CheckpointFailed` (message notes the timeout).
-  - Mitigation: raise `PodCheckpoint.spec.timeoutSeconds`; reduce the workload in-memory
-    footprint; checkpoint fewer Pods concurrently.
+  - Mitigation: raise `PodCheckpoint.spec.timeoutSeconds`, and the kubelet's
+    `podCheckpointTimeout` if the effective timeout is already at that ceiling (larger values are
+    clamped to it); reduce the workload in-memory footprint; checkpoint fewer Pods concurrently.
   - Diagnostics: kubelet logs `checkpoint timed out after %d seconds` at V(2); CRIU logs in
     the runtime.
   - Testing: a unit test on timeout propagation and an e2e test with an artificially short
