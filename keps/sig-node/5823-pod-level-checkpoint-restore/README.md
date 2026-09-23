@@ -263,7 +263,7 @@ The implementation consists of three layers:
 
 3. **API objects** in the `node.k8s.io` API group that provide declarative management of
    checkpoint operations. `PodCheckpoint` is a namespace-scoped standalone object. The owning
-   kubelet finds the object by watching `PodCheckpoint`s and matching `spec.sourcePodName` against
+   kubelet finds the object by watching `PodCheckpoint`s and matching `spec.sourcePod.name` against
    the Pods it runs, so no control-plane-to-kubelet call is needed. (Node-scoped field-selector
    routing is a follow-up; see
    [Follow-up: node-scoped routing](#scalability-follow-up-post-alpha-node-scoped-watch).)
@@ -530,13 +530,13 @@ gate.
 
 There is no imperative checkpoint HTTP endpoint. The kubelet **watches `PodCheckpoint` objects**
 and executes the checkpoint when it observes a non-terminal object whose source Pod
-(`spec.sourcePodName`) it manages. This mirrors how restore is handled and keeps any privileged
+(`spec.sourcePod.name`) it manages. This mirrors how restore is handled and keeps any privileged
 trigger off the user-facing path. (For alpha the kubelet watches cluster-wide and filters
 locally by Pod ownership; node-scoped field-selector routing is a follow-up, see
 [Follow-up: node-scoped routing](#scalability-follow-up-post-alpha-node-scoped-watch).)
 
 The kubelet's checkpoint handling (the canonical execution flow referenced elsewhere in this KEP):
-1. Selects `PodCheckpoint` objects whose `spec.sourcePodName` resolves to a Pod present on this
+1. Selects `PodCheckpoint` objects whose `spec.sourcePod.name` resolves to a Pod present on this
    node and whose object is not in a terminal state (`Ready=True`, or `Ready=False` with reason
    `CheckpointFailed`/`SourcePodReplaced`).
 2. Acquires a per-Pod in-flight guard so a re-observed or duplicate object does not start a second
@@ -545,7 +545,7 @@ The kubelet's checkpoint handling (the canonical execution flow referenced elsew
    regular containers and restartable sidecars running). This execution-time gate is the kubelet's
    authority and is separate from the API-server RBAC gate on the object (see
    [Security Implications](#security-implications)).
-4. Pins the source instance by comparing the live Pod UID with `spec.sourcePodUID`. If they differ
+4. Pins the source instance by comparing the live Pod UID with `spec.sourcePod.uid`. If they differ
    the original instance was replaced; the kubelet fails the checkpoint with `Ready=False`, reason
    `SourcePodReplaced`, rather than checkpointing the new instance, and records the resolved UID in
    `status.sourcePodUID`.
@@ -593,7 +593,7 @@ checkpoint, and records the result on the status (see
 [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)).
 
 `PodCheckpoint` supports two field selectors so checkpoints can be listed by the objects they
-relate to: `spec.sourcePodName` (all checkpoints of a given source Pod) and `status.nodeName` (all
+relate to: `spec.sourcePod.name` (all checkpoints of a given source Pod) and `status.nodeName` (all
 checkpoints whose data resides on a given node). These are registered as selectable fields on the
 REST storage, the same way `Pod` exposes `spec.nodeName`/`status.phase`. Adding a selectable field
 is backward-compatible, so further selectors can be added later without an incompatible change.
@@ -627,33 +627,40 @@ type PodCheckpointList struct {
 
 // PodCheckpointSpec describes which Pod to checkpoint and how.
 type PodCheckpointSpec struct {
-	// sourcePodName is the name of the running Pod to checkpoint. The Pod must
-	// exist in the same namespace as this PodCheckpoint. Immutable. Required in
-	// alpha (validation rejects an empty value); it is marked optional in the
-	// schema so a future selector-based or controller-populated mode (for example
-	// checkpointing a ReplicaSet replica without naming one) can relax it without
-	// an incompatible API change.
+	// sourcePod identifies the running Pod to checkpoint. The Pod must exist in
+	// the same namespace as this PodCheckpoint. Required in alpha (validation
+	// rejects an unset reference); it is marked optional in the schema so a
+	// future selector-based or controller-populated mode (for example
+	// checkpointing a ReplicaSet replica without naming one) can relax it
+	// without an incompatible API change. Immutable.
 	// +optional
-	SourcePodName string `json:"sourcePodName,omitempty"`
-
-	// sourcePodUID, if set, pins the checkpoint to a specific Pod instance: the
-	// kubelet checkpoints the Pod only if the live Pod named sourcePodName has
-	// this exact UID, and fails the checkpoint otherwise (reason
-	// SourcePodReplaced). Because a Pod name can be reused (the original Pod may
-	// be deleted and a new Pod created with the same name), a name alone does not
-	// identify an instance. Callers that need instance pinning set this field when
-	// creating the PodCheckpoint, so the instance is fixed across the window
-	// between creation and the kubelet acting on it; without it a same-name
-	// replacement could be checkpointed by mistake. A future enhancement may add
-	// admission-time defaulting to populate it automatically from the named Pod.
-	// Immutable.
-	// +optional
-	SourcePodUID *types.UID `json:"sourcePodUID,omitempty"`
+	SourcePod *PodReference `json:"sourcePod,omitempty"`
 
 	// timeoutSeconds is the maximum time the checkpoint operation may take.
 	// A nil value or 0 means the container runtime default is used.
 	// +optional
 	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
+}
+
+// PodReference identifies a Pod in the same namespace by name and, optionally,
+// pins it to a single Pod instance by UID.
+// +structType=atomic
+type PodReference struct {
+	// name is the name of the Pod.
+	// +required
+	Name string `json:"name"`
+
+	// uid, if set, pins the reference to a specific Pod instance: the kubelet
+	// checkpoints the Pod only if the live Pod named name has this exact UID,
+	// and fails the checkpoint otherwise (reason SourcePodReplaced). Because a
+	// Pod name can be reused (the original Pod may be deleted and a new Pod
+	// created with the same name), a name alone does not identify an instance.
+	// Callers that need instance pinning set this field when creating the
+	// PodCheckpoint, so the instance is fixed across the window between
+	// creation and the kubelet acting on it. A future enhancement may add
+	// admission-time defaulting to populate it automatically from the named Pod.
+	// +optional
+	UID *types.UID `json:"uid,omitempty"`
 }
 
 // Note: alpha leaves the source Pod running after a checkpoint, so the kubelet
@@ -680,7 +687,7 @@ type PodCheckpointStatus struct {
 	// up the object for visibility and so that a later UID change for the same
 	// name is detected and fails the checkpoint. This guards only changes observed
 	// once the kubelet acts; to also cover the window before it picks up the
-	// object, set spec.sourcePodUID at creation time.
+	// object, set spec.sourcePod.uid at creation time.
 	// +optional
 	SourcePodUID *types.UID `json:"sourcePodUID,omitempty"`
 
@@ -790,7 +797,7 @@ const PodCheckpointReady = "Ready"
 //   CheckpointInProgress   -> status: "False"
 //   CheckpointCompleted    -> status: "True"
 //   CheckpointFailed       -> status: "False" (message carries detail)
-//   SourcePodReplaced      -> status: "False" (live Pod's UID != spec.sourcePodUID)
+//   SourcePodReplaced      -> status: "False" (live Pod's UID != spec.sourcePod.uid)
 const (
 	PodCheckpointReasonPending           = "Pending"
 	PodCheckpointReasonInProgress        = "CheckpointInProgress"
@@ -808,12 +815,13 @@ kind: PodCheckpoint
 metadata:
   name: my-checkpoint
 spec:
-  # Name of the running Pod to checkpoint.
-  sourcePodName: my-app
-  # Optional: pin to a specific Pod instance. If set, the checkpoint fails
-  # (reason SourcePodReplaced) unless the live Pod named above has this UID,
-  # so a recreated same-name Pod is never checkpointed by mistake.
-  sourcePodUID: 7b2c1e4a-0e3a-4f1b-9c2d-2a5f6e8d1234
+  sourcePod:
+    # Name of the running Pod to checkpoint.
+    name: my-app
+    # Optional: pin to a specific Pod instance. If set, the checkpoint fails
+    # (reason SourcePodReplaced) unless the live Pod named above has this UID,
+    # so a recreated same-name Pod is never checkpointed by mistake.
+    uid: 7b2c1e4a-0e3a-4f1b-9c2d-2a5f6e8d1234
   # Optional timeout in seconds (0 = use container runtime default).
   timeoutSeconds: 30
   # Note: alpha always leaves the source Pod running. A user-facing
@@ -901,9 +909,9 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     Note over User,CRI: Checkpoint
-    User->>API: create PodCheckpoint (sourcePodName, optional sourcePodUID)
-    API-->>Kubelet: watch event (kubelet matches sourcePodName to a local Pod)
-    Kubelet->>Kubelet: validate readiness, pin sourcePodUID,<br/>suspend probes, capture checkpointedPodTemplate
+    User->>API: create PodCheckpoint (sourcePod.name, optional sourcePod.uid)
+    API-->>Kubelet: watch event (kubelet matches sourcePod.name to a local Pod)
+    Kubelet->>Kubelet: validate readiness, pin sourcePod.uid,<br/>suspend probes, capture checkpointedPodTemplate
     Kubelet->>CRI: CheckpointPod(sandboxID, RUNNING)
     CRI-->>Kubelet: archive written
     Kubelet->>API: status Ready=True/CheckpointCompleted, nodeName=self<br/>(NodeRestriction: source Pod must be on this node)
@@ -923,8 +931,8 @@ sequenceDiagram
 ```
 
 Object routing is by Pod ownership. Each kubelet watches `PodCheckpoint` objects and acts only on
-those whose `spec.sourcePodName` resolves to a Pod it currently runs; objects for Pods on other
-nodes are ignored. The creator may set `spec.sourcePodUID` to pin a specific instance (see below).
+those whose `spec.sourcePod.name` resolves to a Pod it currently runs; objects for Pods on other
+nodes are ignored. The creator may set `spec.sourcePod.uid` to pin a specific instance (see below).
 For alpha the kubelet watches cluster-wide and filters locally — `PodCheckpoint` objects are
 low-volume, short-lived request objects, so this is acceptable; narrowing the watch with a
 node-scoped field selector is a non-breaking follow-up (see
@@ -959,7 +967,7 @@ is decoupled from any client: there is no synchronous trigger to hold open.
   `PodCheckpoint` status itself. The kubelet's `system:node` role grants `update`/`patch` on
   `podcheckpoints/status` (the Node authorizer permits the write via this rule), and the
   `NodeRestriction` admission plugin scopes it: it allows the write only when the checkpoint's
-  source Pod (`spec.sourcePodName`) is bound to the requesting node, reusing the same node↔Pod
+  source Pod (`spec.sourcePod.name`) is bound to the requesting node, reusing the same node↔Pod
   relationship that already limits a kubelet to writing its own Pods' status. A kubelet therefore
   cannot finalize a checkpoint for a Pod it does not run. See [Privilege model](#privilege-model).
 
@@ -988,8 +996,8 @@ kubelet's watch to its own node. It is purely additive and introduces no breakin
 - Add an optional, control-plane-set `spec.nodeName` to `PodCheckpoint` (immutable; this mirrors
   how kubelets already watch Pods by `spec.nodeName`). Objects created before the field exists
   simply lack it.
-- A mutating admission plugin resolves `spec.sourcePodName` at create, sets `spec.nodeName` from
-  the Pod's node (and `spec.sourcePodUID` from its UID), and rejects the create if the Pod is
+- A mutating admission plugin resolves `spec.sourcePod.name` at create, sets `spec.nodeName` from
+  the Pod's node (and `spec.sourcePod.uid` from its UID), and rejects the create if the Pod is
   missing or unscheduled.
 - Register `spec.nodeName` as a selectable field so each kubelet can watch with
   `spec.nodeName=<its node>`. The kubelet keeps the local Pod-ownership check as the source of
@@ -1490,7 +1498,7 @@ is a different security model. Mitigations:
   This write is tightly scoped: the `system:node` role grants `update`/`patch` on
   `podcheckpoints/status` only (this is what the Node authorizer evaluates), and the
   `NodeRestriction` admission plugin narrows it by allowing the write only when the checkpoint's
-  source Pod (`spec.sourcePodName`) is bound to the requesting node, reusing the same node↔Pod
+  source Pod (`spec.sourcePod.name`) is bound to the requesting node, reusing the same node↔Pod
   relationship that already limits a kubelet to writing its own Pods' status. The kubelet cannot create,
   delete, or modify the `spec` of a `PodCheckpoint`, and cannot finalize a checkpoint for a Pod it
   does not run. (This was reviewed with SIG Auth alongside the `restore` verb.)
@@ -1499,7 +1507,7 @@ is a different security model. Mitigations:
   their status, but neither path is reachable by end users.
 - Pre-defined namespaced ClusterRoles (viewer, editor, admin) are provided so administrators
   can bind checkpoint and restore access per namespace with `RoleBinding`.
-- `sourcePodName` and `sourcePodUID` on `PodCheckpoint` are immutable after creation,
+- `spec.sourcePod` (name and UID) on `PodCheckpoint` is immutable after creation,
   preventing post-creation namespace-escape attempts and ensuring the pinned instance cannot
   be swapped after the object is admitted. `spec.restoreFrom` on Pod is *not* immutable:
   sequential re-restores from a different `PodCheckpoint` are a legitimate use case (rollback,
@@ -1720,7 +1728,7 @@ Beta adds:
   referenced `PodCheckpoint`, injects a node-affinity constraint pinning the Pod to the
   checkpoint's node (so it is scheduled there rather than binding `spec.nodeName` directly), and
   authoritatively validates Pod-spec equality against `status.checkpointedPodTemplate`.
-- Field selectors `spec.sourcePodName` and `status.nodeName` registered on the `PodCheckpoint`
+- Field selectors `spec.sourcePod.name` and `status.nodeName` registered on the `PodCheckpoint`
   REST storage, so checkpoints can be listed by source Pod or by node.
 - Pod-snapshot-controller implemented.
 - End-to-end warm start workflow: checkpoint a running Pod, create a new Pod from that
@@ -2262,7 +2270,7 @@ details). For now, we leave it here.
 - Checkpoint object is never picked up by a kubelet.
   - Detection: the `PodCheckpoint` stays with no `Ready` condition (or stuck at
     `CheckpointInProgress`) indefinitely, with no terminal status written.
-  - Mitigation: confirm the source Pod (`spec.sourcePodName`) is bound to a node, that node's
+  - Mitigation: confirm the source Pod (`spec.sourcePod.name`) is bound to a node, that node's
     kubelet has the `PodLevelCheckpointRestore` gate enabled, and the kubelet is watching
     `PodCheckpoint` objects (it requires `list`/`watch` on `podcheckpoints`).
   - Diagnostics: the kubelet logs `Starting PodCheckpoint watch` at startup and a per-object
@@ -2325,7 +2333,7 @@ operator should:
 3. If the kubelet is the source of failure, capture kubelet logs at V(4) and the runtime
    CRIU logs for the affected container.
 4. If an object is not being picked up at all (no `Ready` condition and no
-   `CheckpointInProgress`), confirm the source Pod (`spec.sourcePodName`) is bound to a node, that
+   `CheckpointInProgress`), confirm the source Pod (`spec.sourcePod.name`) is bound to a node, that
    node's kubelet has the `PodLevelCheckpointRestore` gate enabled, and that kubelet is watching
    `PodCheckpoint` objects. `status.nodeName` is written by the kubelet only once it picks the
    object up, so it is expected to be empty here and is not a useful signal for this case.
@@ -2347,14 +2355,6 @@ shape described above.
   deep runtime cooperation (freezing containers, driving CRIU through the OCI runtime, access to
   sandbox and container state), and a separate service means the kubelet has to discover and dial a
   second endpoint with its own version negotiation. To be decided during implementation.
-
-- **Should the source-Pod identifiers be grouped into a `spec.sourcePod` reference object (a
-  `SourcePodReference`) instead of the flat `spec.sourcePodName` and `spec.sourcePodUID` fields?**
-  The WG settled that the source-Pod name is sufficient for the initial API (with the optional
-  `sourcePodUID` for instance pinning); grouping the two into a reference object was raised, and it
-  could also host a future selector-based source (checkpointing a replica without naming a specific
-  Pod). Deferred to API review. Moving flat fields into a struct is an incompatible change, so it
-  would be settled before the API stabilizes.
 
 - **When the allocated Pod has a pending desired change (e.g. an in-place resize in progress),
   should the checkpoint also record that intent and reapply it on restore?** The checkpoint
