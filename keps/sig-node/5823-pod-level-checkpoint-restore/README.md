@@ -1108,9 +1108,10 @@ at admission. The kubelet runs the equality check again before the CRI restore a
    mismatched Pod at creation, with the offending field reported to the user, instead of admitting a
    Pod the node would only reject later.
 
-   Admission can compare only once the checkpoint is `Ready` and its template is populated, which
-   is the normal case. If a Pod is admitted against a checkpoint that is not `Ready` yet, the
-   kubelet runs the equality check when it acts (see below).
+   Admission rejects the Pod with `Forbidden` if the referenced `PodCheckpoint` does not exist or
+   is not `Ready`: until then there is no `status.nodeName` to build the node affinity from and no
+   template to compare against. The `restore` authorization is checked first, so the error does not
+   tell a user who may not restore from the checkpoint whether it exists.
 2. **Kubelet, before the CRI restore.** The kubelet validates the live Pod's spec against
    `status.checkpointedPodTemplate` again, with the same two exemptions, and rejects a mismatch
    before calling `RestorePod`. This guards the window between admission and execution, so the
@@ -1192,6 +1193,8 @@ spec:
   Failure rejects the create with `Forbidden`. This is the verb split described in
   [Privilege model](#privilege-model): `create` on `PodCheckpoint` gates checkpoint creation;
   the dedicated `restore` verb on the referenced object gates restore.
+- Reads `myapp-snapshot-01` and rejects the create with `Forbidden` if it does not exist or its
+  `Ready` condition is not `True`.
 - Injects a required node affinity targeting `myapp-snapshot-01.status.nodeName` (`node-1`) — a
   `nodeSelectorTerm` with `matchFields: [{key: metadata.name, operator: In, values: [node-1]}]`.
   If the user already set a conflicting `spec.nodeName` or node affinity, the create is rejected
@@ -1203,7 +1206,7 @@ spec:
   sets). A mismatch rejects the create with `Invalid` and names the field that differs. The kubelet
   checks this again in Step 5.
 
-All three checks are done by the `PodRestoreAuthorization` admission plugin.
+All of these checks are done by the `PodRestoreAuthorization` admission plugin.
 
 The Pod is persisted with a new Pod UID; the original checkpointed Pod's UID is not reused.
 
@@ -1226,7 +1229,8 @@ creation.
 1. **Checkpoint resolution.** The kubelet reads the `PodCheckpoint` `myapp-snapshot-01` and pulls
    `status.nodeName` and `status.checkpointLocation`. A missing or non-`Ready`
    `PodCheckpoint` fails with event reason `CheckpointNotReady` and the Pod stays in
-   `Pending`.
+   `Pending`. Admission already rejects a Pod whose checkpoint is missing or not `Ready`, so this
+   is a backstop, for example for a checkpoint whose status changed after the Pod was admitted.
 2. **Node match.** The kubelet rejects the restore unless it is running on
    `status.nodeName`. If the originally-checkpointed Pod has since moved, restore still
    targets the node where the checkpoint data lives, not the Pod's current location.
@@ -1237,8 +1241,7 @@ creation.
    fields (`spec.restoreFrom`, the injected node affinity, and the scheduler-assigned
    `spec.nodeName`). A mismatch fails with `PodSpecMismatch` and names the field in the
    event message. Admission already checked this in Step 2; the kubelet repeats it so it never
-   restores against a spec it has not confirmed, and to cover the case where the checkpoint became
-   `Ready` only after the Pod was admitted.
+   restores against a spec it has not confirmed.
 
 Alongside these checks, the kubelet takes a per-Pod restore lock keyed by the Pod's
 `(namespace, name)` rather than its UID (see [Privilege model](#privilege-model)). This is an
@@ -1292,19 +1295,16 @@ the reasons above and a `Restoring=False` condition. The Pod stays `Pending` and
 retries with backoff, the same as it does for `FailedCreatePodSandBox` or `ImagePullBackOff`; it
 is not moved to `Failed`.
 
-A restore that cannot proceed yet leaves the Pod `Pending` and is retried; it is not failed
-outright. The referenced checkpoint may not be `Ready` yet, or (once cross-node transfer lands)
-its data may not be on the node yet but could be copied there later. In both cases the same Pod
-proceeds once the checkpoint becomes available, with no need to resubmit it.
+A restore that cannot proceed yet on the node leaves the Pod `Pending` and is retried; it is not
+failed outright. For example, once cross-node transfer lands, the checkpoint data may not be on the
+node yet but could be copied there later; the same Pod then proceeds when the data arrives, with no
+need to resubmit it. A restore that never succeeds is retried with backoff like any other start
+failure, rather than being moved to `Failed`, and stays visible through the Pod's events and
+conditions.
 
-This follows the usual Kubernetes pattern of declaring intent and letting the dependency be
-satisfied out of order. A Pod that names a ConfigMap, Secret, or PersistentVolumeClaim that does
-not exist yet is admitted and waits rather than being rejected, and a PersistentVolumeClaim may
-name a `VolumeSnapshot` as its data source before that snapshot is ready to use. Restoring from a
-`PodCheckpoint` works the same way: the Pod is admitted, and the kubelet waits for the checkpoint
-and validates it when it acts. A restore that never succeeds is retried with backoff like any
-other start failure, rather than being moved to `Failed`, and stays visible through the Pod's
-events and conditions.
+This differs from references to ConfigMaps, Secrets, or PersistentVolumeClaims, which can be created
+after the Pod that uses them. A restore Pod must reference a `PodCheckpoint` that is already
+`Ready`, because admission needs the checkpoint's node and template to place and validate the Pod.
 
 ### Post-Checkpoint State Semantics
 
@@ -1743,6 +1743,8 @@ kubelet integration suite. The following scenarios must pass before Alpha:
   on) and `spec.restoreFrom` is rejected at Pod admission.
 - `spec.restoreFrom` happy path: the kubelet sees the field during `SyncPod`, calls
   `restorePodSandbox()`, and the Pod transitions to `Running`.
+- Admission rejects a restore Pod whose `PodCheckpoint` is missing or not `Ready`, and does not
+  reveal whether the checkpoint exists to a user without the `restore` permission.
 - Admission equality and affinity injection: the `PodRestoreAuthorization` plugin rejects a restore
   Pod whose spec does not match a `Ready` checkpoint's `status.checkpointedPodTemplate` (exempting
   `spec.restoreFrom` and the injected node affinity), admits one that matches, and injects the
@@ -1765,7 +1767,8 @@ The alpha e2e suite covers:
   present and in the correct state after restore.
 - Same-node restore: restore on the same node as the checkpoint (the only supported mode in
   alpha).
-- Failure paths: missing or `Pending` checkpoint referenced by `spec.restoreFrom`; checkpoint
+- Failure paths: missing or not-`Ready` checkpoint referenced by `spec.restoreFrom` (rejected at
+  admission); checkpoint
   data missing on the target node; restore Pod scheduled to a node that does not have the
   checkpoint.
 - RBAC boundary: a user with `editor` access in one namespace cannot create a `PodCheckpoint`
@@ -1790,7 +1793,8 @@ Beta adds:
 - `PodCheckpoint` defined and implemented. Restore trigger implemented as a new optional
   `restoreFrom` field on Pod spec.
 - `PodRestoreAuthorization` admission plugin implemented: authorizes the `restore` verb on the
-  referenced `PodCheckpoint`, injects a node-affinity constraint pinning the Pod to the
+  referenced `PodCheckpoint`, rejects restores from a checkpoint that is missing or not `Ready`,
+  injects a node-affinity constraint pinning the Pod to the
   checkpoint's node (so it is scheduled there rather than binding `spec.nodeName` directly), and
   authoritatively validates Pod-spec equality against `status.checkpointedPodTemplate`.
 - Field selectors `spec.sourcePod.name` and `status.nodeName` registered on the `PodCheckpoint`
@@ -2117,8 +2121,7 @@ API, Pods carrying `spec.restoreFrom`, and the kubelet-exposed checkpoint/restor
     A spec mismatch is normally surfaced earlier still: admission rejects the Pod create
     synchronously with an `Invalid` error naming the offending field, so the user sees it at
     `kubectl apply` time and no Pod is created. The kubelet's `PodSpecMismatch` event is the
-    defense-in-depth path that only fires in the narrow window where a restore was admitted against
-    a not-yet-`Ready` checkpoint.
+    defense-in-depth path; it fires only if a mismatch gets past admission.
   - Event reason on the source Pod: `CheckpointingPod`, emitted when the checkpoint window
     starts (the matching `Checkpointing=True` condition is what is set and later cleared).
 - [x] API `.status`
