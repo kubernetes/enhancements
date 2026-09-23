@@ -179,7 +179,7 @@ how the scheduler records and holds that capacity, so that a preemptor is not ma
 repeatedly and its promised resources are not taken by other pods while being reclaimed.
 
 Most of this is contained in the `dynamicresources` plugin. The one exception is a new optional
-scheduler framework extension point, `PreemptionExtensions`, which notifies plugins when a
+scheduler framework extension point, `NominationExtensions`, which notifies plugins when a
 preemption candidate is selected or cleared and lets a plugin report whether resources freed by an
 earlier preemption are still being reclaimed.
 
@@ -228,8 +228,9 @@ Features that we will support but require careful implementation:
   tracked during preemption simulations, and that we don't overcommit.
 * **Device Binding Conditions**: A lower-priority pod may be blocked in `PreBind` waiting for device
   binding conditions to be satisfied while already holding an in-flight or allocated ResourceClaim.
-  We need to make sure its reserved capacity is accounted for during preemption simulations and that
-  preempting the pod immediately aborts its `PreBind` wait so the claim can be deallocated.
+  Because the pod has already been assumed in `Reserve`, its allocation is tracked in `draManager`
+  (and must be released by `RemovePod` during preemption simulation), and the scheduler's preemption
+  executor already cancels the `PreBind` context when the pod is preempted so the claim can be deallocated.
 
 Features/scenarios that we will not support:
 * **ResourceClaims that span multiple nodes, and network-attached devices**: Every DRA device has an
@@ -256,9 +257,9 @@ in `AddPod` to hold the exact capacity the preemptor needs on the nominated node
 deallocated. This is specified in [Design Details](#design-details).
 
 Supporting this requires a small, generic addition to the scheduling framework: an optional
-`PreemptionExtensions` interface. Because `DefaultPreemption` evaluates candidate nodes concurrently
+`NominationExtensions` interface. Because `DefaultPreemption` evaluates candidate nodes concurrently
 using cloned `CycleState`s, a plugin cannot tell from `RemovePod` and `Filter` alone which candidate
-won. `PreemptionExtensions` notifies the plugin when a winning preemption candidate is selected
+won. `NominationExtensions` notifies the plugin when a winning preemption candidate is selected
 (passing the winning `CycleState` and victim pods) or when a nomination is cleared, and lets a plugin
 report in `PodEligibleToPreemptOthers` whether resources freed by an earlier preemption by that pod
 are still being reclaimed. Today `DefaultPreemption` answers that eligibility question with a
@@ -266,8 +267,8 @@ hard-coded heuristic: if a pod already has `nominatedNodeName` set from an earli
 refuses to let that same pod preempt again while any pod on its nominated node is still terminating
 (other incoming pods without `nominatedNodeName` set are still free to preempt on that node). That
 heuristic works for resources released with the pod, but not for resources that a controller
-reclaims afterwards. `PreemptionExtensions` makes both the nomination lifecycle and the settling
-check pluggable. For Alpha, `PreemptionExtensions` is provisional (and may be kept internal to the
+reclaims afterwards. `NominationExtensions` makes both the nomination lifecycle and the settling
+check pluggable. For Alpha, `NominationExtensions` is provisional (and may be kept internal to the
 framework rather than exposed to external plugins) while SIG Scheduling evaluates whether DRA state
 and nominations should move into the core scheduler framework for Beta.
 
@@ -343,9 +344,9 @@ interval is long enough to matter in practice.
 ### Claim nomination
 
 When `DefaultPreemption` selects a winning candidate for a preemptor pod, it invokes
-`PreemptionExtensions.AddNominatedPod` on registered plugins. In its `AddNominatedPod`
-implementation, `dynamicresources` records an internal *claim nomination* for that preemptor,
-consisting of:
+`NominationExtensions.AddNominatedPod` on registered plugins. Because `CycleState` only exists for a
+single scheduling cycle, `dynamicresources` records a *claim nomination* in a cross-cycle store in
+`draManager` (analogous to `PodNominator` in the scheduler cache), consisting of:
 
 * the nominated node;
 * the simulated `AllocationResult` for each of the preemptor's ResourceClaims on that node;
@@ -354,14 +355,17 @@ consisting of:
 
 During `Filter` in the preemption simulation, `dynamicresources` caches the computed
 `AllocationResult`s per candidate node in its own `CycleState` entry. When `AddNominatedPod` is
-called with the scheduling cycle's `CycleState`, the winning `nodeName`, and `victims`,
-`dynamicresources` looks up the cached `AllocationResult`s for `nodeName` and derives the released
-victim claims from `victims` (including only claims whose every reserving pod is in `victims`, not
-shared claims still held by a non-preempted pod).
+called at the end of `PostFilter` with that scheduling cycle's `CycleState`, the winning `nodeName`,
+and `victims`, `dynamicresources` copies the cached `AllocationResult`s for `nodeName` from
+`CycleState` into `draManager` and derives the released victim claims from `victims` (including only
+claims whose every reserving pod is in `victims`, not shared claims still held by a non-preempted
+pod). In subsequent scheduling cycles, `PreFilterExtensions.AddPod` looks up the nominated pod's
+`AllocationResult`s from `draManager` and simulates allocating them in the current cycle's
+`CycleState`.
 
 A nomination's lifetime is bound 1-to-1 to the pod's `nominatedNodeName` in the scheduler's
-`PodNominator`. It is created by `PreemptionExtensions.AddNominatedPod` and discarded by
-`PreemptionExtensions.RemoveNominatedPod` when:
+`PodNominator`. It is created by `NominationExtensions.AddNominatedPod` and discarded by
+`NominationExtensions.RemoveNominatedPod` when:
 
 * the preemptor is scheduled and bound;
 * the preemptor is deleted;
@@ -372,6 +376,9 @@ preemptor is retried and still cannot be scheduled on the nominated node (for ex
 higher-priority pod took the freed device, or the node became unschedulable), `PodEligibleToPreempt`
 returns `true` and `DefaultPreemption` immediately re-evaluates the pod—either replacing the
 nomination with a new candidate node or clearing `nominatedNodeName`, which removes the nomination.
+Likewise, if the API call to delete a victim pod fails during preemption execution, the scheduler's
+preemption executor immediately clears the nomination (`RemoveNominatedPod`), discarding the recorded
+victim claims so preemption can be retried without waiting for a timeout.
 Before t3, while the victim claims are still allocated, waiting without a timeout matches how
 `DefaultPreemption` behaves when a victim pod is stuck terminating: if the resourceclaim controller
 is unhealthy, expiring the nomination would only cause the preemptor to evict additional victims on
@@ -425,9 +432,11 @@ live nomination and performs two updates to the allocated device state in `Cycle
    `P`'s recorded `AllocationResult`s into the allocated device state, marking the exact devices,
    consumable capacity shares, or partition counters selected for `P` as in use.
 
-When both Pass 1 and Pass 2 run, `dynamicresources.Filter` preserves the `AllocationResult` computed
-for `Q` in Pass 1 (which respected `AddPod(P)` and avoided `P`'s nominated devices) rather than
-letting Pass 2 overwrite `nodeAllocations[nodeName]`.
+When both Pass 1 and Pass 2 run, Pass 2 of `dynamicresources.Filter` verifies that the exact
+`AllocationResult` computed for `Q` in Pass 1 (which respected `AddPod(P)` and avoided `P`'s
+nominated devices) is also valid against the un-nominated state in Pass 2, rather than computing a
+different `AllocationResult` in Pass 2. This ensures a single `AllocationResult` is valid in both
+passes before saving it to `nodeAllocations[nodeName]`.
 
 The combination of Pass 1 (with nominated pods) and Pass 2 (without nominated pods) ensures accurate
 capacity accounting across all phases of the settling window:
@@ -494,15 +503,15 @@ because a higher-priority pod took the freed device), preempting again is the co
 
 `PodEligibleToPreemptOthers` and `prepareCandidate` belong to the `DefaultPreemption` plugin, and we
 do not want to make that plugin aware of DRA. We therefore propose a small and generic addition to
-the scheduling framework: an optional `PreemptionExtensions` interface that manages the nomination
+the scheduling framework: an optional `NominationExtensions` interface that manages the nomination
 lifecycle and preemption eligibility check (provisional for Alpha while we evaluate moving DRA state
 and nominations into the core framework for Beta):
 
 ```go
-// PreemptionExtensions is an optional interface for plugins that manage
+// NominationExtensions is an optional interface for plugins that manage
 // resources requiring explicit reservation for nominated pods and/or
 // asynchronous reclamation when victim pods are preempted.
-type PreemptionExtensions interface {
+type NominationExtensions interface {
     Plugin
     // AddNominatedPod is called when preemption selects a winning candidate for a pod.
     // state is the scheduling cycle's CycleState.
@@ -516,7 +525,7 @@ type PreemptionExtensions interface {
 }
 ```
 
-The framework invokes registered plugins implementing `PreemptionExtensions`:
+The framework invokes registered plugins implementing `NominationExtensions`:
 
 * `AddNominatedPod` is called by `DefaultPreemption` when recording the winning preemption
   candidate for a pod.
@@ -526,9 +535,12 @@ The framework invokes registered plugins implementing `PreemptionExtensions`:
   existing terminating-pod check, stopping at the first plugin that reports `false` and surfacing
   the returned reason in the pod's scheduling condition.
 
-The `dynamicresources` plugin implements `PodEligibleToPreempt` by checking whether the pod has a
-live nomination on `nodeName` with any victim `ResourceClaim` that still has
-`Status.Allocation != nil`.
+In Alpha, the `dynamicresources` plugin implements `PodEligibleToPreempt` by checking whether
+any live nomination on `nodeName` still has a victim `ResourceClaim` waiting for deallocation
+(`Status.Allocation != nil`)—matching `DefaultPreemption`'s existing node-scoped check for
+terminating pods on `nominatedNodeName`—while a full cross-preemptor "assumed victim" simulation
+mechanism for both pods and `ResourceClaim`s (aligned with Workload-Aware Preemption) is deferred
+to Beta.
 
 When the `resourceclaim` controller clears `Status.Allocation` on a victim claim at t3, the
 scheduler's `ResourceClaim` informer event handler invokes `SchedulingQueue.MoveAllToActiveOrBackoffQueue`,
@@ -708,7 +720,7 @@ scenarios will be handled by integration tests.
 
 - Tests are in Testgrid and linked in the KEP
 - Alignment on whether DRA state and claim nominations should move from `dynamicresources` into the
-  core scheduler framework (replacing `PreemptionExtensions`)
+  core scheduler framework (replacing `NominationExtensions`)
 - An agreed-upon design for how claim nominations can be persisted in the API to survive a scheduler
   restart and be visible to external components such as Cluster Autoscaler.
 - Metrics for claim nominations exposed and documented
@@ -1060,7 +1072,7 @@ possible later optimization rather than a substitute.
 window altogether, but blocks the scheduler for the length of the victims' grace periods and is
 therefore not acceptable.
 
-**Deferring preemption from the plugin's PostFilter rather than through `PreemptionExtensions`.**
+**Deferring preemption from the plugin's PostFilter rather than through `NominationExtensions`.**
 The `dynamicresources` plugin is registered immediately before `DefaultPreemption` at the PostFilter
 extension point, and `RunPostFilterPlugins` returns as soon as a plugin reports
 `UnschedulableAndUnresolvable`. The plugin could therefore return that status while the pod has an
