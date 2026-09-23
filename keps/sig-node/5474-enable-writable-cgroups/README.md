@@ -467,13 +467,24 @@ Coverage for new and existing packages:
 
 Enable/disable the feature gate
 
-**Upgrade**: 
-- New field is optional and defaults to `nil` (no change in behavior)
-- Existing workloads continue to function without modification
+**Upgrade**:
+
+- If `securityContext.cgroupOptions` is omitted, its API value is `nil`. If
+  `mountMode` is omitted, including in an empty `cgroupOptions` object, kubelet
+  uses `CGROUP_MOUNT_MODE_UNSPECIFIED`, and the runtime uses its existing
+  default cgroup mount mode.
+- Enabling `CgroupOptions` does not change the cgroup mount of running
+  containers. Pods that omit the field remain compatible. A normal node
+  upgrade can still recreate individual Pods during drain and replacement.
 
 **Update Flow**:
-- `CgroupOptions` field is **immutable** after pod creation. Ephemeral containers cannot set it.
-- Changes to `CgroupOptions` require pod recreation (delete + create)
+
+- `CgroupOptions` is immutable after Pod creation. Setting, changing, or
+  clearing it requires Pod recreation.
+- Ephemeral containers cannot use `cgroupOptions`. When `CgroupOptions` is
+  enabled on kube-apiserver, the API rejects any non-nil value, including an
+  empty object. When the gate is disabled, the field is dropped before
+  validation.
 
 **Downgrade**:
 
@@ -481,14 +492,54 @@ Enable/disable the feature gate
 
 **Feature Gate Disabled (same Kubernetes version):**
 
-- Disabling the gate on kube-apiserver drops `cgroupOptions` from new Pods and preserves it on existing Pods.
-- Restarting kubelet with the gate disabled rejects existing Pods with an explicit cgroup mount mode at admission with `PodFeatureUnsupported`. The Pods enter `Failed`, and kubelet terminates their running containers, per the [Node Declared Features policy](../5328-node-declared-features/README.md#declared-feature-changes-on-existing-nodes).
-- Replacement Pods use the runtime's default cgroup mount mode if the apiserver gate is disabled. With that gate enabled, they require a node that declares `CgroupOptions`.
+The `CgroupOptions` gates on kube-apiserver and kubelet are configured
+independently. Disabling the gate on one component does not change the
+configuration of the other.
+
+- When `CgroupOptions` is disabled on kube-apiserver, the apiserver drops
+  `cgroupOptions` from newly created Pods. It preserves the field on existing
+  Pods. A new Pod whose template requested an explicit mount mode therefore
+  uses the runtime default mount mode.
+- When `CgroupOptions` is disabled on kubelet and kubelet is restarted, the
+  node no longer declares `CgroupOptions`. Kubelet rejects an existing Pod that
+  explicitly requests `ReadOnly` or `Writable` with the
+  `PodFeatureUnsupported` reason. The Pod becomes `Failed`, and kubelet stops
+  its running containers, as specified by the
+  [Node Declared Features policy](../5328-node-declared-features/README.md#declared-feature-changes-on-existing-nodes).
+  Pods with an omitted mount mode, including an empty `cgroupOptions` object,
+  are not affected.
+- A replacement Pod created through kube-apiserver uses the runtime default
+  when the kube-apiserver gate remains disabled, even if its workload template
+  requested an explicit mount mode. If the kube-apiserver gate is enabled, a
+  Pod that explicitly requests `ReadOnly` or `Writable` requires a node that
+  declares `CgroupOptions`. `NodeDeclaredFeatures` prevents normal scheduling
+  to unsupported nodes; kubelet also rejects the Pod if it is bound directly
+  to one.
 
 **True Version Downgrade (to Kubernetes version without CgroupOptions field):**
-- The older apiserver does not recognize the field and drops it when it reads stored Pods. Older kubelets never see it. Running containers keep their current cgroup mount until they restart, after which they use the runtime's default.
-- New requests that set the field are rejected only when the client asks for strict field validation, which `kubectl` does by default. For other clients the apiserver drops the field and returns a warning.
-- Remove the field from pod specs before downgrading
+
+The following describes compatibility behavior during a manual true version
+downgrade; it is not a kubeadm-managed workflow.
+
+- Before a planned true version downgrade, workload templates should omit
+  `cgroupOptions`, and affected Pods should be recreated. The `cgroupOptions`
+  field is immutable and cannot be removed by updating an existing Pod spec.
+- An older apiserver does not recognize `cgroupOptions`. When it reads a Pod
+  stored by a newer apiserver, it ignores the unknown field and omits it from
+  API responses. This read does not modify etcd data. If the older apiserver
+  later processes a write for that Pod, it can serialize and persist its older
+  representation, which does not contain `cgroupOptions`. The field can then
+  be lost from stored Pod data, even if the requested change only updates
+  metadata. A verified pre-downgrade etcd snapshot provides a recovery point
+  containing the original stored Kubernetes objects.
+- Containers that started before the downgrade keep their existing cgroup
+  mount.
+- An older kubelet does not recognize or receive `cgroupOptions`. When it
+  recreates a container, the runtime then uses its default mount mode.
+- Requests to an older apiserver that include `cgroupOptions` follow standard
+  unknown-field validation behavior: strict validation rejects the request;
+  non-strict validation drops the field, with a warning in `Warn` mode.
+  `kubectl` uses strict validation by default.
 
 ### Version Skew Strategy
 
