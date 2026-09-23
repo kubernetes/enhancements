@@ -17,7 +17,6 @@
   - [Allocatable Computation](#allocatable-computation)
   - [Cgroup Enforcement](#cgroup-enforcement)
   - [Memory Manager Integration](#memory-manager-integration)
-  - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -119,7 +118,7 @@ at the time.
 ## Proposal
 
 Extend `--system-reserved` and `--kube-reserved` to accept `hugepages-<size>`
-keys, gated by the `SystemReservedHugepages` Feature Gate. Kubelet already subtracts matching
+keys. Kubelet already subtracts matching
 `system-reserved` and `kube-reserved` entries from node capacity when computing
 Allocatable, so hugepages flow through that path with no scheduler changes.
 The same totals unblock `--reserved-memory`: Memory Manager requires per-type
@@ -215,10 +214,10 @@ arbitrary key-value pairs. The values are parsed by `parseResourceList()` in
 `memory`, `ephemeral-storage`, and `pid`. Any other resource type is rejected
 with `"cannot reserve %q resource"`.
 
-When `SystemReservedHugepages` is enabled, `parseResourceList()` must also
-accept keys for which `v1helper.IsHugePageResourceName` is true. When the
-gate is disabled, those keys continue to be rejected so existing clusters
-keep current behavior.
+`parseResourceList()` must be extended to also accept keys for which
+`v1helper.IsHugePageResourceName` is true. No feature gate guards
+this change - the flags themselves are the opt-in mechanism: clusters
+that do not add hugepages entries under the KubeletConfig keep current behavior.
 
 Hugepage quantities should be divisible by the page size, matching pod
 admission (`IsHugePageResourceValueDivisible`). Non-divisible values should
@@ -261,7 +260,7 @@ produce the same result: `capacity - system-reserved - kube-reserved`.
 ```mermaid
 flowchart TD
     cadvisor["CapacityFromMachineInfo()\ncadvisor/util.go"]
-    parse["parseResourceList()\nserver.go\n← gate change"]
+    parse["parseResourceList()\nserver.go"]
     capacity["cm.capacity"]
     nodeConfig["NodeConfig.SystemReserved\nNodeConfig.KubeReserved"]
 
@@ -344,17 +343,16 @@ state is internal to Memory Manager.
 
 ### Feature Gate
 
-A new feature gate `SystemReservedHugepages` controls whether hugepages keys
-are accepted in `--system-reserved` and `--kube-reserved`:
+N/A
 
-- **Disabled (default in alpha):** Hugepages keys are rejected, preserving
-  current behavior.
-- **Enabled:** Hugepages keys are accepted and processed.
-
-This completes GA hugepages and the existing `--reserved-memory`
-documentation, which already shows hugepage examples. The gate is rollout
-safety, not a new resource model. On downgrade, remove hugepages entries from
-the reserved flags before disabling the gate or downgrading kubelet.
+This enhancement does not use a feature gate. The `--system-reserved` and
+`--kube-reserved` flags themselves serve as the opt-in mechanism: unless an
+administrator explicitly adds `hugepages-<size>` entries to these flags,
+behavior is identical to today. Hugepages are already a GA resource type, and
+this change only extends which resource keys the existing flags accept - it
+does not introduce a new API or resource model. A dedicated feature gate would
+be a redundant guard that adds no additional rollback safety beyond what
+removing the flag entries already provides.
 
 ### Test Plan
 
@@ -369,8 +367,8 @@ None.
 ##### Unit tests
 
 - `k8s.io/kubernetes/cmd/kubelet/app`: `parseResourceList` with
-  `hugepages-<size>` keys, feature gate enabled and disabled, and quantities
-  that are not divisible by the page size.
+  `hugepages-<size>` keys, and quantities that are not divisible by the page
+  size.
 - `k8s.io/kubernetes/pkg/kubelet/cm`: extend
   `TestNodeAllocatableReservationForScheduling` in
   `node_container_manager_linux_test.go` so `GetNodeAllocatableReservation`
@@ -406,10 +404,10 @@ Extend `test/e2e_node/node_container_manager_test.go`:
   - Start kubelet with no hugepage reservation; schedule a pod consuming all
     available 2Mi hugepages.
   - Restart kubelet with `--system-reserved=hugepages-2Mi=2Mi`.
-  - Verify `FailedNodeAllocatableEnforcement` warning events are emitted.
-  - Verify `kubepods` `hugetlb.2MB.max` is not yet reduced (kernel rejected
-    the update).
-  - Terminate the pod; verify the limit is applied on the next retry.
+  - Verify kubelet fails to start because `Allocatable` has changed and now it requires
+    deletion of the memory-manager checkpoint file.
+    see: [policy_static.go#L1089-L1094](https://github.com/kubernetes/kubernetes/blob/30536385bedcaa871f7c07da79af171224ef02e2/pkg/kubelet/cm/memorymanager/policy_static.go#L1089-L1094)
+  - Delete checkpoint file and restart kubelet; verify it starts successfully and the pod will failed to start on the node due to insufficient resources.
 
 - QoS cgroup periodic reconciliation regression test:
   - Configure 2Mi hugepages and set `--system-reserved=hugepages-2Mi=2Mi`.
@@ -423,19 +421,17 @@ Extend `test/e2e_node/node_container_manager_test.go`:
 
 #### Alpha
 
-- Feature implemented behind the `SystemReservedHugepages` feature gate.
+- Feature implemented — `parseResourceList()` accepts hugepages keys.
 - Unit tests covering flag validation and allocatable computation.
 - Initial e2e tests completed and enabled.
 
 #### Beta
 
 - Gather feedback from developers and users, by verifying no reported issues, and no collisions with other features were reported.
-- Feature gate enabled by default.
 - Extend e2e test coverage based on feedback and reported issues.
 
 #### GA
 
-- Feature gate locked to enabled.
 - At least two releases since beta with no major bugs.
 - Real-world usage confirmed - i.e. users are using this feature to reserve HugePages for their ovs-dpdk app.
 
@@ -445,9 +441,9 @@ N/A — this feature extends existing flags; no deprecation is planned.
 
 ### Upgrade / Downgrade Strategy
 
-No special upgrade steps required. The feature is opt-in via the
+No special upgrade steps required. The feature is opt-in via
 `--system-reserved` / `--kube-reserved` flags. Existing clusters that do not
-set hugepages in these flags are unaffected.
+add hugepages entries to these flags are unaffected.
 
 When introducing a hugepage reservation on a node that already has running
 pods with hugepage allocations, the kernel will reject setting `hugetlb.max`
@@ -458,10 +454,9 @@ hugepage eviction to resolve the conflict automatically. Administrators should
 drain hugepage-consuming pods from the node before introducing or increasing
 hugepage reservations.
 
-On downgrade or when disabling the feature gate, remove hugepages entries
-from `--system-reserved` and `--kube-reserved` first. If those keys remain
-while the gate is disabled or the kubelet build rejects them, kubelet will
-fail to start.
+On downgrade to a kubelet version that does not support hugepages in these
+flags, remove hugepages entries from `--system-reserved` and
+`--kube-reserved` first. If those keys remain, kubelet will fail to start.
 
 ### Version Skew Strategy
 
@@ -475,9 +470,12 @@ node status. No version skew concerns exist.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `SystemReservedHugepages`
-  - Components depending on the feature gate: kubelet
+- [x] Other
+  - Describe the mechanism: Add or remove `hugepages-<size>` entries in the
+    kubelet `--system-reserved` and/or `--kube-reserved` flags and restart
+    kubelet. The flags themselves serve as the opt-in mechanism - no feature
+    gate is needed because hugepages are already a GA resource type and the
+    change only extends which resource keys these existing flags accept.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -487,40 +485,50 @@ entries, behavior is identical to today.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Remove hugepages entries from `--system-reserved` / `--kube-reserved`,
-then disable the feature gate and restart kubelet. The node's `Allocatable`
-will return to its previous values.
+Yes. Remove hugepages entries from `--system-reserved` / `--kube-reserved`
+and restart kubelet. The node's `Allocatable` will return to its previous
+values.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Hugepages entries in `--system-reserved` / `--kube-reserved` will be accepted
-again and subtracted from `Allocatable`. No state is persisted beyond the flag
-values.
+Re-adding hugepages entries to `--system-reserved` / `--kube-reserved` and
+restarting kubelet will subtract them from `Allocatable` again. No state is
+persisted beyond the flag values.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests will verify that hugepages keys are rejected when the feature gate
-is disabled and accepted when enabled.
+Unit tests will verify that hugepages keys are accepted by `parseResourceList()`
+and that allocatable computation correctly subtracts them.
 
 ### Rollout, Upgrade and Rollback Planning
 
 #### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Already-running pods that have hugepages allocated keep those mappings;
-hugepages are not evicted.
+**Case 1 — enforcement caps a running daemon below its demand:**
+An administrator sets `--system-reserved=hugepages-2Mi=512Mi` with
+`--enforce-node-allocatable=pods,system-reserved`. Kubelet starts, subtracts
+512Mi from allocatable, and writes `hugetlb.2MB.max=512Mi` on the
+system-reserved cgroup. If the host daemon (e.g. OVS-DPDK) running in that
+cgroup later tries to allocate beyond 512Mi, the kernel refuses the extra
+pages and the daemon must handle the rejection in its own code. This is the
+intended behavior: `--enforce-node-allocatable` sets a hard cap to prevent a
+specific application from over-committing and putting pressure on the rest of
+the system, exactly as it does for cpu and memory.
 
-If existing pods already hold more hugepages than the new allocatable limit,
-the `kubepods` cgroup hugetlb enforcement will fail the kernel rejects
-setting `hugetlb.max` below current usage. Kubelet
-retries every minute and emits `FailedNodeAllocatableEnforcement` warning
-events until pods release hugepages. Unlike memory, there is no hugepage
-eviction mechanism to drive usage down. Administrators should drain
-hugepage-consuming pods from the node before introducing or increasing
-hugepage reservations, the same recommendation that applies when reducing
-memory allocatable.
+**Case 2 — daemon already exceeds the reservation before kubelet starts:**
+A host daemon is already using 600Mi of hugepages. The administrator adds
+`--system-reserved=hugepages-2Mi=512Mi` with system-reserved enforcement and
+starts kubelet. Kubelet tries to write `hugetlb.2MB.max=512Mi` on the
+system-reserved cgroup, but the kernel rejects the write because current
+usage exceeds the requested limit. This follows the same pattern as other
+resources: [`enforceExistingCgroup()`](https://github.com/kubernetes/kubernetes/blob/6d13e54a08b511582318f24ba0a5bb670214693e/pkg/kubelet/cm/node_container_manager_linux.go#L141-L148)
+returns an error and kubelet fails to start. The administrator must either
+reduce the daemon's hugepage consumption or increase the reservation before
+restarting kubelet.
 
-A rollback that disables the feature gate while hugepages entries are still
-in `--system-reserved` or `--kube-reserved` causes kubelet to reject the
+**Rollback to an older kubelet version:**
+A downgrade to a kubelet version that does not support hugepages in these
+flags while hugepages entries are still present causes kubelet to reject the
 configuration on restart. Administrators must remove the entries first.
 
 ###### What specific metrics should inform a rollback?
@@ -684,10 +692,6 @@ pod serves no workload purpose, must be kept in sync with the daemon's actual
 consumption, and adds operational overhead.
 plus, the pod should started first (or among the first),
 but there's no real direct/explicit control over the ordering on which kubelet restore pods
-
-**No feature gate.** Hugepages are already GA, so the change could land as a
-direct fix. A gate adds rollback safety (disabled = reject hugepage keys in
-the reserved flags) and is preferred for a kubelet flag API change.
 
 ## Infrastructure Needed (Optional)
 
