@@ -46,22 +46,20 @@
 
 ## Release Signoff Checklist
 
-This KEP is provisional. No release milestone has been selected.
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation, such as additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -90,8 +88,9 @@ We propose a **write gate** that is only open when the controller manager is
 the leader. It is enabled by an opt-in recovery mode:
 
 - The write gate is a transport wrapper that the controller manager applies to
-  the clients its controllers use. While the gate is closed, write requests are
-  rejected and any in-flight write requests are cancelled.
+  the clients its controllers use. While the gate is closed, only safe HTTP
+  methods (GET, HEAD, OPTIONS, TRACE) pass. Every other request is rejected and
+  any in-flight write requests are cancelled.
 - The controller manager closes the write gate at the point where it exits
   today, when it stops leading. Losing the lease no longer forces the process to
   exit.
@@ -104,9 +103,9 @@ Keeping the process alive allows for fast, low-overhead recovery. In many cases,
 the informer caches remain warm.
 
 In addition to the write gate, we consider it operationally advantageous to
-allow individual controllers to opt in to
-[pausing reconciliation](#pausing-reconciliation) while the gate is closed.
-This aspect of the enhancement is currently listed as a beta goal.
+allow individual controllers to opt in to [pausing
+reconciliation](#pausing-reconciliation) while the gate is closed. This pause
+capability, with adoption by at least one in-tree controller, is an alpha goal.
 
 This feature will be gated by the `LeaderElectionRecovery` client-go feature
 gate. Both client-go based and controller-runtime based controller managers use
@@ -134,6 +133,10 @@ every controller to rebuild its caches and restart its reconciliation.
 
 - Protecting against misbehaved Lease writers. The leader election protocol
   continues to assume lease candidates are coordinated and cooperative.
+- Recovery mode for coordinated leader election
+  ([KEP-4355](/keps/sig-api-machinery/4355-coordinated-leader-election)).
+  Extending recovery to coordinated election is future work.
+- Changing the leader election protocol or the Lease API.
 
 ## Proposal
 
@@ -143,15 +146,22 @@ The write gate is an HTTP transport wrapper. The controller manager applies it
 to the client configuration its controllers use, so every client built from that
 configuration is gated.
 
-| Gate state | Write requests (POST, PUT, PATCH, DELETE) | Read requests (GET, including list and watch) |
+| Gate state | Safe methods (GET, HEAD, OPTIONS, TRACE) | Every other method (POST, PUT, PATCH, DELETE, CONNECT, unknown) |
 | :--- | :--- | :--- |
-| Closed | Rejected immediately with a distinct error. Requests already in flight are cancelled. | Pass through. |
+| Closed | Pass through. | Rejected immediately with `ErrWriteGateClosed`. Requests already in flight are cancelled. |
 | Open | Pass through. | Pass through. |
 
-The gate classifies requests by HTTP method. This is conservative: POST-based
-read-like APIs such as `SubjectAccessReview` are also blocked while the gate is
-closed. Informers continue to run, so caches stay current while the process is
-not leading.
+The gate is an allowlist of HTTP methods: only the safe methods of RFC 9110 pass
+a closed gate, and anything else, including methods the gate has never heard of,
+is treated as a write. This is deliberately conservative. POST-based read-like
+APIs such as `SubjectAccessReview` are blocked while the gate is closed, and so
+is CONNECT, which a controller could use to `exec` into or port-forward to a pod
+with side effects. Informers use GET for list and watch, so they continue to run
+and caches stay warm.
+
+`ErrWriteGateClosed` is used as a special error that callers and shared helpers
+(for example workqueue error handling) can use to tell the difference between a
+write gate rejection and an API server failure.
 
 The election client uses an ungated configuration, so it can renew while the
 gate is closed.
@@ -173,8 +183,19 @@ read-then-conditional-update path. The next transition is one of:
    the new identity as it does today, and the elector exits. (We don't strictly
    need to exit, but it keeps the resource utilization of the system similar to
    how it is today, where only the active leader maintains an informer cache.)
+   The same applies if the lease turns out to have changed hands or been
+   deleted while the holder could not observe it, even if the other holder has
+   since released it or expired: recovery only ever renews the lease this
+   elector still holds, it never re-acquires.
 3. **The recovery deadline passes:** The elector stops trying and exits, exactly
    as it does today, just later.
+4. **The context is cancelled:** `Run` returns as it does today.
+
+`OnStoppedLeading` fires when the gate closes, at the point where `Run` would
+return today. It is the signal that writes are blocked, not that the elector
+gave up; `Run` returning is the latter. `OnStartedLeading` is not called again
+when the gate reopens, and its context stays live until `Run` returns, so
+controllers started from that callback keep running throughout.
 
 ### The recovery deadline
 
@@ -254,10 +275,21 @@ type RecoveryConfig struct {
 	// Regardless of the deadline, if another candidate claims the lease, Run
 	// returns and callers exit.
 	//
-	// If unset, there is no limit.
-	RecoveryDeadline time.Duration
+	// No limit if unset. The value must be at least one second if set.
+  // +k8s:minimum=1s
+	RecoveryDeadline *time.Duration
 }
 ```
+
+kube-controller-manager and cloud-controller-manager support
+`--leader-elect-recovery-deadline` or as `*metav1.Duration` in
+`LeaderElectionConfiguration`.
+
+The renewal defaults (`LeaseDuration` 15s, `RenewDeadline` 10s, `RetryPeriod`
+2s) were chosen when a missed renew deadline cost a restart. With recovery mode
+we believe we can reduce the frequency. As part of the proposal, we will derive
+them from first principles (accounting for acceptable failover time, clock
+skew, renewal latency).
 
 controller-runtime will expose the recovery deadline as a manager option
 alongside its existing `LeaseDuration`, `RenewDeadline`, and `RetryPeriod`
@@ -286,6 +318,13 @@ manager applies the same wrapper to the `rest.Config` it uses to construct its
 clients, and no longer treats loss of leadership as fatal until the elector
 gives up.
 
+In kube-controller-manager, controllers obtain clients through
+`ControllerClientBuilder`, which today also hands out raw `rest.Config` values
+via `Config` and `ConfigOrDie`. A config obtained that way can be used to build
+an ungated client, so we will move away from this approach and favor a dependency
+injection-based approach. This has some ripple effects in how controllers are configured
+that will need to be addressed (root CA publisher, tokens controller, ...).
+
 ### Pausing reconciliation
 
 While the write gate guarantees mutual exclusion, a controller that continues
@@ -294,7 +333,7 @@ resulting writes will be rejected. We intend to provide controllers with
 cooperative pause primitives that can be used to opt in to pausing
 reconciliation in whatever way suits each reconciler.
 
-We intend to design and implement this for beta.
+We will implement this in alpha for at least one in-tree controller.
 
 We anticipate challenges around workqueue rate limiting, informer event
 handling, and backpressure.
@@ -339,25 +378,37 @@ None.
 ##### Integration tests
 
 - A gated client's write is rejected while inactive and succeeds after the gate reopens
+- A controller manager continues to run (does not restart) across an API
+  server interruption
+- A controller using pause in alpha stops dequeuing while the gate is closed and
+  successfully reconciles the backlog after the gate opens.
 
 ##### e2e tests
 
-- A controller manager continues to run (does not restart) across an API
-  server interruption
-- A gated client's write is rejected while inactive and succeeds after the gate reopens
+None for alpha.
+
+Beta: TODO
 
 ### Graduation Criteria
 
 #### Alpha
 
 - Implement recovery mode behind `LeaderElectionRecovery`, disabled by default.
+- Implement per-controller reconciliation pause ()[Pausing
+  reconciliation](#pausing-reconciliation)). Adopt this by at least one in-tree
+  controller.
 - Unit and integration tests above.
 
 #### Beta
 
-- Design and implement the per-controller reconciliation pause described in
-  [Pausing reconciliation](#pausing-reconciliation).
+- Adopt the reconciliation pause in further in-tree controllers, informed by
+  alpha.
 - Gated rejections are distinguishable in client request metrics.
+- Demonstrate that controllers that do not pause behave acceptably while the
+  gate is closed (bounded workqueue growth, no rate-limit penalty from gated
+  failures, acceptable catch-up after the gate reopens)
+- Less frequent renewal defaults.
+- A default recovery deadline, or an explicit enable switch.
 - Remaining criteria TODO.
 
 #### GA
@@ -391,7 +442,9 @@ The gate is alpha and disabled by default.
 
 ###### Does enabling the feature change any default behavior?
 
-No.
+Yes, for controller managers that opt in. kube-controller-manager and
+cloud-controller-manager do so when the gate is on: a replica that loses its
+lease keeps running with the write gate closed instead of exiting.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -448,8 +501,8 @@ at different levels of scale.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric names: `leader_election_master_status` and a write-gate
-    rejection counter (name TBD).
+  - Metric names: `leader_election_master_status` and
+    `leader_election_write_gate_rejections_total`.
   - Components exposing the metric: controller managers
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
