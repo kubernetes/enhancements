@@ -49,6 +49,7 @@
   - [5. Include the amount of memory in <code>assigned.memset</code>](#5-include-the-amount-of-memory-in-assignedmemset)
   - [6. Expose the assignments through DRA](#6-expose-the-assignments-through-dra)
   - [7. Inject the assignments as files, the way DRA device attributes are](#7-inject-the-assignments-as-files-the-way-dra-device-attributes-are)
+  - [8. Keep running pods through a feature gate rollback](#8-keep-running-pods-through-a-feature-gate-rollback)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -143,6 +144,10 @@ Both channels expose an empty string (`""`) when the container has no exclusive 
 
 **Mitigation:** The coupling is bounded by the fact that the kubelet's static CPU policy and the DRA CPU driver cannot run on the same node, so the two mechanisms do not compete for the same workloads. Rather than being specific to the CPU Manager, the exposed file path is intended as a shared contract that a DRA driver can publish to as well; this direction was proposed by the dra-driver-cpu maintainers, and it is tracked in [dra-driver-cpu#181](https://github.com/kubernetes-sigs/dra-driver-cpu/issues/181). If the coupling has to be undone later, the pod status alternative in [Alternatives](#alternatives) covers the same use cases without naming a resource manager.
 
+**Disabling the feature gate on a node that runs pods using it:** the kubelet re-admits its pods when it restarts, so disabling `DownwardAPIAssignedResources` on a node fails the pods there that reference `assigned.cpuset` or `assigned.memset`. This is the standard Node Declared Features behavior and it applies to workloads that are latency-sensitive by definition, so it is an operational constraint rather than a detail.
+
+**Mitigation:** drain the pods that use these values before disabling the gate on a node, so that they are rescheduled onto nodes that still declare the feature. This is described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart) and repeated in the rollback answers below.
+
 **Security Considerations:** No new information is disclosed. A container can already read both values from its own cgroup files — `cpuset.cpus` for the CPUs and `cpuset.mems` for the memory NUMA nodes — so this KEP changes how the values are delivered, not who can see them. The set of memory NUMA nodes does reveal part of the node's topology, but only the part already assigned to that container and already readable by it. No new data recipients are created: the volume file and the environment variable are visible to exactly the processes that can read the container's cgroup files today.
 
 ### Relationship with PodLevelResourceManagers
@@ -172,13 +177,13 @@ Once the feature graduates to GA and the feature gate is removed, every kubelet 
 
 ##### Re-admission after a kubelet restart
 
-KEP-5328 re-evaluates every running pod when the kubelet restarts: if a pod requires a declared feature that the node no longer provides, admission fails and the pod is moved to `Failed`. That is the intended default for features a pod cannot run without. It is not what this feature wants. Disabling `DownwardAPIAssignedResources` on a node degrades the pod — the volume files become empty, see [Downward API Volume Exposure](#downward-api-volume-exposure) — but nothing about the CPU or memory assignment changes, and the workloads this feature targets are latency-sensitive enough that an eviction is far more disruptive than a missing value.
+Changing the feature gate requires restarting the kubelet, and KEP-5328 re-evaluates every pod the node is running when it restarts. A pod that requires a feature the node no longer declares fails admission and is moved to `Failed`. This feature follows that default rather than working around it.
 
-Today the framework cannot express that. The scheduler's node filter and the kubelet's admission check are driven by the same `InferForScheduling` method, so a feature that returns `true` there to obtain scheduler filtering also fails re-admission after a restart with the gate disabled. [kubernetes/kubernetes#142328](https://github.com/kubernetes/kubernetes/issues/142328) tracks the gap and [kubernetes/kubernetes#142329](https://github.com/kubernetes/kubernetes/pull/142329) closes it: the kubelet already checkpoints every pod it has admitted, and the change passes that fact to the feature as `PodInfo.PreviouslyAdmitted` — `false` during scheduling and on first admission, `true` when a pod is re-admitted after a restart. Features that do not read the field keep the KEP-5328 default.
+The practical consequence is that disabling `DownwardAPIAssignedResources` on a node fails the pods running there that reference `assigned.cpuset` or `assigned.memset`, once its kubelet restarts. Pods on that node which do not reference these values are unaffected, as is everything on nodes where the gate stays enabled.
 
-With that in place, this feature's `InferForScheduling` requires `DownwardAPIAssignedResources` when the pod references `assigned.cpuset` or `assigned.memset` and `PreviouslyAdmitted` is `false`. The scheduler keeps such pods off nodes that do not declare the feature, a kubelet with the gate disabled rejects a pod it has never seen, and a pod already running on the node survives a gate flip together with a restart, receiving empty values as described.
+An operator disabling the gate on a node should therefore first drain the pods that use these values — those whose spec names `assigned.cpuset` or `assigned.memset`, found as described in [Monitoring Requirements](#monitoring-requirements) — so that they are rescheduled onto nodes that still declare the feature. Draining the entire node is not necessary.
 
-**Alpha fallback.** If kubernetes/kubernetes#142329 does not land in the same release, Alpha ships an interim rule that needs no framework change: `InferForScheduling` requires the feature only when it is called by the scheduler, and returns `false` in the kubelet. The two callers are distinguishable because the scheduler builds `PodInfo` without a `Status` and the kubelet passes the real one. This relies on a detail of the current implementation rather than a documented contract, and it gives up the first-admission check in the kubelet — a pod that reaches a node without the scheduler, such as a static pod or one with `nodeName` set directly, runs there with empty values instead of being rejected. Both are acceptable for Alpha and neither is carried to Beta; the fallback is replaced by `PreviouslyAdmitted` as soon as it is available.
+Letting such a pod keep running through a gate rollback was considered and rejected; see [Keep running pods through a feature gate rollback](#8-keep-running-pods-through-a-feature-gate-rollback).
 
 #### Resource Field Extensions
 
@@ -270,8 +275,9 @@ Node Declared Features:
 - **Volume follows a resize**: after a scale-down the volume file shows the newly allocated cpuset.
 - **Environment variable exposure**: a container referencing the same values as environment variables sees them at startup, and they do not change after a resize.
 - **No assignment**: a container with no exclusive CPUs and no assigned memory sees empty values.
-- **Gate disabled on the node**: the container keeps running and sees empty values rather than failing.
-- **Gate rollback and rollout**: with the gate disabled, creating a pod referencing these values is rejected while a pod already using them keeps running and can still be updated; after re-enabling, the volume files are filled in again.
+- **Gate disabled on the node**: a pod referencing these values is not admitted on a node whose kubelet has the gate disabled, and its status reports the feature the node does not provide.
+- **Gate disabled under a running pod**: a pod referencing these values, running on a node whose gate is then disabled, is moved to `Failed` when the kubelet restarts, while a pod on the same node that does not reference them keeps running.
+- **Gate rollback and rollout**: with the gate disabled on kube-apiserver, creating a pod referencing these values is rejected while a pod already referencing them can still be updated; after re-enabling on kube-apiserver and on the kubelet, such a pod is admitted again and its volume files are filled in.
 
 ### Graduation Criteria
 
@@ -279,9 +285,9 @@ Node Declared Features:
 
 * Two new values, `assigned.cpuset` and `assigned.memset`, are accepted by kube-apiserver behind the `DownwardAPIAssignedResources` feature gate and rejected when it is disabled.
 * The kubelet produces both values for downward API volume files and for container environment variables.
-* With the gate disabled the kubelet produces an empty value rather than failing the container.
+* A container with no exclusive CPUs and no assigned memory is given an empty value rather than failing.
 * The kubelet declares `DownwardAPIAssignedResources` in `node.status.declaredFeatures`, and the scheduler filters on it.
-* A pod referencing these values survives a kubelet restart with the gate disabled, either through `PodInfo.PreviouslyAdmitted` ([kubernetes/kubernetes#142329](https://github.com/kubernetes/kubernetes/pull/142329)) or through the Alpha fallback described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
+* A pod referencing these values is not admitted on a node that does not declare the feature, and one already running there is moved to `Failed` when the kubelet restarts with the gate disabled.
 * Unit, integration, and e2e tests as described in the test plan.
 
 #### Beta
@@ -308,7 +314,7 @@ N/A
 
 The two downgrade paths differ in whether the target version knows these values at all.
 
-**The target version knows the values, with the feature gate disabled.** The values are preserved on existing pods and rejected on new ones, so a pod already using them keeps running and can still be updated. Its volume files become empty, while its environment variables keep whatever they were given when the container was created.
+**The target version knows the values, with the feature gate disabled.** On kube-apiserver the values are preserved on existing pods and rejected on new ones, so a pod already using them keeps its reference and can still be updated. On a node, the gate being disabled means the node stops declaring the feature, and the pods there that reference these values are failed once its kubelet restarts; drain them first, as described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
 
 **The target version does not know the values.** kube-apiserver rejects pods that reference them: these are new values of an existing field, so validation checks them against a closed set of allowed names and fails with an unsupported container resource error. Operators should remove these references from pod specs before such a downgrade.
 
@@ -320,7 +326,7 @@ This feature involves coordination between kube-apiserver (field validation), th
 
 **Old apiserver, newer kubelet.** Not a supported configuration, since the [version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubelet) requires that the kubelet not be newer than kube-apiserver. Were it to occur anyway, the apiserver would reject the pod: these are new values of an existing field, and an apiserver that does not know them fails validation with an unsupported container resource error.
 
-**Apiserver ON, kubelet OFF.** The pod is admitted, but the node does not declare the feature and the scheduler avoids it. If such a pod runs there anyway — a gate flip under a running pod, or a pod placed without the scheduler — the kubelet exposes an empty value instead of failing the pod. Unlike the older kubelet above, this one has the code and can degrade gracefully. A gate flip combined with a kubelet restart re-admits the pod rather than failing it; see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
+**Apiserver ON, kubelet OFF.** The pod is admitted by kube-apiserver, but the node does not declare the feature and the scheduler avoids it. A pod that reaches such a node anyway — a static pod, or one placed without the scheduler — is rejected by the kubelet, and a pod already running there when the gate is disabled is failed once the kubelet restarts; see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
 
 **Apiserver OFF, kubelet ON.** New pods using these values are rejected by the apiserver, so they never reach the kubelet. A pod that already uses them keeps them and is still served by the kubelet, since validation permits a value already in use. Static pods bypass the apiserver, so a static pod using these values is served regardless of the gate there.
 
@@ -350,23 +356,21 @@ No. Enabling the gate changes nothing on its own: the values are produced only f
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, and no workload is disrupted by it.
+Yes. Disabling it on kube-apiserver disrupts no workload. Disabling it on a node fails the pods running there that use the feature, unless they are drained first.
 
 **Disabling on kube-apiserver:** new pods referencing `assigned.cpuset` or `assigned.memset` are rejected, while pods that already reference them keep the reference and keep running, since validation permits a value already in use.
 
-**Disabling on kubelet:** the kubelet writes an empty value into the volume files and leaves the environment variables as they were. Containers keep running; they only stop being told what they were assigned. The node also stops declaring the feature, so the scheduler will not place further pods needing it there.
-
-Disabling the gate requires a kubelet restart, and on restart KEP-5328 re-admits every running pod against the node's declared features. By default a pod requiring a feature the node no longer declares is failed. This feature opts out of that default so that the pod is re-admitted and degraded instead of killed; the mechanism, its dependency on [kubernetes/kubernetes#142328](https://github.com/kubernetes/kubernetes/issues/142328), and the Alpha fallback used until it lands are described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart). The answer above holds with either.
+**Disabling on kubelet:** the node stops declaring the feature, so the scheduler places no further pods needing it there. Disabling the gate requires restarting the kubelet, and the pods on that node which reference these values are failed on restart, as described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart). Draining those pods before disabling the gate avoids it; they are then rescheduled onto nodes that still declare the feature. Pods that do not reference these values are not affected.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 **On kube-apiserver:** new pods referencing these values are accepted again.
 
-**On the kubelet:** the volume files of pods already referencing them are filled in again at the next write. Environment variables are not, because they are evaluated when the container is created; a container has to be recreated to pick up a correct value there.
+**On the kubelet:** the node declares the feature again and admits pods referencing these values. Pods that were failed while the gate was disabled are not resurrected — their workload controller recreates them, and the scheduler can place them on that node again. For a pod that kept running, the volume files are filled in again at the next write; environment variables are not, because they are evaluated when the container is created, so a container has to be recreated to pick up a correct value there.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. Unit tests exercise the feature gate switch itself: that the validation option follows the gate, and that a value already in use in the old spec stays permitted once the gate is off, so that disabling it does not break updates of running pods. On the kubelet side, unit tests cover that a container is given an empty value when the gate is off, rather than the downward API setup failing.
+Yes. Unit tests exercise the feature gate switch itself: that the validation option follows the gate, and that a value already in use in the old spec stays permitted once the gate is off, so that disabling it does not break updates of running pods. On the kubelet side, unit tests cover that the node declares the feature exactly when the gate is enabled, and the e2e cases listed in the test plan cover a pod being rejected on a node that does not declare it and failed when the gate is disabled under it.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -376,11 +380,11 @@ Yes. Unit tests exercise the feature gate switch itself: that the validation opt
 
 **Rolling the gate out across nodes.** A kubelet starts declaring `DownwardAPIAssignedResources` once the gate is enabled on it. Until enough nodes declare it, a pod referencing these values stays `Pending` with a scheduling event, rather than running somewhere that cannot serve it. That is a visible and recoverable state.
 
-**Already running workloads are not affected.** A rollback does not kill pods. With the gate disabled, the kubelet writes an empty value into the volume file and leaves the environment variables as they were, so a container keeps running and only loses the information. Nothing about the CPU or memory assignment itself changes — this feature only reports it. This includes the kubelet restart that applies the gate change: the pod is re-admitted rather than failed, see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
+**Rolling the gate back on a node affects the pods using it.** Disabling the gate on a node requires restarting its kubelet, and the pods there that reference these values are failed on restart. Pods that do not reference them, and everything on nodes where the gate stays enabled, are untouched; no CPU or memory assignment changes, since this feature only reports it. A rollback should drain the pods using these values first — see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart) — which turns the rollback into an ordinary rescheduling rather than a disruption.
 
 ###### What specific metrics should inform a rollback?
 
-No dedicated metrics are added in Alpha. The signals to watch are pods that stay `Pending` because no node declares the feature, and pod creation failures caused by an apiserver that still has the gate disabled. Both are visible without access to the nodes.
+No dedicated metrics are added in Alpha. The signals to watch are pods that stay `Pending` because no node declares the feature, pod creation failures caused by an apiserver that still has the gate disabled, and pods moved to `Failed` by a kubelet that no longer declares the feature. All three are visible without access to the nodes.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -391,13 +395,15 @@ Local testing plan.
 1. Cluster with the gate enabled on kube-apiserver and the kubelet. Create a pod with a downward API volume and an environment variable for `assigned.cpuset` and `assigned.memset`.
    - Verify the volume files and the environment variables carry the assigned CPUs and memory NUMA nodes.
    - Resize the pod down and verify the volume files follow the new assignment while the environment variables keep their original values.
-2. Disable the gate on kube-apiserver and the kubelet and restart both.
-   - Verify the pod keeps running and can still be updated, since the values are already in use.
-   - Verify the volume files are now empty.
-   - Verify that creating a new pod using these values is rejected.
-3. Re-enable the gate on both and restart.
-   - Verify the volume files carry the assigned values again.
-   - Verify a newly created pod using these values is admitted.
+2. Disable the gate on kube-apiserver only and restart it.
+   - Verify the pod keeps running, since the node still declares the feature.
+   - Verify that creating a new pod using these values is rejected, while updating the existing one is accepted.
+3. Disable the gate on the kubelet and restart it.
+   - Verify the pod is moved to `Failed`, because the node no longer declares the feature.
+   - Verify that a pod on the same node which does not reference these values keeps running.
+   - Verify that draining such a pod before disabling the gate instead lets it be rescheduled onto a node that still declares the feature.
+4. Re-enable the gate on both and restart.
+   - Verify a newly created pod using these values is admitted and its volume files carry the assigned values.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -451,9 +457,9 @@ No new in-cluster or external services. The feature relies on the following, all
     - Impact of its degraded performance or high-error rates on the feature: N/A, a kubelet configuration.
 - Node Declared Features ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features), GA since v1.37)
   - Usage description: the kubelet declares `DownwardAPIAssignedResources` whenever the feature gate is enabled, and the scheduler uses it to keep pods requesting these values off nodes that would not understand them.
-    - Impact of its outage on the feature: a pod may be placed on a node that cannot serve the request — it then receives empty values, or, on a kubelet predating the feature, the downward API setup for the container fails. The same applies to pods placed without the scheduler, such as static pods.
+    - Impact of its outage on the feature: a pod may be placed on a node that does not declare the feature, where the kubelet rejects it at admission and the scheduler retries elsewhere. On a kubelet predating the feature there is no such check and the downward API setup for the container fails. The same applies to pods placed without the scheduler, such as static pods.
     - Impact of its degraded performance or high-error rates on the feature: a stale node status could misroute pods for as long as the declared features are out of date, with the same bounded consequence.
-  - Dependency: distinguishing re-admission from first admission needs `PodInfo.PreviouslyAdmitted` from [kubernetes/kubernetes#142328](https://github.com/kubernetes/kubernetes/issues/142328). Until it is available, Alpha uses the fallback described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
+  - Consequence of the framework's admission model: a node that stops declaring the feature fails the pods running there that require it, which is why disabling the gate on a node calls for draining those pods first; see [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
 
 Neither resource manager policy gates the declaration: a node declares the feature whenever the feature gate is enabled. Nothing is lost by that, because a node not running the static policies has no exclusive assignments to report in the first place, so an empty value is the accurate answer rather than a degraded one. The declaration states that the node understands these fields, not that it currently has assignments to report.
 
@@ -497,11 +503,16 @@ The values come from the kubelet's own CPU Manager and Memory Manager state, not
 
 ###### What are other known failure modes?
 
+- A pod using these values is moved to `Failed` after a node's kubelet restarts
+  - Detection: the pod is `Failed`, and its status reports that the node does not provide a feature the pod requires.
+  - Mitigations: re-enable the gate on that node, or let the workload controller recreate the pod so that the scheduler places it on a node that still declares the feature. To avoid it, drain the pods using these values before disabling the gate on a node.
+  - Diagnostics: `node.status.declaredFeatures` on that node, and the pod's status message.
+  - Testing: the e2e case for the gate being disabled under a running pod.
 - A container is given an empty value although the node is expected to support the feature
   - Detection: the volume file or the environment variable is empty while the container does have exclusive CPUs or assigned memory.
-  - Mitigations: enable the gate on that node, or move the pod to a node that declares the feature.
+  - Mitigations: check the relevant resource manager policy on that node, or move the pod to a node that declares the feature.
   - Diagnostics: kubelet logs, and `node.status.declaredFeatures` on the node in question.
-  - Testing: the unit and e2e tests for the gate being disabled.
+  - Testing: the unit and e2e tests covering a container with no assignment.
 - A pod using these values stays `Pending`
   - Detection: the pod has no node assigned and the scheduler reports that no node satisfies its required features.
   - Mitigations: enable the gate on at least one node, or remove the fields from the pod.
@@ -569,6 +580,11 @@ N/A
 * **Description**: Rather than letting a pod request these values through `ResourceFieldRef`, have the component that knows them inject them. [KEP-5304](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5304-dra-attributes-downward-api) does this for DRA device attributes: the driver's metadata is bind-mounted into the container through a CDI spec and appears at a well-known path. Applied here, the CPU Manager and the Memory Manager would inject their assignments the same way, with nothing in the pod spec asking for them. Suggested in [kubernetes/kubernetes#136015](https://github.com/kubernetes/kubernetes/pull/136015#issuecomment-5683234122), on the grounds that these values are not part of the Pod API and therefore sit oddly in an API meant to project pod fields downward.
 
 * **Why Rejected for Alpha**: Its main attraction is that it would remove this KEP's API change altogether, but three things do not carry over. KEP-5304's path and CDI spec are keyed by a claim and a request, and exclusive CPUs managed by the kubelet have neither, so the convention would have to be reinvented along with a way to emit container edits without a DRA driver. Nothing in the pod spec would reference the assignment, so there would be no anchor for the scheduler to filter on and no way for a workload to state that it needs the value — KEP-5304 has the ResourceClaim for that, and this KEP has no equivalent. And a file is then the only possible form, so the environment variable in [Use Cases](#use-cases) would be lost. This remains the most direct answer to the coupling concern in [Risks and Mitigations](#risks-and-mitigations) and a candidate for revisiting.
+
+### 8. Keep running pods through a feature gate rollback
+
+* **Description**: When the kubelet restarts with the gate disabled, re-admit the running pod instead of rejecting it. The pod would stay up and simply stop being served the feature: its volume files would no longer be updated with the assigned CPUs and memory NUMA nodes. This required extending Node Declared Features, so that a feature could see whether a pod is being created or re-admitted. The extension was prototyped in [kubernetes/kubernetes#142329](https://github.com/kubernetes/kubernetes/pull/142329), with the gap described in [kubernetes/kubernetes#142328](https://github.com/kubernetes/kubernetes/issues/142328).
+* **Why Rejected**: SIG-Node agreed to neither the behavior nor the extension, holding firmly that a node with the gate disabled does not support the feature, and that pods requiring it have to be removed. Both the issue and the pull request were closed. This KEP therefore follows the framework's default and bounds the cost by draining the pods that use the feature before the gate is disabled on a node, as described in [Re-admission after a kubelet restart](#re-admission-after-a-kubelet-restart).
 
 ## Infrastructure Needed
 
