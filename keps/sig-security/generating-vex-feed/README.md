@@ -186,7 +186,7 @@ When a certain version of a component or library is marked as affected by a vuln
 
 Published VEX attestations provide maintainers with concrete mechanisms to reduce duplicate triage work:
 
-1. **Automated suppression in the Snyk job** - The periodic Snyk scan job currently fails when it encounters a CVE with no existing tracking issue in `kubernetes/kubernetes`. Once VEX attestations are published, the job can be enhanced to check for existing `not_affected` VEX statements before failing. If a CVE has already been triaged and published as `not_affected`, the job can suppress it from the failure report, avoiding duplicate triage requests.  
+1. **Automated suppression in the Snyk job** - The [periodic Snyk scan job](https://testgrid.k8s.io/sig-security-snyk-scan#ci-kubernetes-snyk-master) currently fails when it encounters a CVE with no existing tracking issue in `kubernetes/kubernetes`. Once VEX attestations are published, the job can be enhanced to check for existing `not_affected` VEX statements before failing. If a CVE has already been triaged and published as `not_affected`, the job can suppress it from the failure report, avoiding duplicate triage requests.  
      
 2. **Quick lookup for duplicate reports** - When engineers receive a new CVE report (from external sources, Dependabot alerts, or security researchers), they can quickly check if it's already been analyzed by:  
      
@@ -196,7 +196,7 @@ Published VEX attestations provide maintainers with concrete mechanisms to reduc
 
    
 
-   This prevents duplicate analysis and triage requests.
+   This prevents duplicate analysis and triage requests, reducing maintainer burden. It allows these questions to be answered in a self-service way.
 
    
 
@@ -207,10 +207,10 @@ Published VEX attestations provide maintainers with concrete mechanisms to reduc
 
 In Kubernetes, VEX files can already be generated for the golang source code thanks to script [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) introduced with [sig-security issue \#116](http://github.com/kubernetes/sig-security/issues/116).  
 This script runs with every PR presubmit, within job pull-kubernetes-verify.  
-The results  from `govulncheck` on the master branch and the PR HEAD are compared, and sent to the standard output of the prow job. However, results are not further used.  
+The results  from `govulncheck` on the master branch and the PR HEAD are compared, and sent to the standard output of the prow job. However, results are not further surfaced to address reachability of the vulnerable code.  
 This initiative was part of [Artifact Vulnerability Scanning and Triage Policy](https://github.com/kubernetes/sig-security/issues/3#top) organizing activities around vulnerability management for Kubernetes.
 
-By publishing VEX results alongside OSV feeds, we give the kubernetes maintainers and community more accurate and up-to-date information about which CVEs have been analyzed, which ones are affecting the product, and which ones are not.
+By publishing VEX results alongside OSV feeds, we give the Kubernetes maintainers and community more accurate and up-to-date information about which CVEs have been analyzed, which ones are affecting the product, and which ones are not.
 
 By preemptively generating VEX documents and publishing them as cryptographically signed attestations, this will **reduce toil on k8s maintainers** in the three concrete ways explained above (see [How VEX Attestations Reduce Triage Toil](#how-vex-attestations-reduce-triage-toil)).
 
@@ -248,14 +248,14 @@ This KEP's first implementation (alpha) uses [vexflow](https://github.com/carabi
 > Using vexflow's chatops interface, maintainers create an assessment using one of the recognized slash commands (`/fixed`, `/affected`, `/not_affacted`).\
 > Vexflow then publishes the assessments through signed OpenVEX attestations.
 
-The alpha scope focuses on CVEs determined to be `not_affected` by the Security Response Committee and maintainers. 
+The alpha scope focuses on CVEs determined to be `not_affected` by the Kubernetes maintainers. 
 
-VEX documents are generated from existing triage determinations (stored in `kubernetes/kubernetes` issues labeled `vex-unaffected-feed`). VEX documents are signed with sigstore, and published as attestations to a separate GitHub repository, `kubernetes/.vexflow`.
+VEX documents are generated from existing triage determinations (recorded in `kubernetes/kubernetes` issues labeled `vex-unaffected-feed`). VEX documents are signed with sigstore, and published as attestations to a separate GitHub repository, `kubernetes/.vexflow`.
 
 ```mermaid
 sequenceDiagram
+  participant member as Community Member
   participant maintainer
-  participant src as SRC Committee
   participant kkiss as k/k Issue
   participant bridge as Bridge Job
 
@@ -263,9 +263,9 @@ sequenceDiagram
   participant sig as SIG Security
   participant publish as Publish Job
 
-  maintainer ->> kkiss: Create an issue for vulnerability analysis
-  src ->> kkiss: Analyze vulnerability, add label `vex-unaffected-feed`
-  Note over src,kkiss: The analysis can also be done by maintainers
+  member ->> kkiss: Create an issue for vulnerability analysis
+  maintainer ->> kkiss: Analyze vulnerability, add label `vex-unaffected-feed`
+  Note over maintainer,kkiss: SRC can also assist in the analysis.
   bridge ->> kkiss: Read issue
   bridge ->> viss: Create issue with metadata from k/k issue
   sig ->> viss: Update issue with comments (contain slash commands)
@@ -295,15 +295,15 @@ The proposal is not to allow a human to directly update the VEX files for kubern
 The workflow is:
 
 1. **k/k code scan** - \[Current situation\] The Prow job `ci-kubernetes-snyk-master` scans the `kubernetes/kubernetes` code base and fails if CVEs are detected against the code base.   
-2. **Issues are open manually** - \[Current situation\] A maintainer manually opens an issue in kubernetes/kubernetes, which will be triaged and analyzed by the maintainers.   
-3. **Bridge job creates the issue** - A periodic Prow job monitors `kubernetes/kubernetes` for issues labeled `vex-unaffected-feed`. For each labeled issue, the bridge binary creates a corresponding issue in `kubernetes/.vexflow` with:  
+2. **Issues are opened manually** - \[Current situation\] A community member opens an issue in kubernetes/kubernetes, which will be triaged and analyzed by the maintainers.   
+3. **Bridge job creates the issue** - A periodic Prow job monitors `kubernetes/kubernetes` for issues labeled `vex-unaffected-feed`. For each labeled issue, the bridge job creates a corresponding issue in `kubernetes/.vexflow` with:  
      
    - Title: the CVE ID  
    - Hidden metadata: [vexflow](https://github.com/carabiner-dev/vexflow)'s `VEXFLOW==DATA` JSON block (branch, CVE, component, status)  
    - OPTIONAL - A slash command comment with the justification extracted from the original k/k issue  
 4. **SIG Security team validates** - SIG Security team (as defined by the `OWNERS` file in `kubernetes/.vexflow`) interacts with the issues created by the Bridge job in `kubernetes/.vexflow` and verifies that the justification is accurate and comes from authorized maintainers and adds a slash command comment to the issue.  
      
-5. **Slash command execution** - Only users listed in the `.vexflow` repo's `OWNERS` file (approvers) can issue commands. Vexflow parses the command and updates the issue status:  
+5. **Slash command execution** - Only users listed in the `.vexflow` repo's `OWNERS` file (approvers) can issue commands. Updates to OWNERS file is allowed with 2/3 SIG Security Chair(s) Approval only. Vexflow parses the command and updates the issue status:  
      
    - `/not_affected:component_not_present`  
    - `/not_affected:vulnerable_code_not_present`  
@@ -364,8 +364,8 @@ In this proposal, we did not wish to impact the existing security job at all, no
 | Publish job fails | The impact to the Kubernetes ecosystem is very low: New VEX reports will not be published until the job is fixed |
 | Unauthorized user adds a chatops (slash) comment to an issue in kubernetes/.vexflow | The vexflow binary, running in the Publish job will ignore any comments by contributors not listed in the OWNERS file |
 | Unauthorized user adds themselves to kubernetes/.vexflow's ONWERS | The main branch of .vexflow is protected, and pull requests need to be approved by owners in order to affect the main branch |
-| **Publish job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/.vexflow (marking CVEs as fixed when they really affect K8S for example), or to publish attestations to kubernetes/.vexflow without going through the Prow job | same security mechanisms as for other secrets used by Prow? |
-| **Bridge job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/kubernetes (which is already open) and kubernetes/.vexflow (marking CVEs as fixed when they really affect K8S for example). | same security mechanisms as for other secrets used by Prow? |
+| **Publish job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/.vexflow (marking CVEs as fixed when they really affect K8s for example), or to publish attestations to kubernetes/.vexflow without going through the Prow job | Not a net new risk compared to other prow jobs |
+| **Bridge job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/kubernetes (which is already open) and kubernetes/.vexflow (marking CVEs as fixed when they really affect K8s for example). | Not a net new risk compared to other prow jobs |
 | Prow jobs (Bridge or Publish) have too many issues to parse through | A worst case scenario mitigation: the binaries running through the prow jobs should be configurable via command line arguments for a max number of issues to handle. Ex: k/k repo has 10000 issues labeled `vex-unaffected-feed`, the job is configured with max-issues=500. 20 runs of the jobs are needed to go through the complete list of issues. (no context deadline exceeded, no out of memory) 
 
 ## Design Details
@@ -864,7 +864,7 @@ Why should this KEP _not_ be implemented?
   - The prow bridge job that creates the triage issues in .vexflow from the original issues can decide to copy the comments over only if the commenter belongs to the OWNERS file of the corresponding component  
   - Advantage: reduces the need for SIG-Security to review the issues in kubernetes/.vexflow  
 - **Enabling scan on Vexflow:** Vexflow uses osv scanner, not snyk. It will duplicate all the CVEs found into .vexflow and will require maintainers to also triage the issues in .vexflow as well as the ones created after snyk scans fail.   
-  - **govulncheck-based generation**: We can definitely couple the Vexflow scan with govulncheck, so that the issues opened in .vexflow can automatically be updated with relevant slash commands based on results from govulncheck.  
+  - **govulncheck-based generation**: We can definitely couple the Vexflow scan with [govulncheck verify job](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh), so that the issues opened in .vexflow can automatically be updated with relevant slash commands based on results from govulncheck.  
 - **Manual OpenVEX workflow (PR \#200)**: Maintainers edit JSON files directly. Simpler but doesn't scale and lacks signing/attestation.  
 - **VexHub**: Publishing VEX files for the Aqua VexHub crawler. Viable for distribution but doesn't provide signing or attestation provenance.  
 - **OCI referrers**: Attaching VEX to container images. Ideal for container consumers but requires registry access and is complex for alpha.  
@@ -901,7 +901,7 @@ Publishing these as VEX `affected` (or `fixed`) statements would:
 2. **Leverage existing structured data** — the OSV blob already has component names, version ranges, and fix versions; no manual extraction required  
 3. **Deliver immediate value** — security scanners need both `affected` and `not_affected` to make informed recommendations. Publishing only `not_affected` is incomplete.
 
-#### Proposed Extension (Alpha v1.5 or Beta)
+#### Proposed Extension (Beta)
 
 The bridge binary can be extended with minimal additional work to consume `official-cve-feed` labeled issues in parallel with `vex-unaffected-feed`:
 
@@ -919,47 +919,16 @@ The bridge binary can be extended with minimal additional work to consume `offic
      - `VEXFLOW==DATA` metadata for the affected component  
      - A slash command comment: `/affected` or `/fixed` followed by the action statement (e.g., "Upgrade kube-apiserver to v1.31.12 or later; for details see [source issue](http://kubernetes/kubernetes#XXXX)")
 
-#### Effort Estimate
-
-| Item | Effort |
-| :---- | :---- |
-| Add second GitHub API query | Low (10-20 min) |
-| Parse OSV JSON from issue body | Medium (1-2 hours) |
-| Map issue state to VEX status | Low (30 min) |
-| Construct action\_statement | Low (30 min) |
-| Component PURL mapping (Kubernetes ecosystem → Go module) | Medium (1-2 hours) |
-| Determine master branch applicability | Medium (1-2 hours) |
-| Unit tests | Medium (2-3 hours) |
-| **Total** | **Medium: \~2-3 days additional work** |
-
-#### Recommendation
-
-**Phase 1 (Alpha v1):** Ship with `vex-unaffected-feed` only. Validates the entire pipeline end-to-end before adding complexity.
-
-**Phase 2 (Alpha v1.5 or Beta):** Extend bridge to consume `official-cve-feed`. The bridge binary's architecture should be designed to support multiple label sources from the start (e.g., a config map of label→handler pairs), so adding this later is straightforward.
-
-Alternatively, if the team's immediate priority is to deliver complete VEX coverage (both positive and negative statements), including `official-cve-feed` in alpha is feasible with \~2-3 additional days of development. The data source is well-structured, and the benefit to consumers (scanners, enterprises) is substantial.
 
 #### Data Flow
+```mermaid
+flowchart TD  
+    OSV_Issue["official-cve-feed issues<br/>(CVEs affecting k/k)"] -->|"OSV JSON blob in issue body<br/>(component, versions, fix)"| Bridge["[Bridge Binary]"]  
+    CVE_Unaffected["vex-unaffected-feed issues<br/>(CVEs NOT affecting k/k)"] -->|"Free-form analysis in comments<br/>(extracted to justification)"| Bridge  
 
+    Bridge --> VexFlowIssue["kubernetes/.vexflow issues<br/>(with /affected, /fixed, /not_affected commands)"]  
+    VexFlowIssue --> Publish["[Vexflow update --scan=false]"]  
+    Publish --> VexDoc["OpenVEX documents → Sigstore attestations"]  
 ```
-official-cve-feed issues                 vex-unaffected-feed issues
-(CVEs affecting k/k)                     (CVEs NOT affecting k/k)
-         |                                        |
-         v                                        v
-OSV JSON blob in issue body         Free-form analysis in comments
-(component, versions, fix)          (extracted to justification)
-         |                                        |
-         +-----------> [Bridge Binary] <----------+
-                           |
-                           v
-              kubernetes/.vexflow issues
-              (with /affected, /fixed, /not_affected commands)
-                           |
-                           v
-              [vexflow update --scan=false]
-                           |
-                           v
-              OpenVEX documents → Sigstore attestations
-```
+
  
