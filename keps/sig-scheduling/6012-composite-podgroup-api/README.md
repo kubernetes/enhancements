@@ -110,16 +110,16 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [X] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -1381,18 +1381,49 @@ statuses:
 * **During subsequent cycles:** In subsequent scheduling cycles, when the root CPG
   with pending extra or newly scaled member pods pops from the queue, the
   standard recursive scheduling algorithm is executed for the root CPG
-  hierarchy. If the recursive algorithm fails to place any (for gang policy)
-  or all (for basic policy) of the pending member pods, the scheduler triggers
-  the preemption engine at the root CPG level to release capacity for the remaining
-  unschedulable pods, even if some other pending pods were successfully placed in
-  the current cycle.
+  hierarchy. If at least one pending member pod is placed, the scheduler commits
+  the bindings for the newly placed pods without triggering preemption, and any
+  remaining unscheduled pods are returned to the queue for the next cycle. If the
+  recursive algorithm fails to place even a single pending member pod, the
+  scheduler triggers the preemption engine at the root CPG level to release
+  capacity for the unschedulable pods.
 
 In summary, workload preemption is triggered at the root level if and only if:
 the root-level `PlacementFeasible` returns `Unschedulable` (i.e., the scheduling
 policy is not satisfied but is resolvable via preemption), OR the scheduling
 policy is satisfied, the hierarchy was already scheduled in a previous cycle,
-and the scheduler failed to place some (for gang policy) or all (for basic policy)
-pending member pods in the current cycle.
+and the scheduler failed to place any of the pending member pods in the current
+cycle.
+
+For Beta, we considered adjustments to the logic responsible for deciding
+whether to trigger preemption during subsequent scheduling attempts if not all
+pending pods are successfully placed. We brainstormed an approach that extends
+the notion of "partially scheduled" groups originally proposed in the gang
+scheduling [KEP-4671](https://github.com/kubernetes/enhancements/pull/6194) to
+CPGs and implemented a proof-of-concept in
+[PR #142314](https://github.com/kubernetes/kubernetes/pull/142314). However,
+after closer inspection of the POC, we noticed various problems with this
+approach:
+- Properly determining whether the cycle handles an initial or subsequent
+  scheduling attempt for a root CPG would require leaking the business logic of
+  the `GangScheduling` plugin to policy-agnostic layers of the scheduler.
+- Reasoning about when a root CPG with basic policy is partially scheduled
+  becomes difficult when the group hierarchy consists of a combination of basic
+  and gang groups.
+- The control flow around `PlacementFeasible` and `PodGroupPostFilter` becomes
+  much more complex in the scheduling cycle, additionally making these two
+  interfaces more difficult for out-of-tree plugins to implement.
+- It is unclear which candidate placements to prefer in TAS, as it might make
+  more sense to select a lower-scoring fully scheduled placement over a
+  higher-scoring partially scheduled one in order to reduce the chance of
+  invoking preemption unnecessarily.
+
+The issues above significantly raise the complexity of a prospective adjustment
+to the current rules governing the preemption decision inside the scheduling
+cycle for subsequent scheduling attempts. Because of this, we decided to retain
+the current logic implemented in the Alpha phase, favoring its simplicity. This
+decision can be revisited as a new follow-up feature if we gather more feedback
+from users that the current behavior does not satisfy their needs.
 
 ###### Inadmissible child groups
 A root `CompositePodGroup` might successfully pass the `PreEnqueue` queue filter,
@@ -1904,9 +1935,9 @@ More tests will be added for beta release.
 - Scheduler diagnostics and recommendations with regards to the scheduling order
   are analyzed and documented to improve troubleshooting and scheduling success
   rates.
-- The logic for triggering preemption for subsequent scheduling is re-evaluated in case
-  the scheduling policy is not initially satisfied (e.g., PG has been disrupted or `minCount`
-  has changed).
+- Trade-offs related to adjusting the preemption triggering rules for subsequent
+  scheduling attempts are analyzed, supporting the decision to retain the
+  preemption triggering logic implemented in Alpha.
 
 #### GA
 
