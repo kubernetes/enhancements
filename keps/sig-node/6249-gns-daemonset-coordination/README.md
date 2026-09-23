@@ -1143,9 +1143,13 @@ a listing of nodes carrying the conditions before the reader is enabled.
 Control-plane components run as static Pods are DaemonSet-independent and
 unaffected. Control-plane components run as DaemonSets are affected only on a
 node carrying both conditions `True`, which after the preflight is a node in
-shutdown or one an administrator has deliberately marked; every path back to
-`Ready` (kubelet restart, Node Lifecycle Controller) clears kubelet-written
-state.
+shutdown or one an administrator has deliberately marked;
+every path back to `Ready` (kubelet restart, Node Lifecycle Controller) clears
+kubelet-written state. Because the reader runs in kube-controller-manager,
+suppression can only occur while the control plane is serving, so the
+break-glass levers in [Troubleshooting](#troubleshooting) are always reachable
+when the feature is active; if the API server is unreachable the controller is
+inert, exactly as today.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1306,6 +1310,32 @@ proceeds. The DaemonSet controller sees absent conditions and behaves as today.
 4. If conditions are stale `True` on a node that is not shutting down, delete
    them, and check whether the kubelet restarted (it should have cleared them
    at startup) or whether the Node Lifecycle Controller has processed the node.
+
+**Break-glass.** Two properties bound the worst case. The reader *is* the
+DaemonSet controller, so if the API server is unreachable the controller
+neither suppresses nor creates — exactly as today, with or without this
+feature — and recovery is the cluster's existing bootstrap path; static Pods
+are never gated by the conditions. And the kubelet's rejection of new Pods
+applies only to a node actually shutting down ([KEP-2000] behavior, unchanged
+here); on a healthy node carrying stuck conditions the kubelet admits normally
+and the DaemonSet controller is the only thing holding Pods back. Suppression
+affects creation only: a crash-looping Pod is restarted by the kubelet and is
+untouched. To release a stuck node, in order of least knowledge required:
+
+- **Restart the kubelet on the node.** Its startup clear removes the
+  conditions and the DaemonSet controller recreates on the next sync. Node-local;
+  no API knowledge needed.
+- **Clear the conditions on the node's status subresource** (NodeRestriction
+  permits this for administrators):
+  `kubectl patch node <n> --subresource=status --type=strategic -p '{"status":{"conditions":[{"type":"GracefulNodeShutdownInProgress","status":"False","reason":"AdminRequested"},{"type":"DrainInProgress","status":"False","reason":"AdminRequested"}]}}'`.
+  The reader keys on `True`, so `False` releases the node on the next sync.
+- **Cluster-wide:** disable `DaemonSetGracefulNodeShutdown` on
+  kube-controller-manager. Suppression stops on the next sync of every
+  DaemonSet; no state needs cleaning up and kubelets need no change.
+
+Automatic detection of the stuck state — a fresh `Ready` heartbeat alongside a
+stale condition heartbeat — is the stale-writer backstop listed under
+[Beta](#beta).
 
 ## Implementation History
 
