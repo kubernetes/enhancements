@@ -16,10 +16,10 @@
     - [Kubelet memory management](#kubelet-memory-management)
   - [Windows Topology manager considerations](#windows-topology-manager-considerations)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [Node e2e tests](#node-e2e-tests)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [Node e2e tests](#node-e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -266,19 +266,19 @@ to implement this enhancement.
 
 The Windows `e2e_node` suite now covers [CPU affinity behavior](https://github.com/kubernetes/kubernetes/blob/5a7afc5d7d11afa35ed0a88f8fb37b6acc47a637/test/e2e_node_windows/cpu_manager_test.go), [CPU manager metrics](https://github.com/kubernetes/kubernetes/blob/5a7afc5d7d11afa35ed0a88f8fb37b6acc47a637/test/e2e_node_windows/cpu_manager_metrics_test.go), [memory manager metrics](https://github.com/kubernetes/kubernetes/blob/5a7afc5d7d11afa35ed0a88f8fb37b6acc47a637/test/e2e_node_windows/memory_manager_metrics_test.go), [topology manager coordination](https://github.com/kubernetes/kubernetes/blob/5a7afc5d7d11afa35ed0a88f8fb37b6acc47a637/test/e2e_node_windows/topology_manager_test.go), and [topology manager metrics](https://github.com/kubernetes/kubernetes/blob/5a7afc5d7d11afa35ed0a88f8fb37b6acc47a637/test/e2e_node_windows/topology_manager_metrics_test.go). These tests configure the feature gate for both enabled and disabled scenarios and run in the periodic [ci-kubernetes-e2enode-windows-master](https://testgrid.k8s.io/sig-windows-signal#windows-e2e-node-master?include-filter-by-regex=Feature%3A(CPUManager%7CMemoryManager%7CTopologyManager)) job.
 
-##### Prerequisite testing updates
+#### Prerequisite testing updates
 
-##### Unit tests
+#### Unit tests
 
 - pkg/kubelet/cm/container_manager_windows.go
 - pkg/kubelet/cm/internal_container_lifecycle_windows.go
 - pkg/kubelet/winstats/cpu_topology_test.go
 
-##### Integration tests
+#### Integration tests
 
 Kubernetes integration tests do not run on Windows. Windows functionality is covered by unit tests and Windows node e2e tests.
 
-##### Node e2e tests
+#### Node e2e tests
 
 - Windows CPU, memory, and topology manager coverage runs in [ci-kubernetes-e2enode-windows-master](https://testgrid.k8s.io/sig-windows-signal#windows-e2e-node-master?include-filter-by-regex=Feature%3A(CPUManager%7CMemoryManager%7CTopologyManager)). The periodic job runs every eight hours.
 
@@ -295,11 +295,11 @@ Kubernetes integration tests do not run on Windows. Windows functionality is cov
 - [x] Gather feedback from developers and users, and address feedback that identifies a correctness or usability issue. Developer feedback identified an affinity-coordination issue, resolved in [kubernetes/kubernetes#139684](https://github.com/kubernetes/kubernetes/pull/139684).
 - [ ] Promote `WindowsCPUAndMemoryAffinity` to beta and enable it by default in Kubernetes v1.38.
 - [x] Complete CPU, memory, and topology manager support on Windows behind the `WindowsCPUAndMemoryAffinity` feature gate, including validation with the supported containerd and runhcs versions documented in the Version Skew Strategy. See [CPU and Topology Manager support](https://github.com/kubernetes/kubernetes/pull/125296), [Memory Manager BestEffort support](https://github.com/kubernetes/kubernetes/pull/128560), [multi-group NUMA support](https://github.com/kubernetes/kubernetes/pull/137416), and the [CPU and memory affinity coordination fix](https://github.com/kubernetes/kubernetes/pull/139684).
-- [ ] Complete security review and resolve identified security issues. Security review details: `TBD`.
+- [x] Confirm that no additional security enforcement is required. This enhancement enables existing CPU, Memory, and Topology Manager functionality on Windows and introduces no new Kubernetes APIs, authorization boundaries, credentials, network endpoints, or privileges.
 - [x] Provide the CPU, memory, and topology manager metrics documented in this KEP through kubelet metrics.
 - [x] Windows `e2e_node` tests for CPU affinity, memory manager metrics, topology manager coordination, and topology manager metrics run regularly and are green in [Testgrid](https://testgrid.k8s.io/sig-windows-signal#windows-e2e-node-master?include-filter-by-regex=Feature%3A(CPUManager%7CMemoryManager%7CTopologyManager)).
 - [x] Complete testing requirements, including upgrade, downgrade, and re-upgrade validation.
-- [ ] Provide beta-level documentation for configuration, supported runtime versions, monitoring, and recovery from manager state changes. Website PR: `TBD`.
+- [ ] Provide beta-level documentation for configuration, supported runtime versions, monitoring, and recovery from manager state changes. Website PR: https://github.com/kubernetes/website/pull/57715.
   - Update the `WindowsCPUAndMemoryAffinity` feature-gate reference for beta and default-on in v1.38.
   - Update the Windows support sections for CPU Manager, Memory Manager, and Topology Manager to describe the v1.38 beta behavior, supported container runtime, and rollback through the feature gate.
 - [x] Resolve all known prerelease issues and gaps. No open Kubernetes issues are specific to `WindowsCPUAndMemoryAffinity`; a Windows-specific topology policy for workloads spanning multiple NUMA nodes remains out of scope for this KEP and requires a separate KEP.
@@ -452,7 +452,6 @@ Impact is node local, and doesn't affect rest of the cluster.
 
 It is possible that the state file from the memory/cpu manager will have inconsistent data during the rollout, because of the kubelet restart, but you can easily to fix it by removing memory manager state file and run kubelet restart. It should not affect any running workloads.
 
-
 ###### What specific metrics should inform a rollback?
 
 <!--
@@ -460,9 +459,20 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-The pod may fail with the admission error because the kubelet can not provide all resources. You can see the error messages under the pod events.
+The following signals should inform a rollback on Windows nodes:
 
-Monitor the CPU, memory, and topology manager metrics listed in the Monitoring Requirements section.
+- A sustained increase or spike in `cpu_manager_pinning_errors_total` or
+  `memory_manager_pinning_errors_total` after enabling the CPU Manager `static`
+  policy or Memory Manager `BestEffort` policy.
+- A sudden increase in the ratio of
+  `topology_manager_admission_errors_total` to
+  `topology_manager_admission_requests_total`.
+- Windows nodes becoming `NotReady`, or kubelet startup or readiness failures
+  caused by manager checkpoint errors or policy misconfiguration.
+
+These error metrics should be evaluated relative to their corresponding request
+counters and the pre-rollout baseline because CPU allocation and topology
+admission errors can also result from valid policy or resource constraints.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
