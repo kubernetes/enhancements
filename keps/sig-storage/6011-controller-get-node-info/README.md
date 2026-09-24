@@ -24,7 +24,7 @@
     - [Race Condition Mitigation](#race-condition-mitigation)
     - [Workflow](#workflow)
   - [API Changes](#api-changes)
-    - [CSINode Annotation](#csinode-annotation)
+    - [CSINode Driver Registrations](#csinode-driver-registrations)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -144,7 +144,7 @@ A 5000-node cluster startup triggers 5000 concurrent cloud API calls from `NodeG
 
 - **CSI Spec Dependency**: This KEP requires [CSI spec PR #603](https://github.com/container-storage-interface/spec/pull/603) to be merged first. Kubernetes implementation cannot proceed until the spec changes land.
 
-- **Upgrade Order**: External-attacher must be upgraded before nodes. When kubelet sets the request flag but external-attacher doesn't yet support `ControllerGetNodeInfo`, nodes register with only a `node_id` annotation, and topology and allocatable remain unset until external-attacher catches up. This is a transient state, not a failure.
+- **Upgrade Order**: External-attacher must be upgraded before nodes. When kubelet sets the request flag but external-attacher doesn't yet support `ControllerGetNodeInfo`, nodes register with only a `node_id` in `CSINode.Spec.DriverRegistrations`, and topology and allocatable remain unset until external-attacher catches up. This is a transient state, not a failure.
 
 - **Backward Compatibility**: Drivers that do not adopt the new flow continue to use `NodeGetInfo` unchanged. No breaking changes.
 
@@ -233,7 +233,7 @@ CO avoids a race condition by recording all volume IDs processed during the `Con
 - `NodeServiceCapability.RPC.NODE_INFO_FROM_CONTROLLER`: the node plugin supports the `controller_get_node_info` request flag and may omit topology/limits when it is set. kubelet needs this node-side signal because it cannot observe controller capabilities.
 - `ControllerServiceCapability.RPC.GET_NODE_INFO`: indicates support for `ControllerGetNodeInfo`
 
-**Invariant**: If a driver advertises `NODE_INFO_FROM_CONTROLLER`, it MUST also advertise `GET_NODE_INFO`. This is enforced by the CSI spec. Without this invariant, a node could register with only a `node_id` annotation and never have topology or allocatable populated, because the SP omits them once kubelet sets the flag.
+**Invariant**: If a driver advertises `NODE_INFO_FROM_CONTROLLER`, it MUST also advertise `GET_NODE_INFO`. This is enforced by the CSI spec. Without this invariant, a node could register with only a `node_id` in `CSINode.Spec.DriverRegistrations` and never have topology or allocatable populated, because the SP omits them once kubelet sets the flag.
 
 **Topology key consistency**: `ControllerGetNodeInfo` MUST return the same topology keys as the driver's `NodeGetInfo` would. Existing PersistentVolumes have `nodeAffinity` rules referencing these keys (e.g., `topology.ebs.csi.aws.com/zone`). Inconsistent keys would break scheduling for already-provisioned volumes.
 
@@ -244,9 +244,9 @@ CO avoids a race condition by recording all volume IDs processed during the `Con
 When the `CSIControllerGetNodeInfo` feature gate is enabled and the CSI node plugin advertises `NODE_INFO_FROM_CONTROLLER`:
 
 1. Call `NodeGetInfo` with `controller_get_node_info = true`
-2. Store the `node_id` in a CSINode annotation: `csi.volume.kubernetes.io/nodeid` (JSON map of driver name → node ID)
+2. Store the `node_id` in `CSINode.Spec.DriverRegistrations` (see [CSINode Driver Registrations](#csinode-driver-registrations))
 3. Do NOT populate topology or allocatable from the response, even if present; external-attacher handles this via `ControllerGetNodeInfo`
-4. Skip periodic `NodeGetInfo` calls (KEP-4876) for this driver, as external-attacher takes over
+4. Skip the KEP-4876 `NodeGetInfo` calls (periodic and after `RESOURCE_EXHAUSTED`) for this driver, as external-attacher takes over
 5. If `NodeGetInfo` fails or returns an empty `node_id`, fail registration
 6. If `NODE_INFO_FROM_CONTROLLER` is not advertised, use the existing `NodeGetInfo` flow unchanged
 
@@ -260,27 +260,25 @@ if err != nil {
     return fmt.Errorf("NodeGetInfo failed: %w", err)
 }
 if req.ControllerGetNodeInfo {
-    // Read-modify-write with resourceVersion conflict detection.
     // topology/allocatable are ignored; external-attacher supplies them.
-    nodeIDMap := json.Unmarshal(csiNode.Annotations["csi.volume.kubernetes.io/nodeid"])
-    nodeIDMap[driverName] = info.NodeId
-    csiNode.Annotations["csi.volume.kubernetes.io/nodeid"] = json.Marshal(nodeIDMap)
+    // Record the node ID in CSINode.Spec.DriverRegistrations.
+    setRegistrationNodeID(driverName, info.NodeId)
 } else {
     // ... existing flow: populate topology and allocatable from info ...
 }
 ```
 
-When driver unregisters, also remove the driver from the annotation.
+When the driver unregisters, kubelet removes both its `DriverRegistrations` entry and its `Spec.Drivers` entry. When kubelet registers a driver through the existing flow, including after the feature gate is disabled, it removes the driver's `DriverRegistrations` entry in the same update that writes `Spec.Drivers`, which stops external-attacher from processing the driver on this node.
 
 #### external-attacher Changes
 
-When the `CSIControllerGetNodeInfo` feature gate is enabled, driver is present in CSINode object `csi.volume.kubernetes.io/nodeid` annotation, and the CSI controller plugin advertises `GET_NODE_INFO`:
+When the `CSIControllerGetNodeInfo` feature gate is enabled, `CSINode.Spec.DriverRegistrations` has an entry for the driver, and the CSI controller plugin advertises `GET_NODE_INFO`:
 
-1. Call `ControllerGetNodeInfo` when a driver appears in the annotation but has no corresponding `CSINode.Spec.Drivers` entry (initial registration)
+1. Call `ControllerGetNodeInfo` when the driver has a `DriverRegistrations` entry but no `CSINode.Spec.Drivers` entry (initial registration)
 2. Call `ControllerGetNodeInfo` after `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED` (capacity correction, building on KEP-4876)
 3. Call `ControllerGetNodeInfo` periodically if `CSIDriver.Spec.NodeAllocatableUpdatePeriodSeconds` is set (periodic refresh, building on KEP-4876)
 4. Calculate effective `max_volumes_per_node` by comparing `published_volume_ids` from SP response against `VolumeAttachment` objects
-5. Update `CSINode.Spec.Drivers` with topology and calculated capacity
+5. Write the topology values as Node labels, then create or update the `CSINode.Spec.Drivers` entry with the topology keys and calculated capacity. Every CSINode update includes the `resourceVersion` that external-attacher read, so it never overwrites a change made by kubelet
 
 ```go
 type nodeInfoProcessor struct {
@@ -288,11 +286,11 @@ type nodeInfoProcessor struct {
 }
 
 func (p *nodeInfoProcessor) processNode(csiNode *CSINode) {
-    nodeIDMap := json.Unmarshal(csiNode.Annotations["csi.volume.kubernetes.io/nodeid"])
-    nodeID, ok := nodeIDMap[driverName]
+    reg, ok := findRegistration(csiNode.Spec.DriverRegistrations, driverName)
     if !ok {
         return
     }
+    nodeID := reg.NodeID
     if driverInSpec(csiNode) && !periodicUpdateDue() {
         return
     }
@@ -309,7 +307,9 @@ func (p *nodeInfoProcessor) processNode(csiNode *CSINode) {
     nonCsi := info.publishedVolumeIDs.Difference(csiPublished)
     effectiveLimit := info.maxVolumesPerNode - len(nonCsi)
 
-    updateCSINode(csiNode, info.accessibleTopology, effectiveLimit)
+    // Node labels first, then CSINode.Spec.Drivers with csiNode's resourceVersion.
+    updateNodeLabels(nodeName, info.accessibleTopology)
+    updateCSINode(csiNode, nodeID, info.accessibleTopology, effectiveLimit)
 }
 ```
 
@@ -383,7 +383,7 @@ sequenceDiagram
     csi-node->>csi-node: Read instance ID from metadata
     csi-node-->>-kubelet: node_id (topology/limits omitted)
 
-    kubelet->>apiserver: Update CSINode annotation
+    kubelet->>apiserver: Update CSINode spec.driverRegistrations
     apiserver-->>attacher: CSINode watch event
 
     attacher->>attacher: List VolumeAttachments for node
@@ -391,7 +391,7 @@ sequenceDiagram
     csi-ctrl->>csi-ctrl: Query cloud APIs
     csi-ctrl-->>-attacher: topology, max_volumes_per_node, published_volume_ids
     attacher->>attacher: Calculate effective limit (subtract non-CSI from SP limit)
-    attacher->>apiserver: Update CSINode.Spec.Drivers
+    attacher->>apiserver: Update Node labels and CSINode.Spec.Drivers
 
     Note over attacher,csi-ctrl: RESOURCE_EXHAUSTED scenario
     attacher->>+csi-ctrl: ControllerPublishVolume
@@ -403,27 +403,57 @@ sequenceDiagram
 
 ### API Changes
 
-#### CSINode Annotation
+#### CSINode Driver Registrations
 
-A new annotation on `CSINode` objects stores node IDs for drivers using the controller-side flow:
+This KEP adds a feature-gated `driverRegistrations` list to `CSINodeSpec`, which carries `node_id` from kubelet to external-attacher. kubelet adds an entry after it calls `NodeGetInfo` with the flag, and removes it when the driver unregisters or registers through the existing flow:
 
+```go
+type CSINodeSpec struct {
+    // ... existing fields ...
+
+    // +featureGate=CSIControllerGetNodeInfo
+    // +optional
+    // +listType=map
+    // +listMapKey=name
+    DriverRegistrations []CSINodeDriverRegistration `json:"driverRegistrations,omitempty"`
+}
+
+type CSINodeDriverRegistration struct {
+    Name   string `json:"name"`
+    NodeID string `json:"nodeID"`
+}
 ```
-csi.volume.kubernetes.io/nodeid: '{"disk.csi.alibabacloud.com": "i-xxx", "ebs.csi.aws.com": "i-yyy"}'
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: CSINode
+metadata:
+  name: my-node
+spec:
+  driverRegistrations:       # added and removed by kubelet
+  - name: csi.example.com
+    nodeID: i-instanceid
+  drivers:
+  - name: csi.example.com    # added by external-attacher, removed by kubelet
+    nodeID: i-instanceid
+    topologyKeys:
+    - topology.kubernetes.io/zone
+    allocatable:
+      count: 6
 ```
 
-The annotation carries `node_id` from kubelet (which calls `NodeGetInfo`) to external-attacher (which calls `ControllerGetNodeInfo`).
+The two lists together describe the registration state of a driver on the node:
 
-This reuses the same key as the existing Node annotation intentionally. The format is identical (JSON map of driver name → node ID). The two live on different objects and serve different consumers:
-- **Node annotation** (existing): set during the default `NodeGetInfo` flow, consumed by legacy code paths
-- **CSINode annotation** (new): set during the controller-side flow, consumed by external-attacher
+| `drivers` entry | `driverRegistrations` entry | State |
+|---|---|---|
+| absent | absent | The plugin is not registered, and kubelet starts one of the two flows. |
+| present | absent | The existing node-side flow is in use, and external-attacher does nothing. |
+| absent | present | `NodeGetInfo` is done and `ControllerGetNodeInfo` is pending, so external-attacher calls it. |
+| present | present | Registration is complete. |
 
-External-attacher watches CSINode objects, not Node objects, so there is no ambiguity.
+Because `CSINodeDriver` holds only the topology keys and the values live in Node labels, external-attacher writes the topology labels on the Node before it creates the `Spec.Drivers` entry. It therefore needs `patch` on Nodes and `update` on CSINodes. It includes the `resourceVersion` it read in every CSINode update, so it never overwrites a change made by kubelet, such as removing the `DriverRegistrations` entry on rollback.
 
-**Why a JSON map?** CSI driver names can be up to 63 characters. A per-driver annotation key like `csi.volume.kubernetes.io/nodeid.{driver}` could reach 95 characters, exceeding the 63-character annotation key name segment limit. The JSON map keeps the key fixed at 31 characters.
-
-**Annotation Lifecycle**: kubelet owns the `CSINode` annotation. On driver unregistration (`UninstallCSIDriver`), kubelet removes the driver's entry from the JSON map (and removes the annotation entirely if the map is empty), removes the `CSINode.Spec.Drivers` entry, and removes the Node annotation entry. On re-registration, kubelet calls `NodeGetInfo` again, setting the annotation and triggering external-attacher to call `ControllerGetNodeInfo`.
-
-**Concurrent Annotation Updates**: Multiple drivers registering on the same node update the same JSON map annotation. kubelet uses read-modify-write with `resourceVersion` conflict detection, retrying on conflict. This is consistent with existing Node annotation handling.
+kubelet cannot write `node_id` into `Spec.Drivers[*].NodeID` ahead of time, because other components read an existing entry as a complete registration: the scheduler treats the driver as installed as soon as the entry exists, and applies no volume limit while `allocatable` is unset. The entry is therefore created only after the topology and limit are known.
 
 ### Test Plan
 
@@ -435,9 +465,9 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/volume/csi`: Capability detection, `NodeGetInfo` with the request flag, annotation JSON handling, `resourceVersion` conflict retry
+- `k8s.io/kubernetes/pkg/volume/csi`: Capability detection, `NodeGetInfo` with the request flag, `DriverRegistrations` handling, `resourceVersion` conflict retry
 - `k8s.io/kubernetes/pkg/kubelet`: `NodeGetInfo` failure blocks registration, default flow when `NODE_INFO_FROM_CONTROLLER` absent, periodic update responsibility switching
-- `external-attacher`: Annotation detection and `ControllerGetNodeInfo` trigger, effective limit calculation (comparing `published_volume_ids` from SP against VolumeAttachments), race condition mitigation (recording processed volume IDs), `RESOURCE_EXHAUSTED` → `ControllerGetNodeInfo` → CSINode update flow, multi-driver coexistence (one driver uses the new flow, another does not), periodic update work queue with jitter, partial response handling, external-attacher restart recovery
+- `external-attacher`: `DriverRegistrations` detection and `ControllerGetNodeInfo` trigger, effective limit calculation (comparing `published_volume_ids` from SP against VolumeAttachments), race condition mitigation (recording processed volume IDs), `RESOURCE_EXHAUSTED` → `ControllerGetNodeInfo` → CSINode update flow, multi-driver coexistence (one driver uses the new flow, another does not), periodic update work queue with jitter, partial response handling, external-attacher restart recovery
 
 ##### Integration tests
 
@@ -456,7 +486,7 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 
 #### Alpha
 
-- Feature implemented behind the `CSIControllerGetNodeInfo` feature gate (kubelet and external-attacher)
+- Feature implemented behind the `CSIControllerGetNodeInfo` feature gate (kube-apiserver, kubelet, and external-attacher)
 - CSI spec PR #603 merged (alpha)
 - kubelet: `controller_get_node_info` request flag with default `NodeGetInfo` flow when the capability is absent
 - external-attacher: `ControllerGetNodeInfo` support
@@ -479,7 +509,7 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 
 ### Upgrade / Downgrade Strategy
 
-**Upgrade**: Controller-first. Upgrade external-attacher (with feature gate enabled), then upgrade nodes incrementally. The controller is ready to process annotations before nodes start producing them. No coordination beyond ordering is required.
+**Upgrade**: Controller-first. Enable the feature gate on kube-apiserver, upgrade external-attacher (with feature gate enabled), then upgrade nodes incrementally. The controller is ready to process `DriverRegistrations` entries before nodes start producing them. No coordination beyond ordering is required.
 
 **Downgrade**: Reverse order. Downgrade nodes first (they revert to the default `NodeGetInfo` flow), then downgrade external-attacher. Existing `CSINode` objects remain valid throughout.
 
@@ -491,7 +521,7 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 | CSI driver has `NODE_INFO_FROM_CONTROLLER`, kubelet lacks feature | capability ignored, `NodeGetInfo` called without the flag; SP returns full node-side info |
 | external-attacher has feature, CSI controller lacks `GET_NODE_INFO` | external-attacher detects missing capability, skips `ControllerGetNodeInfo` |
 | CSI controller has `GET_NODE_INFO`, external-attacher lacks feature | `GET_NODE_INFO` capability ignored |
-| Node side has feature, controller side does not | Annotation written but not consumed; topology/allocatable unset until controller upgraded |
+| Node side has feature, controller side does not | `DriverRegistrations` entry written but not consumed; topology/allocatable unset until controller upgraded |
 
 ## Production Readiness Review Questionnaire
 
@@ -501,7 +531,7 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 
 - [X] Feature gate
   - Feature gate name: `CSIControllerGetNodeInfo`
-  - Components depending on the feature gate: kubelet, external-attacher
+  - Components depending on the feature gate: kube-apiserver, kubelet, external-attacher
 
 ###### Does enabling the feature change any default behavior?
 
@@ -513,7 +543,7 @@ Yes. Set feature gates to `false` and restart components. kubelet reverts to cal
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-kubelet re-checks capabilities and uses the controller-side flow if supported. External-attacher re-processes any pending annotations.
+kubelet re-checks capabilities and uses the controller-side flow if supported. External-attacher re-processes any pending `DriverRegistrations` entries.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -524,7 +554,7 @@ Yes, unit tests cover capability detection, fallback logic, and behavior with fe
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 Running workloads are not affected. Failure scenarios affect only new node registrations and new scheduling decisions:
-- kubelet enabled but external-attacher not upgraded: nodes register with annotation only, topology/allocatable unset. Mitigated by upgrading controller first.
+- kubelet enabled but external-attacher not upgraded: nodes register with a `DriverRegistrations` entry only, topology/allocatable unset. Mitigated by upgrading controller first.
 - `NodeGetInfo` fails: node registration fails for that driver. Mitigated by fixing the driver or disabling the feature gate.
 
 ###### What specific metrics should inform a rollback?
@@ -545,7 +575,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Check for `csi.volume.kubernetes.io/nodeid` annotation on CSINode objects. If present, the driver is using the new flow.
+Check `spec.driverRegistrations` on CSINode objects. If the driver is listed, it is using the new flow.
 
 ###### How can someone using this feature know that it is working?
 
@@ -575,13 +605,13 @@ No. The existing `csi_operations_seconds` and `csi_sidecar_operations_seconds` h
 ###### Does this feature depend on any specific services running in the cluster?
 
 - **CSI drivers supporting the controller-side flow**: Required for the feature to activate. Drivers without the `NODE_INFO_FROM_CONTROLLER` capability use the default `NodeGetInfo` flow with no impact.
-- **external-attacher sidecar**: Must be deployed with the `CSIControllerGetNodeInfo` feature gate enabled. If external-attacher is down, nodes register with annotation only, and topology and allocatable remain unset until it recovers and processes pending annotations.
+- **external-attacher sidecar**: Must be deployed with the `CSIControllerGetNodeInfo` feature gate enabled. If external-attacher is down, nodes register with a `DriverRegistrations` entry only, and topology and allocatable remain unset until it recovers and processes pending entries.
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-One `ControllerGetNodeInfo` gRPC call per node registration, plus additional calls on `RESOURCE_EXHAUSTED` and periodic updates (if configured). One CSINode PATCH per node to write the annotation, one to update `Spec.Drivers`.
+One `ControllerGetNodeInfo` gRPC call per node registration, plus additional calls on `RESOURCE_EXHAUSTED` and periodic updates (if configured). One CSINode update per node from kubelet to add the `DriverRegistrations` entry, then one Node PATCH for the topology labels and one CSINode update for `Spec.Drivers` from external-attacher.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -593,7 +623,7 @@ No net new calls. The cloud API calls move from node to controller. Controller-s
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-CSINode gains one annotation (~100-200 bytes per driver). `Spec.Drivers` fields are unchanged in size, just populated by external-attacher instead of kubelet.
+CSINode gains one `driverRegistrations` entry per driver, roughly 100-200 bytes. `Spec.Drivers` is unchanged in size, although external-attacher populates it instead of kubelet.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -601,7 +631,7 @@ Node registration time may increase slightly due to the controller-side roundtri
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Minimal. The node-side `NodeGetInfo` becomes lighter (no cloud API). External-attacher handles annotation processing and `ControllerGetNodeInfo` calls, plus a small map for pending node tracking.
+Minimal. The node-side `NodeGetInfo` becomes lighter (no cloud API). External-attacher handles `DriverRegistrations` processing and `ControllerGetNodeInfo` calls, plus a small map for pending node tracking.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -615,14 +645,14 @@ kubelet and external-attacher retry until available. Existing workloads are unaf
 
 ###### How does this feature work if the external-attacher / CSI controller is down?
 
-Nodes will register with only `node_id` annotation. Topology and allocatable will not be populated in `CSINode.Spec.Drivers`.
+Nodes will register with only a `DriverRegistrations` entry. Topology and allocatable will not be populated in `CSINode.Spec.Drivers`.
 
 **Topology impact**: Pods with PV nodeAffinity requiring topology labels (e.g., `topology.kubernetes.io/zone`) may fail to schedule if the node lacks those labels. This is expected behavior -— the scheduler cannot place pods without proper topology matching.
 
 **Allocatable impact**: If `Allocatable.Count` is not set, the scheduler's CSI volume limits plugin currently treats this as "no limit" and may schedule pods that exceed the node's actual volume capacity.
 
 When external-attacher recovers:
-1. It processes pending CSINode annotations, calls `ControllerGetNodeInfo` to populate `Allocatable.Count`
+1. It processes pending `DriverRegistrations` entries and calls `ControllerGetNodeInfo` to populate `Allocatable.Count`
 2. It processes pending VolumeAttachments, calls `ControllerPublishVolume`
 3. If the node's actual capacity is exhausted (due to pods scheduled during the degraded period), `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED`
 4. The pod is rejected and rescheduled to other nodes with available capacity
@@ -640,7 +670,7 @@ This self-correcting mechanism ensures the cluster eventually reaches a consiste
 
 - **external-attacher cannot reach CSI controller**
   - Detection: `csi_sidecar_operations_seconds{method_name="ControllerGetNodeInfo",grpc_status_code!="OK"}`
-  - Mitigation: Fix the underlying issue, then restart external-attacher. Pending annotations are re-processed on recovery.
+  - Mitigation: Fix the underlying issue, then restart external-attacher. Pending `DriverRegistrations` entries are re-processed on recovery.
   - Diagnostics: external-attacher error logs with RPC failure details.
 
 - **Cloud API throttling during large cluster startup**
@@ -758,7 +788,7 @@ have the values combined with the controller's — for example `min(node_count, 
    The CO cannot know a driver's intended semantic, so any rule the CO hard-codes is wrong for some driver.
 
 2. **Correct combination belongs in the SP, which reintroduces the transport it was meant to avoid**: doing it right means relaying the node's partial values as *input* to `ControllerGetNodeInfo` so the SP combines them.
-   That grows the annotation into arbitrary node-side state and adds request fields and SP-side merge logic — significant complexity for a marginal gain.
+   That grows `DriverRegistrations` into arbitrary node-side state and adds request fields and SP-side merge logic — significant complexity for a marginal gain.
 
 The sole-authority design is simpler and has no rule-policy problem: the node reports only `node_id`, and the controller owns topology and limits.
 Combination remains addable later if a concrete case shows the controller genuinely cannot determine a value the node can.

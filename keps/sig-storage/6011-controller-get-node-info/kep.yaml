@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2026-04-14
 reviewers:
   - "@gnufied"
@@ -39,6 +39,7 @@ milestone:
 feature-gates:
   - name: CSIControllerGetNodeInfo
     components:
+      - kube-apiserver
       - kubelet
       - external-attacher
 disable-supported: true
