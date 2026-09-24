@@ -177,9 +177,9 @@ provides both the opt-in and a clean rollback.
 ### Risks and Mitigations
 
 - **Risk:** runtime live-update behaviour differs across Windows Server versions and containerd
-  releases. **Mitigation:** define the failure contract (treat CRI `Unimplemented` as a refusal with an
-  event reason) and validate against the containerd version shipped at implementation time (see
-  [Dependencies](#dependencies)).
+  releases. **Mitigation:** require containerd >= 1.6.0 on Windows Server 20H2+ for the feature to be
+  effective, and treat CRI `Unimplemented` as a refusal with an event reason so older runtimes fail
+  closed rather than silently (see [Dependencies](#dependencies)).
 - **Risk:** users assume Windows memory behaves like Linux `memory.max` (OOM kill). **Mitigation:**
   document commit-cap semantics, emit an event on apply, and log the divergence.
 - **Risk:** scope creep into adjacent Windows parity work. **Mitigation:** strict non-goals; pod-level
@@ -311,10 +311,15 @@ alongside a maximum, can cause the maximum to be ignored — the existing commen
 - record the requested CPU value for accounting only; do not translate it to a weight;
 - do not send `CpuCount` or `CpuWeight` from the resize path.
 
+**Why exactly one rate control is sent.** The Windows shim rejects a request that sets more than one
+of `Count`/`Shares`/`Maximum` (`isValidWindowsCPUResources` in `task_hcs.go`). The resize path builds
+`WindowsContainerResources` from the CPU limit only, so `Maximum` is the single rate control sent — the
+constraint is satisfied by construction, not by luck.
+
 **On `CpuCount` precedence.** `calculateWindowsResources` contains a `CpuCount`-over-`CpuMaximum`
 precedence branch, but it is currently unreachable: the kubelet never populates `CpuCount` or
 `CpuWeight` from the Pod API. This KEP therefore does not rely on that branch. If a future change starts
-populating those fields, the mutual-exclusion behaviour must be re-derived against the runtime then.
+populating those fields, the precedence and the exactly-one rule must be re-derived together.
 
 **Limit removal.** Linux has an explicit TODO for removing a CPU limit; Windows cannot express
 `CpuMaximum` removal the same way. Alpha therefore scopes to setting or changing a finite limit, and
@@ -526,13 +531,27 @@ follow-up rather than a new counter.
   - Impact of its outage: resizes fail with an event; running workloads are unaffected.
   - Impact of degraded performance or missing memory stats: resizes are refused and retried.
 
-**Containerd/HCS evidence to attach at implementation time.** The kubelet side is verified in tree:
+**Runtime support (verified against containerd and hcsshim sources).** The kubelet side is in tree:
 creation maps CPU to `CpuMaximum` and memory to `MemoryLimitInBytes` (`kuberuntime_container_windows.go`),
-and the update request carries `WindowsContainerResources` (`api.proto`). The runtime side — that
-containerd implements `UpdateContainerResources` for Windows and that memory is enforced as
-`JOB_OBJECT_LIMIT_JOB_MEMORY` in HCS — lives outside this repository and **must be pinned to a specific
-containerd/hcsshim version (with the relevant PR) before alpha**. The minimum supported containerd
-version for Windows resize will be recorded here once confirmed.
+and the update request carries `WindowsContainerResources` (`api.proto`). The runtime side:
+
+- **containerd >= 1.6.0.** `internal/cri/server/container_update_resources.go` updates the OCI spec and,
+  for a running container, calls `task.Update(..., WithResources(spec.Windows.Resources))`;
+  `internal/cri/opts/spec_windows_opts.go` (`WithWindowsResources`) maps `CpuMaximum` to
+  `Windows.Resources.CPU.Maximum` and `MemoryLimitInBytes` to `Windows.Resources.Memory.Limit`.
+  containerd **1.5.x returns `ErrNotImplemented` for Windows** — exactly the `Unimplemented` refusal the
+  failure contract above handles.
+- **hcsshim Windows shim.** `cmd/containerd-shim-runhcs-v1/task_hcs.go` (`updateWCOWResources`) applies a
+  memory-limit change to the silo memory resource and a CPU change through the HCS Processor schema;
+  `internal/hcsoci/hcsdoc_wcow.go` maps them to `ProcessorMaximum` / `MemoryMaximumInMB`, and
+  `internal/jobobject/limits.go` (`SetMemoryLimit`) sets `JOB_OBJECT_LIMIT_JOB_MEMORY`.
+- **CPU rate controls are mutually exclusive.** The shim's `isValidWindowsCPUResources` accepts exactly
+  one of `Count`/`Shares`/`Maximum`; the resize path sending only `Maximum` satisfies this by
+  construction.
+- **CPU live update requires Windows Server 20H2 or newer** — `task_hcs.go` gates the direct HCS CPU
+  modify on `osversion.Build >= V20H2`.
+
+Minimum supported runtime for Windows resize: **containerd 1.6.0 on Windows Server 20H2 or newer**.
 
 `k8s.io/cri-api` is unchanged for the container scope, and no new third-party dependency is added.
 
@@ -611,6 +630,11 @@ separate capability/refusal causes from validation rejects.
   closed on missing usage; the unimplementable runtime capability probe is replaced by a CRI
   `Unimplemented` failure contract; new metrics are dropped in favour of existing resize metrics; the
   infeasible Windows kubelet integration test is removed; and the two-week window is scoped to GA.
+- 2026-09-24: Pinned the runtime-support evidence against source. containerd implements Windows
+  `UpdateContainerResources` from **1.6.0** (1.5.x returns `ErrNotImplemented`); the hcsshim Windows shim
+  (`task_hcs.go` `updateWCOWResources`) applies memory as the silo/job-object commit cap
+  (`JOB_OBJECT_LIMIT_JOB_MEMORY` via `jobobject.SetMemoryLimit`) and CPU as the HCS Processor maximum,
+  accepts exactly one CPU rate control per request, and requires Windows Server 20H2+ for live CPU update.
 - Tracking issue: kubernetes/enhancements#6303.
 
 ## Drawbacks
