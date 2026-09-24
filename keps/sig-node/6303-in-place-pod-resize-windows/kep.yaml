@@ -1,7 +1,7 @@
 title: In-place Pod Vertical Scaling (Container Resize) on Windows
 kep-number: 6303
 authors:
-  - "@MartinForReal" # AI-assisted draft; human author responsible
+  - "@MartinForReal"
 owning-sig: sig-node
 participating-sigs:
   - sig-node

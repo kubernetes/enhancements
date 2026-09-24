@@ -1,11 +1,5 @@
 # KEP-6303: In-place Pod Vertical Scaling (Container Resize) on Windows
 
-> **AI assistance disclosure:** This KEP draft was written with the assistance of an AI coding
-> agent. The human author (github.com/MartinForReal) is fully responsible for the content and
-> for shepherding this proposal through the Kubernetes enhancement process. Per the contributor
-> guidelines, AI use is disclosed here and in the PR description, and the author verifies every
-> design decision before it is committed.
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
