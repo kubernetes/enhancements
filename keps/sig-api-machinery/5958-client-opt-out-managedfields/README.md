@@ -112,7 +112,7 @@ Relying on client-side transforms still incurs significant system-wide costs:
 
 ## Proposal
 
-This KEP proposes using an `Accept` header parameter (`drop=metadata.managedFields`) to allow clients to opt-out of receiving `metadata.managedFields` in API responses. When the API server receives a request with this parameter, it uses an alternate serializer that skips `managedFields` during encoding. This is implemented as a new serializer mode with a distinct `runtime.Identifier`, which allows the watch cache's `cachingObject` to naturally cache both the full and stripped serialized forms as separate entries without any changes to the watch cache itself.
+This KEP proposes using an `Accept` header parameter (`drop=metadata.managedFields`) to allow clients to opt-out of receiving `metadata.managedFields` in API responses. When the API server receives a request with this parameter, it strips `managedFields` from the object before encoding. The watch encoder uses a distinct `runtime.Identifier` for the stripped form, which allows the watch cache's `cachingObject` to naturally cache both the full and stripped serialized forms as separate entries without any changes to the watch cache itself.
 
 ### User Stories
 
@@ -140,12 +140,12 @@ Example:
 
 This follows Kubernetes API conventions where `Accept` parameters are used for structural transformations (e.g., `as=PartialObjectMetadata`, `as=Table`).
 
-While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parameter is designed to be extendable to other fields in the future using `+` as a separator (e.g., `drop=metadata.managedFields+metadata.annotations`). Unknown drop targets are silently ignored for forward compatibility.
+While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parameter is designed to be extendable to other fields in the future using `+` as a separator (e.g., `drop=metadata.managedFields+metadata.annotations`). An unsupported drop target makes that `Accept` clause unacceptable, so clients should list a fallback clause (e.g., `application/json;drop=metadata.managedFields+metadata.annotations, application/json`).
 
 ### Implementation Details
 
-1.  **API Server Serializer:** Add an `ExcludeManagedFields` option to the JSON, Protobuf, and CBOR serializers. When this option is set, the serializer strips `metadata.managedFields` from the Go object before encoding and exposes this variant as a distinct codec on `runtime.SerializerInfo` with its own `Identifier()`. The content type negotiation layer selects the appropriate serializer based on the `drop` parameter in the `Accept` header. Stripping happens at the Go-object level before encoding, so it is serializer-agnostic and applies uniformly across all formats. Protobuf support is critical since `kube-controller-manager` and `kube-scheduler` use Protobuf by default. CRDs are also in scope — the `apiextensions-apiserver` constructs its own `SerializerInfo` for custom resources and will need to wire in the `ExcludeManagedFields` variant alongside its existing serializers.
-2.  **Watch Cache:** No changes are needed to the watch cache or `cachingObject`. The `cachingObject`'s `serializationsCache` is keyed by `runtime.Identifier`. Since the stripped serializer has a different `Identifier` than the full serializer, the cache naturally maintains both forms as separate entries. This means that until all watchers migrate to dropping `managedFields`, each watch event will be serialized twice (once with and once without `managedFields`). Benchmarking shows this dual-serialization adds roughly 62% more time and 83% more memory per event, but this overhead is constant regardless of watcher count and is offset by the smaller payload sizes.
+1.  **API Server:** The content type negotiation layer recognizes the `drop` parameter in the `Accept` header, and the API server strips `metadata.managedFields` from the Go object before encoding. Stripping happens at the Go-object level before encoding, so it is serializer-agnostic and applies uniformly across all formats. Protobuf support is critical since `kube-controller-manager` and `kube-scheduler` use Protobuf by default. To avoid a full deep copy, a single object is copied only along the path to `managedFields`. CRDs are also in scope and need no changes to `apiextensions-apiserver`.
+2.  **Watch Cache:** No changes are needed to the watch cache or `cachingObject`. The `cachingObject`'s `serializationsCache` is keyed by `runtime.Identifier`. Since the watch encoder's `Identifier` includes the drop, the cache naturally maintains both forms as separate entries. This means that until all watchers migrate to dropping `managedFields`, each watch event will be deep-copied and serialized twice (once with and once without `managedFields`). This overhead is constant regardless of watcher count and is offset by the smaller payload sizes.
 3.  **Discoverability:** The capability should be discoverable via the supported media types in the OpenAPI schema.
 4.  **Client-side Mitigation:** `managedfields.ExtractInto` already returns `nil` (no error) when no matching managed fields entry is found, which is a safe no-op. No changes to `ExtractInto` error handling are needed. Clients that opt out should be aware that `ExtractInto` will silently return empty results.
 
@@ -174,16 +174,16 @@ None.
 
 #### Unit Tests
 
-- Test API server encoders (JSON, Protobuf, and CBOR) with and without the `managedFields` exclusion flag.
-- Test `cachingObject` serialization cache hits and misses with the exclusion flag.
-- Test that an unrecognized `drop` parameter value is ignored and the full object (including `managedFields`) is returned. This confirms the version-skew/downgrade behavior, where an older API server that does not understand the parameter returns the full object.
+- Test dropping `managedFields` before encoding in JSON, Protobuf, and CBOR.
+- Test that the watch encoder uses a distinct identifier for the stripped form, so `cachingObject` caches the full and stripped serializations separately.
+- Test that an unsupported `drop` value falls back to the next `Accept` clause, and that the parameter is ignored when the feature gate is disabled.
 - Test the client-side defensive stripping fallback: when the client requested the drop but the response still contains `managedFields`, the client strips it.
 
 #### Integration Tests
 
 - Verify that requests with the `Accept` parameter correctly return objects without `managedFields` across all logical verbs: GET, LIST, WATCH, CREATE (POST), UPDATE (PUT), PATCH, DELETE, and DELETECOLLECTION (the latter two are covered even though no behavior change is needed for them).
 - Verify that standard requests (without the parameter) still return `managedFields`.
-- Verify that a request with an unrecognized `drop` value returns the full object (forward/backward compatibility).
+- Verify that a request with an unsupported `drop` value falls back to the next `Accept` clause.
 - Verify mixed watch scenarios with both opt-in and opt-out clients.
 
 #### e2e Tests
@@ -204,6 +204,8 @@ Both gates start at Alpha (disabled by default) and are independent. The server-
 - `ManagedFieldsOptOut` (server-side) promoted to Beta and enabled by default.
 - `ManagedFieldsOptOutClient` (client-side) promoted to Beta and enabled by default; in-tree controllers use the opt-out by default.
 - Performance benchmarks confirming savings in API server and clients.
+- The extra deep copy and serialization per event with mixed full and drop watchers is either reduced (e.g., one deep copy shared across serializations) or shown to be acceptable in scalability tests.
+- The single-object copy is revisited.
 - User-facing documentation published in [kubernetes/website].
 
 #### GA
