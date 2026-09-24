@@ -16,12 +16,12 @@ approvers:
   - "@aojea"
 
 
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"

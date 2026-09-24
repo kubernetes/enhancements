@@ -54,20 +54,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [X] (R) [Enhancement issue](https://github.com/kubernetes/enhancements/issues/6032) in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website] ([documentation PR](https://github.com/kubernetes/website/pull/56354)), for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -143,7 +143,7 @@ The userspace localhost NodePort proxy is a Layer 4 TCP forwarder. The following
 
 **Not implemented:**
 
-- `protocol: UDP` / `protocol: SCTP` — the proxy will not create a listener for these protocols. nftables will not log an error when these services are created since it won't be known if the user plans to connect to them over localhost. If a user tries to connect to a non-TCP protocol service using localhost NodePorts, then an nftables ruleset will reject the packets. Rejections will be tracked by a new metric, `kubeproxy_nftables_localhost_nodeport_rejected_packets_total{protocol}`.
+- `protocol: UDP` / `protocol: SCTP` — the proxy will not create a listener for these protocols. nftables will not log an error when these services are created since it won't be known if the user plans to connect to them over localhost. If a user tries to connect to a UDP or SCTP service using localhost NodePorts, the nftables ruleset will reject the packets. TCP packets are also rejected when the feature gate is enabled but no localhost proxy is active. Rejections are tracked by `kubeproxy_nftables_localhost_nodeport_rejected_packets_total{ip_family,protocol}`.
 
 **Not applicable:**
 
@@ -162,25 +162,25 @@ N/A
 
 ##### Unit tests
 
-Here are the current coverage percentages on master to the relevant packages for this feature. 
+Coverage percentages measured on master for the relevant packages:
 
 - `k8s.io/kubernetes/pkg/proxy/nftables`: `2026-05-12` - `77.5`
 - `k8s.io/kubernetes/pkg/proxy/util`: `2026-05-12` - `82.7`
-
-A new package will be introduced `k8s.io/kubernetes/pkg/proxy/localnodeportproxy` with greater than 80% unit test coverage. Changes to existing packages will be unit tested. 
+- `k8s.io/kubernetes/pkg/proxy/localnodeportproxy`: `2026-09-24` - `96.1`
 
 ##### Integration tests
 
-No integration tests to be added or updated. E2E tests are sufficient since this feature only affects kube-proxy.
+No integration tests are planned. E2E tests are sufficient since this feature only affects kube-proxy.
 
 ##### e2e tests
 
-E2E tests will be introduced to verify that:
-- curling `localhost:<NodePort>` from a node's netns can reach both the local node and a remote node.
-- sessionAffinity=ClientIP is honored when the userspace proxy is used.
-- pulling an image from a registry served over a localhost NodePort service is successful.
+The following e2e tests were added. All three use the `LocalhostNodePorts` feature tag:
 
-All tests will be implemented behind a feature tag since they'll need nodeport addresses to contain localhost to work properly.
+- [Proxy localhost NodePort traffic to backends across nodes](https://github.com/kubernetes/kubernetes/blob/c4c0c978b29129e144f49468f8cc7ca57299c8a6/test/e2e/network/localhost_nodeports.go#L44): verifies traffic reaches both a local and a remote backend.
+- [Honor `sessionAffinity: ClientIP` for localhost NodePort](https://github.com/kubernetes/kubernetes/blob/c4c0c978b29129e144f49468f8cc7ca57299c8a6/test/e2e/network/localhost_nodeports.go#L107): verifies repeated requests stay pinned to one backend.
+- [Pull an image from a registry exposed via localhost NodePort](https://github.com/kubernetes/kubernetes/blob/c4c0c978b29129e144f49468f8cc7ca57299c8a6/test/e2e/network/localhost_nodeports.go#L169): verifies the node can pull an image through a NodePort served by a remote registry pod.
+
+The `LocalhostNodePorts` tag is not specific to the nftables userspace proxy. These tests can run with any service proxy that supports localhost NodePorts, such as the IPv4 iptables backend.
 
 ### Graduation Criteria
 
@@ -202,11 +202,14 @@ All tests will be implemented behind a feature tag since they'll need nodeport a
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+Upgrading does not change behavior: nftables continues to default `nodePortAddresses` to `primary`. 
+To enable localhost NodePorts, operators must explicitly include loopback in `nodePortAddresses`, and restart kube-proxy.
+
+Before downgrading kube-proxy to a version without this feature, replace `localhost`, `all`, and any `primary` entry combined with other values in `nodePortAddresses` with equivalent syntax supported by the older version.
 
 ### Version Skew Strategy
 
-N/A
+The feature is isolated to kube-proxy and does not require coordination with other components.
 
 ## Production Readiness Review Questionnaire
 
@@ -237,9 +240,9 @@ The proxy starts up on the next kube-proxy sync, recreates listeners for any mat
 
 ###### Are there any tests for feature enablement/disablement?
 
-The "registry on localhost" e2e test will cover the ideal path for feature enablement (FG ON + nftables + `--nodeport-addresses=localhost`). 
+The "registry on localhost" e2e test covers the ideal path for feature enablement (FG ON + nftables + `--nodeport-addresses=localhost`).
 
-Unit tests will cover the decision logic cover the various `--nodeport-addresses` combinations
+Unit tests cover the decision logic for various `--nodeport-addresses` combinations.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -293,7 +296,7 @@ A nonzero `kubeproxy_nftables_localhost_nodeport_listener_creation_failures_tota
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-We could add a metric similar to the existing `kubeproxy_iptables_localhost_nodeports_accepted_packets_total` to allow operators to view how often the userspace localhost proxy is being hit.
+No.
 
 ### Dependencies
 
@@ -357,6 +360,10 @@ N/A
 
 - 2026-04-28 first draft created
 - 2026-05-18 scoped down to nftables
+- 2026-06-10 [KEP approved as implementable](https://github.com/kubernetes/enhancements/pull/6042) for alpha
+- 2026-07-21 [alpha implementation](https://github.com/kubernetes/kubernetes/pull/138427) merged
+- 2026-07-27 [user documentation](https://github.com/kubernetes/website/pull/56354) merged
+- 2026-09-16 [beta promotion proposed](https://github.com/kubernetes/enhancements/pull/6378) for v1.38
 
 
 ## Drawbacks
