@@ -23,6 +23,7 @@
   - [CRI Resource Update for Windows Containers](#cri-resource-update-for-windows-containers)
   - [CPU Resource Update](#cpu-resource-update)
   - [Memory Limit Enforcement on Windows](#memory-limit-enforcement-on-windows)
+    - [Enforcement Semantics](#enforcement-semantics)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -135,8 +136,9 @@ A gated Windows resize path, and nothing more. It delivers:
 - Changing the PodSpec resources API or QoS-class semantics.
 - Hyper-V-isolated pod resize in alpha (initial scope is process-isolated Windows containers).
 - Any change to the Linux path.
-- Reproducing Linux OOM-kill semantics on Windows. The commit cap surfaces allocation failures; this is
-  documented, not hidden.
+- Reproducing Linux OOM-kill semantics on Windows. The limit is a commit ceiling whose breach fails an
+  allocation rather than killing the container; see
+  [Memory Limit Enforcement on Windows](#memory-limit-enforcement-on-windows).
 - Pod-level-resource resize on Windows in alpha; it is deferred to beta.
 
 ## Proposal
@@ -324,8 +326,7 @@ removing a CPU limit on Windows is deferred and tracked as a follow-up.
 **Decision:** a memory limit is the job-object commit cap (`MemoryLimitInBytes`), applied in place,
 subject to an explicit pre-apply validation. It is not Linux `memory.max` and not working-set trimming.
 
-Windows process-isolated containers enforce the memory limit as a commit cap via the job object
-(`JOB_OBJECT_LIMIT_JOB_MEMORY`); an allocation that would exceed the cap fails. On resize:
+On resize:
 
 - set `WindowsContainerResources.MemoryLimitInBytes` directly from `resources.limits.memory` — the same
   field and mechanism used at creation;
@@ -345,6 +346,37 @@ Windows process-isolated containers enforce the memory limit as a commit cap via
   The operator is told at apply time instead of the resize being force-applied;
 - emit `WindowsMemoryLimitApplied` (a **new** event, added by this KEP) reporting the commit cap actually
   enforced.
+
+#### Enforcement Semantics
+
+**The cap is real, but `OOMKilled` is not automatic.** Windows has no system-wide OOM killer, so a memory
+limit cannot be enforced the Linux way (the kernel killing the cgroup). It is enforced as a hard commit
+ceiling, and a breach fails an allocation instead:
+
+- `JOB_OBJECT_LIMIT_JOB_MEMORY` with `JobMemoryLimit` caps the job-wide sum of **committed** memory. Per
+  the Win32 contract, when a process attempts to commit memory that would exceed the job-wide limit,
+  **the commit fails** — the OS does not terminate the process.
+- The failing allocation returns `STATUS_COMMITMENT_LIMIT` (`0xC000012D`), which maps to the Win32
+  `ERROR_COMMITMENT_LIMIT` (1455). Whether that becomes a clean exit, a crash, or silent degradation is
+  up to the application.
+- Windows bounds committed memory by a system commit limit (RAM plus pagefile) and does allow commit
+  beyond *physical* RAM. That does not weaken the job cap: the ceiling is deterministic, and only the
+  failure mode differs from Linux.
+
+The consequence for Kubernetes is a visibility gap, not a missing limit:
+
+| | Linux | Windows |
+|---|---|---|
+| Trigger | cgroup `memory.max` | job `JobMemoryLimit` |
+| Kernel action | OOM killer → `SIGKILL` | none; the allocation fails |
+| Container | exits `OOMKilled` | may exit, **or stay `Running` but unhealthy** |
+| K8s signal | kernel event, always visible | only if the runtime classifies the exit as OOM |
+
+Operators should pair the cap with liveness probes, and rely on a terminal `OOMKilled` reason from the
+runtime where it exists. The kubelet Windows OOM watcher (kubernetes/kubernetes#141700) is the in-flight
+work that surfaces that reason, but it covers only that subset — not the Running-but-unhealthy case
+above. #141700 is an open, unmerged forward reference and is not a dependency of this KEP, which neither
+adds nor changes it.
 
 ### Test Plan
 
@@ -608,7 +640,7 @@ separate capability/refusal causes from validation rejects.
 
 ## Implementation History
 
-- 2026-08-21: Initial provisional draft. Authored with AI assistance; human author responsible.
+- 2026-08-21: Initial provisional draft.
 - 2026-09-09: Review-feedback pass: (1) new disable-aware Windows alpha gate; (2) CPU resize uses
   `CpuMaximum`, not shares; (3) Windows reconciliation path for the nil `ResourceConfigForPod` and the
   sandbox update; (4) memory described as a job-object commit cap.
@@ -629,6 +661,11 @@ separate capability/refusal causes from validation rejects.
   (`task_hcs.go` `updateWCOWResources`) applies memory as the silo/job-object commit cap
   (`JOB_OBJECT_LIMIT_JOB_MEMORY` via `jobobject.SetMemoryLimit`) and CPU as the HCS Processor maximum,
   accepts exactly one CPU rate control per request, and requires Windows Server 20H2+ for live CPU update.
+- 2026-09-24 (b): Memory section now states what "enforcement" means on Windows — a hard commit
+  ceiling whose breach fails an allocation (`STATUS_COMMITMENT_LIMIT` / Win32
+  `ERROR_COMMITMENT_LIMIT`) rather than killing the container — and the resulting Kubernetes visibility
+  gap, with kubernetes/kubernetes#141700 called out as open, unmerged, and covering only the
+  runtime-reported `OOMKilled` subset.
 - Tracking issue: kubernetes/enhancements#6303.
 
 ## Drawbacks
