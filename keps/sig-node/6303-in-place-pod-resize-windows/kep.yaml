@@ -8,14 +8,15 @@ participating-sigs:
   - sig-windows
 status: provisional
 creation-date: 2026-08-21
+last-updated: 2026-09-23
 reviewers:
-  - TBD
-  - "@mrunalp" # sig-node-assigned-reviewer (proposed)
-  - "@tallclair" # sig-node-assigned-reviewer (proposed)
+  - "@tallclair" # sig-node assigned reviewer
+  - "@natasha41575" # sig-node assigned reviewer
+  - "@mrunalp" # sig-node reviewer
 approvers:
-  - TBD
-  - "@dchen1107" # sig-node-tl (proposed)
-  - "@tallclair" # sig-node-assigned-approver (proposed)
+  - "@derekwaynecarr" # sig-node approver (requested on the PR)
+  - "@mrunalp" # sig-node approver (requested on the PR)
+  - "@dchen1107" # sig-node TL (proposed)
 
 see-also:
   - "/keps/sig-node/1287-in-place-update-pod-resources"
@@ -47,4 +48,6 @@ feature-gates:
 disable-supported: true
 
 metrics:
-  - kubelet_inplace_pod_resize_total
+  - kubelet_pod_resize_duration_milliseconds
+  - kubelet_pod_infeasible_resizes_total
+  - kubelet_container_requested_resizes_total
