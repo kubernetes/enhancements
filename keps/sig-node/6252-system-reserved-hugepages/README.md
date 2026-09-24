@@ -17,6 +17,7 @@
   - [Allocatable Computation](#allocatable-computation)
   - [Cgroup Enforcement](#cgroup-enforcement)
   - [Memory Manager Integration](#memory-manager-integration)
+  - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -300,15 +301,14 @@ the memory controller instead, but Kubernetes does not enable it. Doing so
 would conflict with container runtimes, which set the two controllers
 independently based on pod resource requests.
 
-`getCgroupConfigInternal()` in `pkg/kubelet/cm/node_container_manager_linux.go`
+[getCgroupConfigInternal()](https://github.com/kubernetes/kubernetes/blob/457ebaa229bda1f835c508c402391711adc9c32f/pkg/kubelet/cm/node_container_manager_linux.go#L220)
 already calls `HugePageLimits(rl)` unconditionally. Every enforcement path -
 `kubepods` via `enforceNodeAllocatableCgroups()`, and the system-reserved /
 kube-reserved cgroups via `enforceExistingCgroup()` - goes through this
 function. Those paths require no changes once hugepages are in the parsed
 `ResourceList`.
 
-The only issue is the QoS cgroup manager
-(`pkg/kubelet/cm/qos_container_manager_linux.go`), which runs `UpdateCgroups()`
+The only issue is the QoS cgroup manager which runs [UpdateCgroups()](https://github.com/kubernetes/kubernetes/blob/457ebaa229bda1f835c508c402391711adc9c32f/pkg/kubelet/cm/qos_container_manager_linux.go#L371)
 every minute and currently sets hugepage limits to unbounded on all QoS tiers,
 including Guaranteed. Because the Guaranteed tier maps to the `kubepods` root,
 this overwrites the limits that node-allocatable enforcement applied.
@@ -375,7 +375,7 @@ None.
   and `GetNodeAllocatableAbsolute` include hugepages in `SystemReserved` and/or
   `KubeReserved`. QoS manager tests: Guaranteed tier gets limited hugepages;
   Burstable and BestEffort stay unbounded.
-- `k8s.io/kubernetes/pkg/kubelet/cm/memorymanager`: `validateReservedMemory`
+- [validateReservedMemory](https://github.com/kubernetes/kubernetes/blob/457ebaa229bda1f835c508c402391711adc9c32f/pkg/kubelet/cm/memorymanager/memory_manager.go#L433)
   with matching hugepage totals across `--reserved-memory` and
   system/kube-reserved.
 
@@ -445,14 +445,38 @@ No special upgrade steps required. The feature is opt-in via
 `--system-reserved` / `--kube-reserved` flags. Existing clusters that do not
 add hugepages entries to these flags are unaffected.
 
-When introducing a hugepage reservation on a node that already has running
-pods with hugepage allocations, the kernel will reject setting `hugetlb.max`
-on the `kubepods` cgroup below the current usage. Kubelet's existing retry
-loop (`enforceNodeAllocatableCgroups`) will emit `FailedNodeAllocatableEnforcement`
-warning events every minute until pods release their hugepages. There is no
-hugepage eviction to resolve the conflict automatically. Administrators should
-drain hugepage-consuming pods from the node before introducing or increasing
-hugepage reservations.
+When introducing a hugepage reservation on a node that is already running
+workloads and/or system processes that consume hugepages, the outcome depends
+on the subject and the configuration:
+
+**Host processes:**
+See [How can a rollout or rollback fail?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
+for the enforcement behavior when host daemons are consuming hugepages.
+
+**Pods:**
+Unlike other resources, hugepage `requests` must equal `limits` regardless of
+the pod's QoS class. When upgrading to a version that supports hugepages
+reservation while pods are already consuming hugepages, the behavior depends
+on the Memory Manager policy:
+
+- **Memory Manager policy `None`:**
+  Here Memory Manger is not part of the flow (no-op).
+  When `--system-reserved` is configured for hugepages and all hugepages are
+  already allocated to pods, the kernel will reject setting `hugetlb.max` on
+  the `kubepods` cgroup below the current usage. This cap is applied during
+  the periodic QoS cgroup [update](https://github.com/kubernetes/kubernetes/blob/f341cb461861b3af9743262e57390120dedae96e/pkg/kubelet/cm/qos_container_manager_linux.go#L180),
+  which logs the error and continues. Kubelet will keep operating.
+
+- **Memory Manager policy `Static`:**
+  When `--system-reserved` is configured for hugepages, the Memory Manager
+  recomputes `Allocatable` and validates it against its checkpoint file. This
+  causes the Memory Manager to return an
+  [error](https://github.com/kubernetes/kubernetes/blob/f341cb461861b3af9743262e57390120dedae96e/pkg/kubelet/cm/memorymanager/policy_static.go#L1092) and the only fix is deleting the checkpoint file.
+  By deleting the checkpoint file, the Memory Manager reallocates hugepages
+  for all pods. If there are not enough hugepages - because some are now
+  reserved - some pods will not be admitted. It is the administrator's
+  responsibility to ensure the system has enough resources to accommodate all
+  pod requests while setting aside hugepages for system processes.
 
 On downgrade to a kubelet version that does not support hugepages in these
 flags, remove hugepages entries from `--system-reserved` and
@@ -480,8 +504,12 @@ node status. No version skew concerns exist.
 ###### Does enabling the feature change any default behavior?
 
 No. The feature only takes effect when an administrator explicitly adds
-hugepages entries to `--system-reserved` or `--kube-reserved`. Without those
+hugepages entries to `--system-reserved` and/or `--kube-reserved`. Without those
 entries, behavior is identical to today.
+
+see [Cgroup Enforcement](#cgroup-enforcement) for changes in the QoS cgroup manager behavior for hugepages.
+Also note those changes will take effect on when `--system-reserved` and/or `--kube-reserved` are
+set for hugepages.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -670,7 +698,7 @@ is incorrect, check the `--system-reserved` and `--kube-reserved` flag values.
 - 2024-04-18: Prior implementation PR [kubernetes/kubernetes#124357](https://github.com/kubernetes/kubernetes/pull/124357) opened.
 - 2024-10-15: PR closed as stale.
 - 2026-07-20: KEP created.
-- 2026-08-24: KEP updated with implementation scope, Memory Manager workflow,
+- 2026-09-24: KEP updated with implementation scope, Memory Manager workflow,
   and a concrete test plan.
 
 ## Drawbacks
