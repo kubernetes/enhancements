@@ -303,8 +303,8 @@ proposal will be implemented, this is the place to discuss them.
 
 ### API Changes
 
-This KEP proposes to add an `ImageRef` to the `VolumeMountStatus` [struct](https://github.com/kubernetes/kubernetes/blob/70540c9f43e2fb7604924a120799206c27cbbd28/staging/src/k8s.io/api/core/v1/types.go#L3450-L3465)
-(which is part of the pod's status):
+This KEP adds `VolumeStatus.Image.ImageRef` to the pod's `VolumeMountStatus`.
+The relevant field is:
 ```go
 // VolumeMountStatus shows status of volume mounts.
 type VolumeMountStatus struct {
@@ -321,17 +321,15 @@ type VolumeMountStatus struct {
 	// +featureGate=RecursiveReadOnlyMounts
 	// +optional
 	RecursiveReadOnly *RecursiveReadOnlyMode `json:"recursiveReadOnly,omitempty" protobuf:"bytes,4,opt,name=recursiveReadOnly,casttype=RecursiveReadOnlyMode"`
-	// ImageRef is the digest of the image used for this volume.
-	// It should have a value that's similar to the pod's status.containerStatuses[i].imageID.
-	// If the volume source is not an ImageVolume, this field will be empty.
-	ImageRef *string `json:"imageRef,omitempty" protobuf:"bytes,5,opt,name=imageRef"`
+	VolumeStatus *VolumeStatus `json:"volumeStatus,omitempty" protobuf:"bytes,5,opt,name=volumeStatus"`
 }
 ```
 
-Note that the `ImageRef` field is a pointer and should be omitted whenever the volume source is not an ImageVolume.
-In addition, during admission, it should be disallowed to populate the `ImageRef` field for non-ImageVolume sources.
+`VolumeStatus.Image.ImageRef` is omitted for non-ImageVolume mounts or when the
+runtime does not provide an image digest.
 
-In addition, the KEP proposes to add an `ImageRef` field to the `ImageSpec` cri-api [struct](https://github.com/kubernetes/kubernetes/blob/cc466aa355f9e47709a108dd6774ad4aa716a984/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L833-L848):
+The KEP also adds an `ImageRef` field to the CRI API `ImageSpec` [struct]
+(https://github.com/kubernetes/kubernetes/blob/cc466aa355f9e47709a108dd6774ad4aa716a984/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L833-L848):
 ```protobuf
 // ImageSpec is an internal representation of an image.
 message ImageSpec {
@@ -405,12 +403,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-Code is not implemented yet, so this is only an initial assessment of the unit test coverage.
-In general, we expect to have unit tests somewhere around:
-- `pkg/kubelet/status/`: `2025-06-18` - `coverage: 86.8% of statements`
-- `pkg/volume/image/`: `2025-06-18` - `coverage: 20.0% of statements`
-- `pkg/kubelet`: `2025-06-18` - `coverage: 70.2% of statements`
-- `pkg/api/pod`: `2025-06-18` - `coverage: 80.5% of statements`
+Unit tests cover kubelet digest propagation, missing runtime digests, feature-gate
+transitions, status immutability, and API validation. Containerd and CRI-O also
+test reporting the resolved image reference.
 
 ##### Integration tests
 
@@ -440,8 +435,9 @@ No new integration tests for kubelet are planned.
 
 ##### e2e tests
 
-Not sure there's a need for e2e tests for this feature.
-In general we need to validate that the image digest is added to the pod's status when an ImageVolume is used.
+The `Image volume digest status` CRI-proxy node e2e test creates an ImageVolume
+and verifies that `containerStatuses[].volumeMounts[].volumeStatus.image.imageRef`
+matches the runtime image ID.
 
 <!--
 This question should be filled when targeting a release.
@@ -457,8 +453,6 @@ This can be done with:
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 If e2e tests are not necessary or useful, explain why.
 -->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
 
@@ -540,16 +534,22 @@ in back-to-back releases.
 - Initial e2e tests completed and enabled
 
 #### Beta
-- Feature is supported by both containerd and CRI-O runtimes
+- The kubelet reports the resolved image digest in pod status for ImageVolumes;
+  containerd and CRI-O populate the CRI `ImageSpec.ImageRef` field.
+- Unit, runtime integration, and CRI-proxy e2e tests cover the status path.
 
 #### GA
 - Add a conformance test that ensures the cluster will properly set the field when expected and not set when not expected.
 
 ### Upgrade / Downgrade Strategy
 
-Upgrade: Feature gate is off by default in Alpha.
+Upgrade: The `ImageVolumeWithDigest` feature gate is enabled by default in Beta.
+Upgraded kubelets will automatically report image digests in pod status unless 
+explicitly disabled via `--feature-gates=ImageVolumeWithDigest=false`.
 
-Downgrade: The image digest field will be omitted from the pod's status.
+Downgrade: Disabling the feature gate or rolling back to a previous version will 
+cause the image digest field (`VolumeStatus.Image.ImageRef`) to be omitted from 
+the pod's status.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -747,7 +747,8 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-By checking the pod's status for the `ImageRef` field in the `VolumeMountStatus` struct for pods that use ImageVolumes.
+By checking `pod.status.containerStatuses[].volumeMounts[].volumeStatus.image.imageRef`
+for pods that use ImageVolumes.
 We can consider using more metrics to track the usage of this feature if people think it is useful.
 
 <!--
@@ -770,8 +771,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] Events
   - Event Reason: 
 - [X] API .status
-  - Condition name: 
-  - Other field: pod.status.volumeMounts[i].ImageRef
+  - Other field: `pod.status.containerStatuses[].volumeMounts[].volumeStatus.image.imageRef`
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -830,10 +830,10 @@ This feature depends on the ImageVolume feature, which is implemented in KEP-463
 ###### Does this feature depend on any specific services running in the cluster?
 
 - CRI
-   - The CRI must support the new `ImageRef` field in the `VolumeMountStatus` struct that had been added to the CRI-API.
-   - This is not yet supported by CRI-O or containerd, but both runtimes are expected to support it in the future.
+   - The CRI must support `ImageSpec.ImageRef` for image-volume mounts.
+   - containerd and CRI-O provide this field.
 - Kubelet
-  - Should be able to handle the new `ImageRef` field in the `VolumeMountStatus` struct and populate it in the pod's status.
+  - Populates `VolumeStatus.Image.ImageRef` in the pod's status.
 - kube-apiserver
   - The API server has to be available in order to update the pod's status with the new `ImageRef` field.
 
@@ -975,7 +975,7 @@ If the API server is unavailable, the kubelet will not be able to update the pod
 
 ###### What are other known failure modes?
 
-This feature depends on the CRI to function correctly and populate the `ImageRef` field in the `VolumeMountStatus` struct.
+This feature depends on the CRI to populate `ImageSpec.ImageRef` for image-volume mounts.
 If the CRI does not support this field, the kubelet will not be able to populate it in the pod's status and it will be omitted.
 
 Theoretically, if there's a bug in the CRI, a wrong image digest could be reported in the pod's status.
@@ -1010,6 +1010,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- **2026-09-15:** KEP graduated to beta for Kubernetes v1.38.
 
 ## Drawbacks
 
