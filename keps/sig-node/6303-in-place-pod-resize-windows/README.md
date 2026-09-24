@@ -372,11 +372,13 @@ The consequence for Kubernetes is a visibility gap, not a missing limit:
 | Container | exits `OOMKilled` | may exit, **or stay `Running` but unhealthy** |
 | K8s signal | kernel event, always visible | only if the runtime classifies the exit as OOM |
 
-Operators should pair the cap with liveness probes, and rely on a terminal `OOMKilled` reason from the
-runtime where it exists. The kubelet Windows OOM watcher (kubernetes/kubernetes#141700) is the in-flight
-work that surfaces that reason, but it covers only that subset — not the Running-but-unhealthy case
-above. #141700 is an open, unmerged forward reference and is not a dependency of this KEP, which neither
-adds nor changes it.
+Operators must therefore pair the cap with liveness probes. Kubernetes does not currently surface this as
+`OOMKilled` on Windows: the runtime does not classify a commit-limit exit as OOM (containerd classifies
+OOM only for the Linux exit code 137), so there is no `OOMKilled` reason, event, or
+`container_oom_events_total` increment — and a container that merely degrades stays `Running`. Closing
+that gap requires a runtime-side change to classify the Windows commit-limit exit as OOM; it is deferred
+and out of scope here. The Running-but-unhealthy row above is not covered by any current signal, which is
+the main reason alpha requires liveness probes.
 
 ### Test Plan
 
@@ -664,8 +666,9 @@ separate capability/refusal causes from validation rejects.
 - 2026-09-24 (b): Memory section now states what "enforcement" means on Windows — a hard commit
   ceiling whose breach fails an allocation (`STATUS_COMMITMENT_LIMIT` / Win32
   `ERROR_COMMITMENT_LIMIT`) rather than killing the container — and the resulting Kubernetes visibility
-  gap, with kubernetes/kubernetes#141700 called out as open, unmerged, and covering only the
-  runtime-reported `OOMKilled` subset.
+  gap. Windows OOM observability is recorded as a runtime-side follow-up: containerd classifies OOM only
+  for the Linux exit code 137, so no current kubelet signal covers a Windows commit-limit breach and
+  liveness probes are the interim mitigation.
 - Tracking issue: kubernetes/enhancements#6303.
 
 ## Drawbacks
