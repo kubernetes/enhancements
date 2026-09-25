@@ -681,11 +681,13 @@ type VolumeHealthStatus struct {
 
 type VolumeHealthCondition struct {
     // status is the machine-parseable category. One of
-    // "Inaccessible", "DataLoss", "Degraded", or "Unknown".
+    // "Inaccessible", "DataLoss", "Degraded", "Unknown", or "Healthy".
     // "Unknown" is assigned when the driver reports a condition
     // whose category this Kubernetes version does not recognize
     // (for example a value added by a newer CSI spec), for
-    // observability purposes.
+    // observability purposes. "Healthy" is assigned when the driver
+    // advertises volume-health capability and reports no adverse
+    // conditions.
     Status VolumeHealthStatusType `json:"status"`
     // reason is a brief CamelCase machine-parseable reason
     // (e.g. "VolumeNotFound"). Required; together with status
@@ -706,6 +708,10 @@ const (
     // not recognize, so the condition is surfaced rather than
     // dropped.
     VolumeHealthUnknown      VolumeHealthStatusType = "Unknown"
+    // VolumeHealthHealthy is the status a writer assigns when a
+    // driver advertises volume-health capability and reports no
+    // adverse conditions for a volume.
+    VolumeHealthHealthy      VolumeHealthStatusType = "Healthy"
 )
 ```
 
@@ -792,9 +798,12 @@ type StorageHealthCondition struct {
     Name string `json:"name"`
 
     // status is one of "StorageUnreachable", "StorageDegraded",
-    // or "StorageUnknown". "StorageUnknown" is assigned when the
-    // driver reports a StorageHealthErrorType this Kubernetes
-    // version does not recognize, for observability purposes.
+    // "StorageUnknown", or "StorageHealthy". "StorageUnknown" is
+    // assigned when the driver reports a StorageHealthErrorType this
+    // Kubernetes version does not recognize, for observability
+    // purposes. "StorageHealthy" is assigned when the driver
+    // advertises storage-health capability and reports no adverse
+    // conditions.
     Status StorageHealthStatusType `json:"status"`
 
     // reason is a brief CamelCase machine-parseable reason.
@@ -826,6 +835,10 @@ const (
     // StorageHealthErrorType the CO does not recognize, rather than
     // dropping it.
     StorageHealthUnknown     StorageHealthStatusType = "StorageUnknown"
+    // StorageHealthHealthy is the status a writer assigns when a
+    // driver advertises storage-health capability and reports no
+    // adverse conditions for the backend.
+    StorageHealthHealthy     StorageHealthStatusType = "StorageHealthy"
 )
 ```
 
