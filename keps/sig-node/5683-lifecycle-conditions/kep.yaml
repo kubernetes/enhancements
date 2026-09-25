@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-apps
+  - sig-cli
 status: implementable
 creation-date: 2026-06-04
 reviewers:
@@ -16,25 +17,26 @@ reviewers:
 approvers:
   - johnbelamaric
   - mrunalp
-  - "@sergeykanzhelev" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/5394-psi-node-conditions"
-  - "/keps/sig-node/5683-specialized-lifecycle-management"
+  - "https://github.com/kubernetes/enhancements/issues/6430"
+  - "https://github.com/kubernetes/enhancements/issues/6249"
 replaces: []
 
 stage: alpha
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
-  alpha: "v1.37"
+  alpha: "v1.38"
 
 feature-gates:
   - name: NodeLifecycleConditions
     components:
       - kube-apiserver
       - kube-controller-manager
+      - kubectl
 disable-supported: true
 
 metrics: []
