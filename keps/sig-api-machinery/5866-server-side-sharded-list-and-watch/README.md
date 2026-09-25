@@ -84,6 +84,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Shard Key](#shard-key)
   - [Consistent Hashing (Key Range)](#consistent-hashing-key-range)
   - [Client Request](#client-request)
+  - [Client Library Support (<code>client-go</code>)](#client-library-support-client-go)
   - [Server Design](#server-design)
   - [Hashing Implementation](#hashing-implementation)
   - [Test Plan](#test-plan)
@@ -137,7 +138,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -343,6 +344,12 @@ operator (`||`) implemented by the CEL evaluator.
 - `shardRange(...)`: A CEL function that specifies the field to hash and the start
   (inclusive) / end (exclusive) hex bounds (`hexStart <= x < hexEnd`) of hash values.
 
+### Client Library Support (`client-go`)
+
+For Beta, `k8s.io/apimachinery/pkg/sharding` and `k8s.io/client-go/tools/cache` will provide built-in support for sharded informers and reflectors:
+- **Shard Range Construction**: Helper utilities in `apimachinery/pkg/sharding` to construct `sharding.Selector` instances and format `ListOptions.ShardSelector` expressions for a given shard index and total shard count.
+- **Automatic Client-Side Fallback**: When configured with a `sharding.Selector`, `Reflector` automatically attaches `ShardSelector` to outgoing `LIST` and `WATCH` requests and inspects `ListMeta.ShardInfo` on responses. If `ShardInfo` is absent (e.g., when communicating with an API server that has `ShardedListAndWatch` disabled), `Reflector` transparently filters incoming objects client-side using `sharding.Selector.Matches` before updating the local cache store.
+
 ### Server Design
 
 Currently, the Cacher broadcasts events to all watchers that match a simple Label/Field selector.
@@ -412,8 +419,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/apimachinery/pkg/apis/meta/v1`: `2026-02-01` - `TBD` (Validation logic)
-- `k8s.io/apiserver/pkg/storage`: `2026-02-01` - `TBD` (Filtering logic)
+- `k8s.io/apimachinery/pkg/sharding`: FNV-1a hashing, field extraction, and range selector evaluation (`hash_test.go`, `accessor_test.go`, `selector_test.go`).
+- `k8s.io/apiserver/pkg/sharding`: `shardRange` CEL expression parsing and validation (`parser_test.go`).
+- `k8s.io/apiserver/pkg/storage`: `SelectionPredicate` shard matching, `ShardInfo` population, and pagination `continue` token binding (`selection_predicate_test.go`, `continue_test.go`).
+- `k8s.io/apiserver/pkg/storage/cacher` & `etcd3`: Watch cache list/watch filtering and etcd watcher filtering (`cacher_whitebox_test.go`, `watcher_test.go`).
 
 ##### Integration tests
 
@@ -439,7 +448,8 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- **Watch Sharding Test**: Ensure that sharded watches with different ranges function.
+- [`test/integration/apiserver/sharding_test.go`](https://github.com/kubernetes/kubernetes/blob/b8a17e1ce84/test/integration/apiserver/sharding_test.go): [TestGrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=TestSharded), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=TestSharded)
+  - `TestShardedList`, `TestShardedWatch`, `TestShardedListFeatureGateDisabled`, `TestShardedListComplete`, `TestShardedListByNamespace`, `TestShardedListAllResources`
 
 ##### e2e tests
 
@@ -458,7 +468,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- `test/e2e/apimachinery/sharding.go`: Verify multi-shard `LIST` (disjoint completeness, pagination, and `ListMeta.ShardInfo` echo) and `WATCH` event filtering (`ADDED`/`MODIFIED`/`DELETED`) by `object.metadata.uid` and `object.metadata.namespace`.
 
 ### Graduation Criteria
 
@@ -498,6 +508,12 @@ functionality is accessed.
 - Benchmarks showing performance improvements for sharded clients.
 - Scalability tests verifying no regression in API server throughput.
 - Informer and reflector framework will be updated to support sharded watches.
+- Watch cache object matching is consolidated behind `SelectionPredicate.Matches` rather than
+  short-circuiting to `MatchesSharding` and `MatchesObjectAttributes`
+  ([kubernetes/kubernetes#137821](https://github.com/kubernetes/kubernetes/issues/137821)).
+- Code organization for CEL is settled, specifically whether CEL, or some subset of it, belongs
+  as a dependency of the apimachinery module
+  ([kubernetes/kubernetes#137649](https://github.com/kubernetes/kubernetes/issues/137649)).
 
 <!--
 #### GA
@@ -621,6 +637,8 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, the feature can be disabled by setting the `ShardedListAndWatch` feature gate to `false` on `kube-apiserver` and restarting the component. When disabled, `kube-apiserver` ignores `shardSelector` parameters and omits `ShardInfo` from `ListMeta`, reverting to standard un-filtered list/watch behavior. Sharding-aware clients inspect `ListMeta.ShardInfo` and fall back to client-side filtering when absent, ensuring no disruption or violation of mutual exclusion for running workloads.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Clients can resume sending sharding parameters. The API server will immediately start respecting
@@ -662,6 +680,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+
+During a rolling upgrade or rollback in a high-availability control plane, some `kube-apiserver` instances may have `ShardedListAndWatch` enabled while others have it disabled. A client connecting to an un-upgraded or rolled-back API server will receive the full, un-sharded stream without `ListMeta.ShardInfo`.
+
+In Beta, `client-go` informers and reflectors configured with a shard selector handle this fallback automatically: they inspect `ListMeta.ShardInfo` and apply client-side filtering via `k8s.io/apimachinery/pkg/sharding` whenever `ShardInfo` is absent, ensuring out-of-shard objects are never added to the local store. Workloads that do not specify `shardSelector` are completely unaffected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -708,13 +730,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- Clients can inspect `ListMeta.ShardInfo.Selector` returned in `LIST` responses (and initial `WATCH` sync/bookmark events), which echoes the applied `shardSelector` expression when server-side sharding is active.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -733,7 +749,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-Latency for sharded watches should be comparable to standard watches.
+- p99 `apiserver_request_duration_seconds` for `LIST` and `WATCH` requests with `shardSelector` is within 5% of (or lower than) equivalent requests without `shardSelector`.
+- p99 watch event dispatch latency (`apiserver_watch_events_dispatch_duration_seconds{stage="total"}`) for unsharded watchers on the same resource remains within 5% of baseline when concurrent sharded watches are active.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -844,6 +861,10 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Check `apiserver_request_duration_seconds` for `LIST` and `WATCH` requests to determine if latency degradation is isolated to requests specifying `shardSelector`.
+2. Inspect `apiserver_watch_shards_total` and `apiserver_watch_filtered_events_total` by `group` and `resource` to identify high-volume or uneven sharded watch streams.
+3. If the feature is causing degradation, disable the `ShardedListAndWatch` feature gate on `kube-apiserver` to immediately revert to standard un-filtered watch dispatch.
 
 ## Implementation History
 
