@@ -447,8 +447,6 @@ type StatefulSetConditionType string
 const (
     // Progress for a StatefulSet is considered when a new pod is created, deleted, or becomes ready.
     StatefulSetProgressing StatefulSetConditionType = "Progressing"
-
-    StatefulSetAvailable StatefulSetConditionType = "Available"
 )
 ```
 ### Implementation Changes
@@ -502,6 +500,8 @@ to implement this enhancement.
 
 ##### Integration tests
 
+- [TestRecreateStatefulSetUpdate](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/integration/statefulset/statefulset_test.go#L802-L928): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration-master&test=TestRecreateStatefulSetUpdate)
+
 We should cover below scenarios:
 
 - Without `type: Recreate`: Existing StatefulSets with `RollingUpdate` and `OnDelete` continue to work unchanged (backward compatibility)
@@ -519,13 +519,15 @@ We should cover below scenarios:
 
 ##### e2e tests
 
+- Test scenarios:
+  - [should recreate all pods when the update strategy is Recreate](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/e2e/apps/statefulset.go#L1271-L1329): [result](https://storage.googleapis.com/k8s-triage/index.html?test=should%20recreate%20all%20pods%20when%20the%20update%20strategy%20is%20Recreate)
+  - [should recreate stuck pods with ImagePullBackOff when the update strategy is Recreate](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/e2e/apps/statefulset.go#L1331-L1405): [result](https://storage.googleapis.com/k8s-triage/index.html?test=should%20recreate%20stuck%20pods%20with%20ImagePullBackOff%20when%20the%20update%20strategy%20is%20Recreate)
+  - [should preserve Parallel PodManagementPolicy when recreating pods with recreate strategy](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/e2e/apps/statefulset.go#L1407-L1481): [result](https://storage.googleapis.com/k8s-triage/index.html?test=should%20preserve%20Parallel%20PodManagementPolicy%20when%20recreating%20pods%20with%20recreate%20strategy)
+
 The following e2e tests will be added to `test/e2e/apps/statefulset.go`:
 
-- StatefulSet with `type: Recreate` successfully deletes and recreates all pods during update
-- Recreate works with stuck pods (ImagePullBackOff scenario - pods are deleted and new ones created)
 - Recreate waits for full termination before creating new pods (no mixed old/new state)
 - Recreate preserves PersistentVolumeClaims (data persists across recreation)
-- Recreate respects `podManagementPolicy` during recreation
 - StatefulSets without `type: Recreate` maintain current RollingUpdate/OnDelete behavior (backward compatibility)
 - Controller restart during Recreate resumes correctly from last phase
 
