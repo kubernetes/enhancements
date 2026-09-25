@@ -1,0 +1,53 @@
+title: In-place Pod Vertical Scaling (Container Resize) on Windows
+kep-number: 6303
+authors:
+  - "@MartinForReal"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-windows
+status: provisional
+creation-date: 2026-08-21
+last-updated: 2026-09-23
+reviewers:
+  - "@tallclair" # sig-node assigned reviewer
+  - "@natasha41575" # sig-node assigned reviewer
+  - "@mrunalp" # sig-node reviewer
+approvers:
+  - "@derekwaynecarr" # sig-node approver (requested on the PR)
+  - "@mrunalp" # sig-node approver (requested on the PR)
+  - "@dchen1107" # sig-node TL (proposed)
+
+see-also:
+  - "/keps/sig-node/1287-in-place-update-pod-resources"
+  - "/keps/sig-node/5419-pod-level-resources-in-place-resize"
+replaces: []
+
+stage: alpha
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+feature-gates:
+  - name: InPlacePodVerticalScaling
+    components:
+      - kube-apiserver
+      - kube-scheduler
+      - kubelet
+  - name: InPlacePodLevelResourcesVerticalScaling
+    components:
+      - kube-apiserver
+      - kube-scheduler
+      - kubelet
+  - name: WindowsInPlacePodResize
+    components:
+      - kubelet
+disable-supported: true
+
+metrics:
+  - kubelet_pod_resize_duration_milliseconds
+  - kubelet_pod_infeasible_resizes_total
+  - kubelet_container_requested_resizes_total
