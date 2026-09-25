@@ -29,6 +29,8 @@
       - [Scalability follow-up (post-alpha): node-scoped watch](#scalability-follow-up-post-alpha-node-scoped-watch)
   - [Restore Mechanism](#restore-mechanism)
     - [End-to-end restore walkthrough](#end-to-end-restore-walkthrough)
+  - [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)
+  - [Runtime Options](#runtime-options)
   - [Post-Checkpoint State Semantics](#post-checkpoint-state-semantics)
   - [Checkpoint Content](#checkpoint-content)
     - [Pod Specification and Metadata](#pod-specification-and-metadata)
@@ -40,6 +42,7 @@
   - [Security Implications](#security-implications)
     - [Privilege model](#privilege-model)
     - [Sensitive memory contents](#sensitive-memory-contents)
+    - [Checkpoint archive integrity](#checkpoint-archive-integrity)
     - [Denial of service via excessive checkpointing](#denial-of-service-via-excessive-checkpointing)
     - [automountServiceAccountToken on restore](#automountserviceaccounttoken-on-restore)
     - [Path traversal protection](#path-traversal-protection)
@@ -261,9 +264,9 @@ The implementation consists of three layers:
    Pod sandbox configuration from the checkpoint, assigns a new Pod UID, updates cgroup parent
    paths, and delegates to the container runtime.
 
-3. **API objects** in the `checkpoint.k8s.io` API group that provide declarative management of
+3. **API objects** in the `node.k8s.io` API group that provide declarative management of
    checkpoint operations. `PodCheckpoint` is a namespace-scoped standalone object. The owning
-   kubelet finds the object by watching `PodCheckpoint`s and matching `spec.sourcePodName` against
+   kubelet finds the object by watching `PodCheckpoint`s and matching `spec.sourcePod.name` against
    the Pods it runs, so no control-plane-to-kubelet call is needed. (Node-scoped field-selector
    routing is a follow-up; see
    [Follow-up: node-scoped routing](#scalability-follow-up-post-alpha-node-scoped-watch).)
@@ -351,6 +354,21 @@ Specific risks and mitigations:
   viewer/editor/admin ClusterRoles for per-namespace binding. See
   [Security Implications](#security-implications).
 
+- Trust in the checkpoint archive. The restore path has to trust the archive it restores from:
+  anyone who can write to the checkpoint data can make the runtime restore whatever process state
+  they put there, which is equivalent to root on the node. Mitigations: (a) the security context
+  in the Pod spec, passed down through the CRI, is authoritative, and the runtime must not take
+  security-relevant settings from the archive; (b) the runtime reports a digest of the checkpoint
+  data, the kubelet records it on the `PodCheckpoint` status and passes it back on restore, and
+  the runtime verifies it before restoring. Both are Beta blockers. See
+  [Checkpoint archive integrity](#checkpoint-archive-integrity).
+
+- Opaque runtime options. Options that are passed unchanged to the runtime are opaque to
+  Kubernetes, so a runtime option added later could grant more privilege than the user holds
+  (the same class of problem Kubernetes has had with opaque volume driver options). Mitigation:
+  only option keys that a cluster administrator lists on the Pod's RuntimeClass are accepted.
+  With no allow-list, no options are accepted. See [Runtime Options](#runtime-options).
+
 - Application awareness is required. Checkpoint and restore are not transparent to applications:
   in-memory secrets, tokens, environment variables, and cached hostnames persist through restore,
   and selective memory scrubbing is not feasible. Applications must cooperate for correctness.
@@ -411,114 +429,195 @@ ContainerCheckpoint API.
 
 #### CheckpointPod
 
-Proposed CRI API extension for CheckpointPod:
+Proposed CRI API extension for CheckpointPod. Both RPCs are methods on the existing
+`RuntimeService`, because checkpoint and restore need the runtime's sandbox and container state.
 
 ```proto
 service RuntimeService {
     ...
-    // CheckpointPod creates a Pod-level checkpoint. If the pod sandbox does not
-    // exist or the checkpoint operation fails, the call returns an error.
+    // CheckpointPod creates a Pod-level checkpoint. The caller must set a
+    // deadline on the call. If the pod sandbox does not exist, the deadline is
+    // exceeded, or the checkpoint operation fails, the call returns an error.
+    // The pod sandbox and containers must be running when the call starts. The
+    // runtime must pause every selected container before capturing any of
+    // them, keep all selected containers paused until every selected
+    // container has been captured, and resume all of them before returning on
+    // success, error, or deadline expiry. This produces one consistent
+    // pod-wide cut while ensuring the runtime never returns a frozen pod.
     rpc CheckpointPod(CheckpointPodRequest) returns (CheckpointPodResponse) {}
     ...
-}
-
-// PostCheckpointState selects the state the Pod's processes should be left
-// in once the checkpoint image has been written.
-enum PostCheckpointState {
-    // RUNNING leaves the Pod's processes running after the snapshot has
-    // been written ("live snapshot" semantics). This is the default.
-    POST_CHECKPOINT_STATE_RUNNING = 0;
-    // STOPPED leaves the Pod stopped once the checkpoint is complete. The CRI
-    // enum reserves this value so runtimes may implement it ahead of Kubernetes,
-    // but in alpha the kubelet only ever sends RUNNING (see Post-Checkpoint State
-    // Semantics).
-    POST_CHECKPOINT_STATE_STOPPED = 1;
 }
 
 message CheckpointPodRequest {
     // ID of the pod sandbox to be checkpointed.
     string pod_sandbox_id = 1;
-    // Directory the runtime writes the checkpoint into. A Pod checkpoint is a
-    // collection of runtime-defined files (not a single archive object); their
-    // layout and format are opaque to Kubernetes. The runtime writes them under
-    // this directory and nowhere else (the kubelet owns it for storage accounting
-    // and path confinement).
-    string path = 2;
-    // (No timeout field: the kubelet bounds the operation with the gRPC call
-    // deadline, set from PodCheckpoint.spec.timeoutSeconds. The runtime honours
-    // the context deadline and cleans up partial artifacts when it fires.)
+    // Absolute path to an existing, empty directory where the runtime must
+    // write the checkpoint. The caller owns the directory, makes it writable by
+    // the runtime, and should restrict access to the caller and runtime. The
+    // runtime must not remove the directory. A Pod checkpoint is a collection
+    // of runtime-defined files; their layout and format are opaque to the
+    // caller. The runtime must not write outside this directory and must remove
+    // partial artifacts before returning an error.
+    string output_path = 2;
+    // IDs of the containers to include in the checkpoint. The list must be
+    // non-empty, must not contain duplicates, and must contain exactly the
+    // running containers selected by the caller. Every container must belong to
+    // `pod_sandbox_id` and be running; otherwise the runtime must fail the
+    // request without producing a checkpoint.
+    repeated string container_ids = 3;
+    // Optional opaque runtime-specific checkpoint options supplied by the CRI
+    // caller. Keys are interpreted in the scope of the pod sandbox's runtime
+    // handler. When kubelet is the caller, these values originate only from
+    // PodCheckpoint.spec.checkpointOptions, are limited to the keys allowed by
+    // the Pod's RuntimeClass (see Runtime Options), and are copied unchanged.
+    // They are untrusted user input: the runtime must not let them grant more
+    // privilege than the Pod spec allows. The runtime must reject unsupported
+    // or invalid keys and values rather than silently ignore them, and must not
+    // implement any option that weakens the guarantees in Checkpoint archive
+    // integrity. Options must not contain secrets.
     //
-    // Checkpoint options passed to the container runtime.
-    // Reserved for runtime-specific pass-through configuration; behaviour
-    // that the CRI itself must branch on belongs in dedicated fields.
+    // These options apply only while creating the checkpoint. If an option
+    // changes what is required to restore the checkpoint, the runtime must
+    // encode that requirement in its checkpoint data; the caller does not copy
+    // checkpoint options into RestorePodRequest.options.
     map<string, string> options = 4;
-    // State the runtime MUST leave the Pod's processes in after the
-    // checkpoint archive has been written. Defaults to RUNNING (the Pod is
-    // left running). Runtimes that cannot honour the requested state SHOULD
-    // return an error. See Post-Checkpoint State Semantics for the
-    // end-to-end contract.
-    PostCheckpointState post_checkpoint_state = 5;
 }
 
-// Empty: the checkpoint is written under the request's `path` directory, which
-// the caller (kubelet) provided and already knows, so there is no separate
-// location or object name to return.
-message CheckpointPodResponse {}
+message CheckpointPodResponse {
+    // Digest of the checkpoint data written under `output_path`, in the form
+    // "<algorithm>:<hex>" (for example "sha256:..."). The runtime defines how
+    // the digest covers its files (for example a digest over a manifest listing
+    // each file's digest), and must be able to recompute it on restore. The
+    // kubelet treats it as opaque and records it in
+    // PodCheckpoint.status.checkpointDigest. May be empty in alpha; required
+    // for Beta (see Checkpoint archive integrity).
+    string checkpoint_digest = 1;
+}
 ```
 
-The kubelet bounds the checkpoint by setting the gRPC call deadline from
-`PodCheckpoint.spec.timeoutSeconds` (rather than passing a timeout field in the request). When the
-deadline fires, the runtime's context is cancelled; the runtime should abort, clean up any
+There is no timeout field: the kubelet bounds the checkpoint with the gRPC call deadline, derived
+from `PodCheckpoint.spec.timeoutSeconds` and capped by the kubelet's configured checkpoint timeout
+(`podCheckpointTimeout` in the kubelet configuration, default 15 seconds; see
+[PodCheckpoint](#podcheckpoint)). The cluster administrator sets the ceiling per node, so users
+cannot keep a Pod frozen for longer than the node allows. Because the runtime keeps the containers paused for the
+whole capture, the deadline also bounds how long the Pod can stay frozen. When the deadline fires,
+the runtime's context is cancelled; the runtime must abort, resume the containers, remove any
 partially created checkpoint artifacts, and return an error. The kubelet handles that error by
 cleaning up and recording the failure on the `PodCheckpoint` status as `CheckpointFailed` (see
 [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)).
+
+The runtime always leaves the Pod running after the checkpoint. There is no field to select a
+different post-checkpoint state in alpha; one will be added to the request together with the
+`Stopped` behavior (see [Post-Checkpoint State Semantics](#post-checkpoint-state-semantics)).
 
 #### RestorePod
 
 ```proto
 service RuntimeService {
     ...
-    // RestorePod restores a pod sandbox from a checkpoint
+    // RestorePod prepares a pod sandbox and containers from a checkpoint. The
+    // caller must set a deadline on the call. On success, every returned
+    // container must be in the CREATED state and must not have executed the
+    // restored process; the caller invokes its pre-start hooks and then calls
+    // StartContainer for each returned ID. On error, the runtime must remove
+    // any sandbox and containers created by the call before returning.
     rpc RestorePod(RestorePodRequest) returns (RestorePodResponse) {}
     ...
 }
 
 message RestorePodRequest {
-    // Directory containing the checkpoint to restore from: the directory the
-    // runtime wrote during CheckpointPod (a collection of runtime-defined files).
-    string path = 1;
+    // Absolute path to the directory containing the checkpoint data to restore.
+    // The runtime must not modify the checkpoint data. The data format and
+    // layout are runtime-defined.
+    string checkpoint_path = 1;
     // Pod sandbox configuration supplied by the kubelet, with node-local restore-time
     // updates (new Pod UID, cgroup parent path, log directory). Pod-spec equality between
     // the live Pod and status.checkpointedPodTemplate of the referenced PodCheckpoint is
     // enforced at API-server admission (and re-checked by the kubelet before this call);
     // arbitrary user overrides are not permitted.
     PodSandboxConfig config = 2;
-    // (No timeout field: as with CheckpointPod, the kubelet bounds the operation
-    // with the gRPC call deadline rather than a request field.)
+    // Runtime handler to use for restoring the pod sandbox and its containers.
+    // The handler selects the configured runtime implementation that interprets
+    // the runtime-specific checkpoint data. The selected handler must be
+    // compatible with the checkpoint; the runtime must reject a checkpoint it
+    // cannot restore. An empty value selects the default handler, as for
+    // RunPodSandboxRequest. The runtime must reject an unknown non-empty handler.
+    string runtime_handler = 3;
+    // Optional opaque runtime-specific restore options supplied by the CRI
+    // caller. Keys are interpreted in the scope of `runtime_handler`. When
+    // kubelet is the caller, these values originate only from the restoring
+    // Pod's spec.restoreFrom.options, are limited to the keys allowed by the
+    // Pod's RuntimeClass, and are copied unchanged. They are untrusted user
+    // input, as for CheckpointPodRequest.options. The runtime must reject
+    // unsupported or invalid keys and values rather than silently ignore them.
+    // Options must not contain secrets.
     //
-    // Restore options passed to the container runtime.
+    // These options apply only to this restore attempt. They must not be
+    // inferred from CheckpointPodRequest.options or treated as defaults stored
+    // with the checkpoint. The runtime may separately read requirements encoded
+    // in its own checkpoint data.
     map<string, string> options = 4;
-    // Container configurations for all containers in the pod.
-    // This includes mount configurations that tell the runtime where to mount
-    // host paths (e.g., /etc/hosts, termination logs, volumes) into the containers.
-    // The runtime should match containers from the checkpoint with these configs
-    // by container name and apply the mount configurations.
+    // Complete restore-time configurations for all containers represented by
+    // the checkpoint. The list must be non-empty. Every entry must have a
+    // non-empty, unique metadata name, and those names must be the exact set of
+    // container names in the checkpoint. The runtime must match containers by
+    // metadata name. The checkpoint is authoritative for filesystem and
+    // process state. Image, command, args, working directory, environment, and
+    // process credentials describe the expected checkpointed process; they
+    // must not start or mutate it, and any mismatch the runtime can validate
+    // must fail the restore. The runtime applies restore-time settings outside
+    // checkpoint-owned process state, including labels, annotations, mounts,
+    // devices, Linux resources, logging, and security constraints, and must
+    // fail settings incompatible with the checkpoint.
+    //
+    // These configurations, together with `config`, are authoritative for every
+    // security-relevant setting (security context, capabilities, SELinux label,
+    // seccomp and AppArmor profiles, no_new_privs, user and group IDs,
+    // namespaces, mounts, devices). The runtime must not take any of these from
+    // the checkpoint data; if the checkpoint data conflicts with them, the
+    // runtime either applies the value from these configurations or fails the
+    // restore. See Checkpoint archive integrity.
     repeated ContainerConfig container_configs = 5;
+    // Digest recorded in PodCheckpoint.status.checkpointDigest when the
+    // checkpoint was taken. If set, the runtime must recompute the digest of
+    // the data under `checkpoint_path` and fail the restore if it does not
+    // match, before restoring any process state. Empty when the checkpoint has
+    // no recorded digest (alpha only).
+    string expected_checkpoint_digest = 6;
+}
+
+message RestoredContainer {
+    // Name from the restored container's ContainerMetadata. This identifies
+    // which requested container configuration produced the runtime ID.
+    string name = 1;
+    // Non-empty runtime ID of the restored container.
+    string container_id = 2;
 }
 
 message RestorePodResponse {
-    // ID of the restored pod sandbox
+    // Non-empty ID of the restored pod sandbox.
     string pod_sandbox_id = 1;
+    // Restored containers in CREATED state, without having executed the
+    // restored process (see RestorePod). This must contain exactly one entry
+    // for every request.container_configs entry. Names and container IDs
+    // must each be non-empty and unique.
+    repeated RestoredContainer restored_containers = 2;
 }
 ```
 
+`RestorePod` is split from starting the containers so the kubelet keeps its normal container start
+path: the runtime creates the sandbox and the containers from the checkpoint, and the kubelet then
+runs its internal pre-start hooks (for example CPU and memory manager setup) and calls the existing
+`StartContainer` RPC for each returned container, which resumes the restored processes.
+
 As with checkpoint, the kubelet bounds the restore with the gRPC call deadline rather than a
 request field. When it fires the runtime should abort, clean up any partially restored artifacts,
-and return an error. The kubelet cleans up, records the failure as an event on the restore Pod,
-and leaves the Pod `Pending` so the restore is retried on the next sync; restore is driven
-declaratively by `spec.restoreFrom`, so there is no synchronous caller to return the error to. The
-admission, authorization, and pod-template-equality semantics around restore are described in
-[Restore Mechanism](#restore-mechanism), not here.
+and return an error. If a pre-start hook or `StartContainer` fails after `RestorePod` succeeded,
+the kubelet removes the restored sandbox and containers. In both cases the kubelet records the
+failure as an event on the restore Pod and leaves the Pod `Pending` so the restore is retried on
+the next sync; restore is driven declaratively by `spec.restoreFrom`, so there is no synchronous
+caller to return the error to. The admission, authorization, and pod-template-equality semantics
+around restore are described in [Restore Mechanism](#restore-mechanism), not here.
 
 ### Kubelet Checkpoint and Restore Handling
 
@@ -530,13 +629,13 @@ gate.
 
 There is no imperative checkpoint HTTP endpoint. The kubelet **watches `PodCheckpoint` objects**
 and executes the checkpoint when it observes a non-terminal object whose source Pod
-(`spec.sourcePodName`) it manages. This mirrors how restore is handled and keeps any privileged
+(`spec.sourcePod.name`) it manages. This mirrors how restore is handled and keeps any privileged
 trigger off the user-facing path. (For alpha the kubelet watches cluster-wide and filters
 locally by Pod ownership; node-scoped field-selector routing is a follow-up, see
 [Follow-up: node-scoped routing](#scalability-follow-up-post-alpha-node-scoped-watch).)
 
 The kubelet's checkpoint handling (the canonical execution flow referenced elsewhere in this KEP):
-1. Selects `PodCheckpoint` objects whose `spec.sourcePodName` resolves to a Pod present on this
+1. Selects `PodCheckpoint` objects whose `spec.sourcePod.name` resolves to a Pod present on this
    node and whose object is not in a terminal state (`Ready=True`, or `Ready=False` with reason
    `CheckpointFailed`/`SourcePodReplaced`).
 2. Acquires a per-Pod in-flight guard so a re-observed or duplicate object does not start a second
@@ -545,26 +644,36 @@ The kubelet's checkpoint handling (the canonical execution flow referenced elsew
    regular containers and restartable sidecars running). This execution-time gate is the kubelet's
    authority and is separate from the API-server RBAC gate on the object (see
    [Security Implications](#security-implications)).
-4. Pins the source instance by comparing the live Pod UID with `spec.sourcePodUID`. If they differ
+4. Pins the source instance by comparing the live Pod UID with `spec.sourcePod.uid`. If they differ
    the original instance was replaced; the kubelet fails the checkpoint with `Ready=False`, reason
    `SourcePodReplaced`, rather than checkpointing the new instance, and records the resolved UID in
    `status.sourcePodUID`.
-5. Requests the `RUNNING` post-checkpoint state from the CRI. Alpha always leaves the source Pod
-   running, so this is fixed; the `Stopped` behavior and its user-facing field are deferred to the
+5. Selects the containers to checkpoint (all regular containers and running restartable init
+   containers) and passes their IDs in `container_ids`. The runtime always leaves the source Pod
+   running after the checkpoint; the `Stopped` behavior and its fields are deferred to the
    migration follow-up (see [Post-Checkpoint State Semantics](#post-checkpoint-state-semantics)).
+   It also checks every key in `spec.checkpointOptions` against the allow-list on the source Pod's
+   RuntimeClass and fails the checkpoint with `CheckpointFailed` if a key is not allowed (see
+   [Runtime Options](#runtime-options)).
 6. Captures the source Pod's metadata and spec, strips node-local and cluster-specific fields (see
    [Pod Specification and Metadata](#pod-specification-and-metadata)), and writes the result to
    `status.checkpointedPodTemplate` for the spec-equality check used on restore (see
    [Restore Mechanism](#restore-mechanism)). The kubelet reads the live Pod object directly.
-7. Suspends the Pod's probes, resolves the CRI sandbox ID, and calls the `CheckpointPod` CRI API
-   in the background, writing the archive under the kubelet's checkpoint root (for example
-   `/var/lib/kubelet/pod-checkpoints/checkpoint-{podName}_{namespace}-{timestamp}`). It records the
-   location in `status.checkpointLocation` as the node-local source (`type: NodeLocal` with
+7. Sets the `Checkpointing=True` Pod condition (which makes the API server reject changes to the
+   source Pod's spec until it is cleared; see
+   [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)),
+   suspends the Pod's probes, resolves the CRI sandbox ID, and calls the `CheckpointPod` CRI API
+   in the background, writing the archive into a new directory under the kubelet's checkpoint
+   root named after the `PodCheckpoint` UID (for example
+   `/var/lib/kubelet/pod-checkpoints/checkpoint-{podCheckpointUID}`). The kubelet creates the
+   directory exclusively and fails the checkpoint if it already exists, so two checkpoints can
+   never write to the same directory, and names do not depend on clocks or on Pod names. It records
+   the location in `status.checkpointLocation` as the node-local source (`type: NodeLocal` with
    `nodeLocal.path` relative to that root), not as an absolute host path.
 8. On completion, writes the result to the `PodCheckpoint` status (see
    [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)): `Ready=True`/`CheckpointCompleted`
-   with `checkpointLocation` on success, or `Ready=False`/`CheckpointFailed` with a reason on
-   failure.
+   with `checkpointLocation` and the runtime-reported `checkpointDigest` on success, or
+   `Ready=False`/`CheckpointFailed` with a reason on failure. It then clears `Checkpointing`.
 
 Restore is likewise declarative. There is no restore HTTP endpoint: restore is driven through
 `pod.Spec.restoreFrom` and the kubelet's normal `SyncPod` path (see
@@ -574,9 +683,13 @@ when it observes the field, so no imperative restore call to the kubelet is need
 ### PodCheckpoint Objects
 
 To provide declarative management of checkpoint operations, this KEP introduces a new
-built-in Kubernetes API type, `PodCheckpoint`, in the `checkpoint.k8s.io/v1alpha1` API group.
+built-in Kubernetes API type, `PodCheckpoint`, in the `node.k8s.io/v1alpha1` API group version.
 `PodCheckpoint` is a first-class Kubernetes resource (not a CRD); it is served by the API
-server alongside core types such as `Pod` and `Node`. The design follows the Kubernetes
+server alongside core types such as `Pod` and `Node`. It joins `RuntimeClass` in the existing
+`node.k8s.io` group, which holds node-level runtime APIs, rather than adding a new API group.
+Like any alpha API version, `node.k8s.io/v1alpha1` is not served by default: the `podcheckpoints`
+resource is served only when the `PodLevelCheckpointRestore` feature gate is enabled and the
+version is enabled with `--runtime-config=node.k8s.io/v1alpha1=true`. The design follows the Kubernetes
 [volume snapshots] pattern: a checkpoint is a standalone object with its own lifecycle that
 can outlive the source Pod and be used to create multiple new Pods. The restore side makes
 use of a new `restoreFrom` field on Pod spec described below.
@@ -589,12 +702,21 @@ checkpoint, and records the result on the status (see
 [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)).
 
 `PodCheckpoint` supports two field selectors so checkpoints can be listed by the objects they
-relate to: `spec.sourcePodName` (all checkpoints of a given source Pod) and `status.nodeName` (all
+relate to: `spec.sourcePod.name` (all checkpoints of a given source Pod) and `status.nodeName` (all
 checkpoints whose data resides on a given node). These are registered as selectable fields on the
 REST storage, the same way `Pod` exposes `spec.nodeName`/`status.phase`. Adding a selectable field
 is backward-compatible, so further selectors can be added later without an incompatible change.
 
-The Go types (served from `staging/src/k8s.io/api/checkpoint/v1alpha1/types.go`):
+When a `PodCheckpoint` is created, admission resolves `spec.sourcePod` in the object's namespace
+and rejects the request if the Pod does not exist, is not `Running` (for example it is not yet
+scheduled or has not started), is being deleted, or does not have the UID in `spec.sourcePod.uid`
+when that is set. The user gets a synchronous error instead of an object that is never acted on,
+and kubelets are not sent requests for Pods they cannot checkpoint. This does not replace the
+kubelet's own checks: the Pod can change after the object is created, so the kubelet validates it
+again when it acts (see [Checkpoint Handling](#checkpoint-handling)). The check is done by the
+`PodRestoreAuthorization` admission plugin, which also handles `PodCheckpoint` creation.
+
+The Go types (served from `staging/src/k8s.io/api/node/v1alpha1/checkpoint_types.go`):
 
 ```go
 // PodCheckpoint represents a request to checkpoint a running Pod, together
@@ -623,42 +745,65 @@ type PodCheckpointList struct {
 
 // PodCheckpointSpec describes which Pod to checkpoint and how.
 type PodCheckpointSpec struct {
-	// sourcePodName is the name of the running Pod to checkpoint. The Pod must
-	// exist in the same namespace as this PodCheckpoint. Immutable. Required in
-	// alpha (validation rejects an empty value); it is marked optional in the
-	// schema so a future selector-based or controller-populated mode (for example
-	// checkpointing a ReplicaSet replica without naming one) can relax it without
-	// an incompatible API change.
+	// sourcePod identifies the running Pod to checkpoint. The Pod must exist in
+	// the same namespace as this PodCheckpoint. Required in alpha (validation
+	// rejects an unset reference); it is marked optional in the schema so a
+	// future selector-based or controller-populated mode (for example
+	// checkpointing a ReplicaSet replica without naming one) can relax it
+	// without an incompatible API change. Immutable.
 	// +optional
-	SourcePodName string `json:"sourcePodName,omitempty"`
+	SourcePod *PodReference `json:"sourcePod,omitempty"`
 
-	// sourcePodUID, if set, pins the checkpoint to a specific Pod instance: the
-	// kubelet checkpoints the Pod only if the live Pod named sourcePodName has
-	// this exact UID, and fails the checkpoint otherwise (reason
-	// SourcePodReplaced). Because a Pod name can be reused (the original Pod may
-	// be deleted and a new Pod created with the same name), a name alone does not
-	// identify an instance. Callers that need instance pinning set this field when
-	// creating the PodCheckpoint, so the instance is fixed across the window
-	// between creation and the kubelet acting on it; without it a same-name
-	// replacement could be checkpointed by mistake. A future enhancement may add
-	// admission-time defaulting to populate it automatically from the named Pod.
-	// Immutable.
-	// +optional
-	SourcePodUID *types.UID `json:"sourcePodUID,omitempty"`
-
-	// timeoutSeconds is the maximum time the checkpoint operation may take.
-	// A nil value or 0 means the container runtime default is used.
+	// timeoutSeconds is the maximum number of seconds the checkpoint operation
+	// may take, between 1 and 3600. If unset, the kubelet's configured
+	// checkpoint timeout (podCheckpointTimeout) is used; values larger than
+	// that configured ceiling are clamped to it. The kubelet enforces the
+	// effective timeout with the CRI call deadline, which bounds how long the
+	// Pod can stay frozen. Immutable, because the operation's deadline is fixed
+	// when it starts.
 	// +optional
 	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
+
+	// checkpointOptions contains opaque runtime-specific options for this
+	// checkpoint. The kubelet passes them unchanged to
+	// CheckpointPodRequest.options. Every key must be listed in
+	// podCheckpoint.allowedCheckpointOptions on the source Pod's RuntimeClass;
+	// if the Pod has no RuntimeClass, or the RuntimeClass has no allow-list, no
+	// options are accepted. Values are validated by the runtime. Options must not
+	// contain secrets. These are not restore defaults: restore-time choices are
+	// supplied separately in pod.spec.restoreFrom.options. At most 64 entries.
+	// Immutable. See Runtime Options.
+	// +optional
+	CheckpointOptions map[string]string `json:"checkpointOptions,omitempty"`
 }
 
-// Note: alpha leaves the source Pod running after a checkpoint, so the kubelet
-// always requests the RUNNING post-checkpoint state from the CRI. The user-facing
-// choice (a postCheckpointState field on PodCheckpointSpec) is intentionally not
-// added to the API yet; it will be introduced together with the "Stopped"
-// behavior in the migration follow-up, when it is actually used. The CRI enum
-// (CheckpointPodRequest.post_checkpoint_state) reserves the value ahead of that so
-// runtimes can implement it. See Post-Checkpoint State Semantics.
+// PodReference identifies a Pod in the same namespace by name and, optionally,
+// pins it to a single Pod instance by UID.
+// +structType=atomic
+type PodReference struct {
+	// name is the name of the Pod.
+	// +required
+	Name string `json:"name"`
+
+	// uid, if set, pins the reference to a specific Pod instance: the kubelet
+	// checkpoints the Pod only if the live Pod named name has this exact UID,
+	// and fails the checkpoint otherwise (reason SourcePodReplaced). Because a
+	// Pod name can be reused (the original Pod may be deleted and a new Pod
+	// created with the same name), a name alone does not identify an instance.
+	// Callers that need instance pinning set this field when creating the
+	// PodCheckpoint, so the instance is fixed across the window between
+	// creation and the kubelet acting on it. A future enhancement may add
+	// admission-time defaulting to populate it automatically from the named Pod.
+	// +optional
+	UID *types.UID `json:"uid,omitempty"`
+}
+
+// Note: alpha leaves the source Pod running after a checkpoint; the CRI
+// CheckpointPod contract always resumes the containers. The user-facing choice
+// (a postCheckpointState field on PodCheckpointSpec) and the matching CRI field
+// are intentionally not added yet; they will be introduced together with the
+// "Stopped" behavior in the migration follow-up, when they are actually used.
+// See Post-Checkpoint State Semantics.
 
 // PodCheckpointStatus reports the observed state of the checkpoint operation.
 // (There is no top-level observedGeneration: the spec is immutable, so the
@@ -669,14 +814,14 @@ type PodCheckpointStatus struct {
 	// nodeName is the node where the source Pod was running when checkpointed
 	// and where the checkpoint data resides.
 	// +optional
-	NodeName string `json:"nodeName,omitempty"`
+	NodeName *string `json:"nodeName,omitempty"`
 
 	// sourcePodUID is the UID of the Pod instance the kubelet actually
 	// checkpointed (or is checkpointing). It is recorded when the kubelet picks
 	// up the object for visibility and so that a later UID change for the same
 	// name is detected and fails the checkpoint. This guards only changes observed
 	// once the kubelet acts; to also cover the window before it picks up the
-	// object, set spec.sourcePodUID at creation time.
+	// object, set spec.sourcePod.uid at creation time.
 	// +optional
 	SourcePodUID *types.UID `json:"sourcePodUID,omitempty"`
 
@@ -688,6 +833,16 @@ type PodCheckpointStatus struct {
 	// (NodeLocal). See Checkpoint Storage Location.
 	// +optional
 	CheckpointLocation *CheckpointSource `json:"checkpointLocation,omitempty"`
+
+	// checkpointDigest is the digest of the checkpoint data reported by the
+	// container runtime ("<algorithm>:<hex>"), set by the kubelet together with
+	// checkpointLocation. On restore the kubelet passes it to the runtime, which
+	// fails the restore if the data no longer matches. It is written only by the
+	// kubelet through the status subresource, so it cannot be changed by users.
+	// May be empty in alpha if the runtime does not report a digest; required for
+	// Beta. See Checkpoint archive integrity.
+	// +optional
+	CheckpointDigest string `json:"checkpointDigest,omitempty"`
 
 	// completionTime is the time the checkpoint completed (the archive was
 	// written and the checkpoint became Ready), set by the kubelet. It is the
@@ -702,29 +857,27 @@ type PodCheckpointStatus struct {
 	// captured from the source Pod at checkpoint time. It is the authoritative
 	// record a restore Pod's spec is validated against. Node-local and
 	// cluster-specific fields (e.g. nodeName, status, uid, resourceVersion,
-	// managedFields) are excluded so the template stays portable.
+	// managedFields) are excluded so the template stays portable. The kubelet
+	// sets it once; later status updates cannot modify or clear it.
+	// Images of checkpointed containers (regular containers and restartable
+	// init containers) are recorded as the resolved image digest references
+	// reported by the runtime, so a restoring Pod must use those same image
+	// references rather than the original tags. Images of completed
+	// non-restartable init containers are unchanged, because those containers
+	// are not restored.
 	// +optional
 	CheckpointedPodTemplate *core.PodTemplateSpec `json:"checkpointedPodTemplate,omitempty"`
 
-	// checkpointedContainers lists the checkpointed regular (non-init) containers
-	// as a visibility convenience; the authoritative set is in
-	// checkpointedPodTemplate. Named to parallel checkpointedPodTemplate, since
-	// these describe the checkpointed Pod, not the PodCheckpoint object.
+	// checkpointedContainers lists the containers captured in the checkpoint:
+	// all regular containers plus any running restartable init (sidecar)
+	// containers, as a convenience for clients. Container names are unique
+	// within a Pod, so a single list covers both. Completed non-restartable init
+	// containers are not captured; on restore they are reflected as completed
+	// and not re-run. The authoritative record is checkpointedPodTemplate.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
 	CheckpointedContainers []PodCheckpointContainerStatus `json:"checkpointedContainers,omitempty"`
-
-	// checkpointedInitContainers lists the checkpointed init containers, kept
-	// separate from checkpointedContainers to mirror PodStatus. It records the
-	// completed non-restartable init containers and any running restartable init
-	// containers (sidecars). On restore, completed init containers are reflected as
-	// completed and are not re-run; running sidecars are restored running and
-	// remain restartable init containers.
-	// +optional
-	// +listType=map
-	// +listMapKey=name
-	CheckpointedInitContainers []PodCheckpointContainerStatus `json:"checkpointedInitContainers,omitempty"`
 
 	// conditions represents the latest observations of the checkpoint's state.
 	// The "Ready" condition is the single source of truth for checkpoint
@@ -739,8 +892,6 @@ type PodCheckpointStatus struct {
 type PodCheckpointContainerStatus struct {
 	// name of the checkpointed container.
 	Name string `json:"name"`
-	// image the container was running at checkpoint time.
-	Image string `json:"image"`
 }
 
 // CheckpointSource describes where a checkpoint's data is stored. It is a
@@ -786,7 +937,7 @@ const PodCheckpointReady = "Ready"
 //   CheckpointInProgress   -> status: "False"
 //   CheckpointCompleted    -> status: "True"
 //   CheckpointFailed       -> status: "False" (message carries detail)
-//   SourcePodReplaced      -> status: "False" (live Pod's UID != spec.sourcePodUID)
+//   SourcePodReplaced      -> status: "False" (live Pod's UID != spec.sourcePod.uid)
 const (
 	PodCheckpointReasonPending           = "Pending"
 	PodCheckpointReasonInProgress        = "CheckpointInProgress"
@@ -799,19 +950,26 @@ const (
 Example object:
 
 ```yaml
-apiVersion: checkpoint.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1alpha1
 kind: PodCheckpoint
 metadata:
   name: my-checkpoint
+  uid: 0f6c2a8e-5b1d-4e7a-9c3f-8d2b4a6e1f05
 spec:
-  # Name of the running Pod to checkpoint.
-  sourcePodName: my-app
-  # Optional: pin to a specific Pod instance. If set, the checkpoint fails
-  # (reason SourcePodReplaced) unless the live Pod named above has this UID,
-  # so a recreated same-name Pod is never checkpointed by mistake.
-  sourcePodUID: 7b2c1e4a-0e3a-4f1b-9c2d-2a5f6e8d1234
-  # Optional timeout in seconds (0 = use container runtime default).
-  timeoutSeconds: 30
+  sourcePod:
+    # Name of the running Pod to checkpoint.
+    name: my-app
+    # Optional: pin to a specific Pod instance. If set, the checkpoint fails
+    # (reason SourcePodReplaced) unless the live Pod named above has this UID,
+    # so a recreated same-name Pod is never checkpointed by mistake.
+    uid: 7b2c1e4a-0e3a-4f1b-9c2d-2a5f6e8d1234
+  # Optional timeout in seconds (1-3600). If unset, the kubelet's
+  # podCheckpointTimeout is used; larger values are clamped to it.
+  timeoutSeconds: 10
+  # Optional runtime-specific options. Each key must be allowed by the source
+  # Pod's RuntimeClass (see Runtime Options); the key below is illustrative.
+  checkpointOptions:
+    tcp-established: "false"
   # Note: alpha always leaves the source Pod running. A user-facing
   # postCheckpointState field is not part of the API yet; it arrives with the
   # "Stopped" behavior in the migration follow-up.
@@ -827,7 +985,10 @@ status:
   checkpointLocation:
     type: NodeLocal
     nodeLocal:
-      path: checkpoint-my-app_default-2026-03-10T20:38:11Z
+      path: checkpoint-0f6c2a8e-5b1d-4e7a-9c3f-8d2b4a6e1f05
+  # Digest of the checkpoint data reported by the runtime; verified by the
+  # runtime before a restore.
+  checkpointDigest: sha256:3f1d9c0b7e2a4c6f8e1b5d7a9c3e0f2b4d6a8c1e3f5b7d9a0c2e4f6b8d1a3c5e
   # Time the checkpoint completed (archive written / became Ready), set by the
   # kubelet. Used for freshness and retention/GC; distinct from
   # metadata.creationTimestamp (when the PodCheckpoint object was created).
@@ -846,21 +1007,20 @@ status:
         app: my-app
       annotations: {}
     spec:
+      initContainers:
+      # Completed non-restartable init container: not captured, image unchanged.
+      - name: setup
+        image: my-app-init:latest
       containers:
+      # Checkpointed container: image recorded as the resolved digest reference.
       - name: main
-        image: my-app:latest
+        image: registry.example.com/my-app@sha256:9b2d4f6a8c0e1f3a5b7d9c1e3f5a7b9d0c2e4f6a8b0d2c4e6f8a0b2d4c6e8f0a
       # ...remaining scheduling constraints, resource requirements, and
       # security contexts captured from the source Pod.
-  # Regular (non-init) containers captured in the checkpoint (visibility
-  # convenience; the full set is in checkpointedPodTemplate).
+  # Containers captured in the checkpoint: regular containers and running
+  # sidecars (visibility convenience; the full set is in checkpointedPodTemplate).
   checkpointedContainers:
   - name: main
-    image: my-app:latest
-  # Init containers captured in the checkpoint, kept separate to mirror PodStatus:
-  # completed non-restartable init containers and any running sidecars.
-  checkpointedInitContainers:
-  - name: setup
-    image: my-app-init:latest
   # The "Ready" condition is the single source of truth for checkpoint state.
   # Its status/reason/message carry the checkpoint progress detail:
   #   pending      -> status: "False", reason: Pending
@@ -897,10 +1057,10 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     Note over User,CRI: Checkpoint
-    User->>API: create PodCheckpoint (sourcePodName, optional sourcePodUID)
-    API-->>Kubelet: watch event (kubelet matches sourcePodName to a local Pod)
-    Kubelet->>Kubelet: validate readiness, pin sourcePodUID,<br/>suspend probes, capture checkpointedPodTemplate
-    Kubelet->>CRI: CheckpointPod(sandboxID, RUNNING)
+    User->>API: create PodCheckpoint (sourcePod.name, optional sourcePod.uid)
+    API-->>Kubelet: watch event (kubelet matches sourcePod.name to a local Pod)
+    Kubelet->>Kubelet: validate readiness, pin sourcePod.uid,<br/>suspend probes, capture checkpointedPodTemplate
+    Kubelet->>CRI: CheckpointPod(sandboxID, containerIDs)
     CRI-->>Kubelet: archive written
     Kubelet->>API: status Ready=True/CheckpointCompleted, nodeName=self<br/>(NodeRestriction: source Pod must be on this node)
     KCM-->>API: watch for lifecycle only (finalizers, GC) — off this path
@@ -908,7 +1068,7 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     Note over User,CRI: Restore
-    User->>API: create Pod (spec.restoreFrom = checkpoint name)
+    User->>API: create Pod (spec.restoreFrom.name = checkpoint name)
     API->>API: authorize "restore" verb, inject nodeAffinity=status.nodeName,<br/>validate pod-template equality (authoritative)
     API-->>API: scheduler binds Pod to status.nodeName (node affinity)
     API-->>Kubelet: Pod assigned, SyncPod observes spec.restoreFrom
@@ -919,8 +1079,8 @@ sequenceDiagram
 ```
 
 Object routing is by Pod ownership. Each kubelet watches `PodCheckpoint` objects and acts only on
-those whose `spec.sourcePodName` resolves to a Pod it currently runs; objects for Pods on other
-nodes are ignored. The creator may set `spec.sourcePodUID` to pin a specific instance (see below).
+those whose `spec.sourcePod.name` resolves to a Pod it currently runs; objects for Pods on other
+nodes are ignored. The creator may set `spec.sourcePod.uid` to pin a specific instance (see below).
 For alpha the kubelet watches cluster-wide and filters locally — `PodCheckpoint` objects are
 low-volume, short-lived request objects, so this is acceptable; narrowing the watch with a
 node-scoped field selector is a non-breaking follow-up (see
@@ -955,7 +1115,7 @@ is decoupled from any client: there is no synchronous trigger to hold open.
   `PodCheckpoint` status itself. The kubelet's `system:node` role grants `update`/`patch` on
   `podcheckpoints/status` (the Node authorizer permits the write via this rule), and the
   `NodeRestriction` admission plugin scopes it: it allows the write only when the checkpoint's
-  source Pod (`spec.sourcePodName`) is bound to the requesting node, reusing the same node↔Pod
+  source Pod (`spec.sourcePod.name`) is bound to the requesting node, reusing the same node↔Pod
   relationship that already limits a kubelet to writing its own Pods' status. A kubelet therefore
   cannot finalize a checkpoint for a Pod it does not run. See [Privilege model](#privilege-model).
 
@@ -984,8 +1144,8 @@ kubelet's watch to its own node. It is purely additive and introduces no breakin
 - Add an optional, control-plane-set `spec.nodeName` to `PodCheckpoint` (immutable; this mirrors
   how kubelets already watch Pods by `spec.nodeName`). Objects created before the field exists
   simply lack it.
-- A mutating admission plugin resolves `spec.sourcePodName` at create, sets `spec.nodeName` from
-  the Pod's node (and `spec.sourcePodUID` from its UID), and rejects the create if the Pod is
+- A mutating admission plugin resolves `spec.sourcePod.name` at create, sets `spec.nodeName` from
+  the Pod's node (and `spec.sourcePod.uid` from its UID), and rejects the create if the Pod is
   missing or unscheduled.
 - Register `spec.nodeName` as a selectable field so each kubelet can watch with
   `spec.nodeName=<its node>`. The kubelet keeps the local Pod-ownership check as the source of
@@ -1000,7 +1160,7 @@ there is no window in which a narrowed watch would miss an un-annotated object.
 ### Restore Mechanism
 
 Restore is triggered by a new optional field on Pod spec rather than by a separate API object.
-A user creates a Pod with `spec.restoreFrom` set to the name of a `PodCheckpoint` object
+A user creates a Pod with `spec.restoreFrom.name` set to the name of a `PodCheckpoint` object
 in the same namespace. The kubelet observes this during `SyncPod` and calls `restorePodSandbox()`
 instead of `createPodSandbox()`. Pod creation is the restore, in a single step.
 
@@ -1015,7 +1175,47 @@ via Node Declared Features, can avoid nodes that do not support restore; see
 the first component to discover that the chosen node cannot satisfy the restore. No placeholder
 Pod, no separate object lifecycle, and no `nodes/proxy` permission for restore.
 
-`spec.restoreFrom` is a name reference. After API-server admission (which authorizes the
+The user does not set `spec.nodeName`, and the restore Pod's spec does not need to name a node.
+Requiring it would force users to copy a node name into a Pod template and edit it for every
+checkpoint, doing the scheduler's job by hand. Admission derives the node from the
+`PodCheckpoint` instead. For alpha the injected affinity pins the Pod to the single node that holds
+the checkpoint. The planned follow-up is a restore-aware scheduler plugin that, to start, keeps
+this behavior and later also filters on what a node needs to run the checkpoint (CRIU, kernel,
+runtime, and driver versions); see [Open Questions](#open-questions).
+
+`spec.restoreFrom` is a structured reference:
+
+```go
+// CheckpointReference identifies the PodCheckpoint a Pod is restored from.
+type CheckpointReference struct {
+	// name is the name of a PodCheckpoint in the Pod's namespace.
+	// +required
+	Name string `json:"name"`
+
+	// options contains opaque runtime-specific options for this restore. The
+	// kubelet passes them unchanged to RestorePodRequest.options. Every key must
+	// be listed in podCheckpoint.allowedRestoreOptions on the Pod's RuntimeClass;
+	// with no allow-list, no options are accepted. Options must not contain
+	// secrets. They are independent of the options used to create the
+	// checkpoint and are not stored in the PodCheckpoint. At most 64 entries.
+	// See Runtime Options.
+	// +optional
+	Options map[string]string `json:"options,omitempty"`
+}
+
+type PodSpec struct {
+	// ...
+	// restoreFrom, if set, creates this Pod by restoring the referenced
+	// PodCheckpoint instead of starting its containers from scratch. Can only
+	// be set on create, and is immutable. Restoring from another checkpoint
+	// requires creating a new Pod; in-place restore is not supported.
+	// +featureGate=PodLevelCheckpointRestore
+	// +optional
+	RestoreFrom *CheckpointReference `json:"restoreFrom,omitempty"`
+}
+```
+
+After API-server admission (which authorizes the
 requester for the `restore` verb on the referenced `PodCheckpoint`, injects a node-affinity
 constraint pinning the Pod to the checkpoint's node, and validates pod-template equality against
 `status.checkpointedPodTemplate`) and after the scheduler binds the Pod to that node, the kubelet
@@ -1029,11 +1229,13 @@ The two checks have distinct roles. The API server enforces access control and p
 at admission. The kubelet runs the equality check again before the CRI restore as a safeguard.
 
 1. **API-server admission.** When `spec.restoreFrom` is set, the `PodRestoreAuthorization`
-   admission plugin does three things. It authorizes the `restore` verb on the referenced
+   admission plugin does four things. It authorizes the `restore` verb on the referenced
    `PodCheckpoint`. It injects a required node affinity targeting the checkpoint's node
    (`status.nodeName`), so the scheduler places the Pod there rather than the API server binding it
-   directly. And it checks that the Pod's spec matches the spec in `status.checkpointedPodTemplate`,
-   rejecting a mismatch and reporting the field that differs.
+   directly. It checks that the Pod's spec matches the spec in `status.checkpointedPodTemplate`,
+   rejecting a mismatch and reporting the field that differs. And it checks every key in
+   `spec.restoreFrom.options` against the allow-list on the Pod's RuntimeClass (see
+   [Runtime Options](#runtime-options)).
 
    The equality check ignores the fields the restore flow introduces: `spec.restoreFrom` (the
    trigger the source Pod never had) and the node placement it adds (the injected node affinity, and
@@ -1043,9 +1245,15 @@ at admission. The kubelet runs the equality check again before the CRI restore a
    mismatched Pod at creation, with the offending field reported to the user, instead of admitting a
    Pod the node would only reject later.
 
-   Admission can compare only once the checkpoint is `Ready` and its template is populated, which
-   is the normal case. If a Pod is admitted against a checkpoint that is not `Ready` yet, the
-   kubelet runs the equality check when it acts (see below).
+   The equality check is done as much as possible at admission, where the user gets a synchronous
+   error. It is implemented as a single shared function that the admission plugin and the kubelet
+   both call, so the two checks cannot drift apart. Admission also rejects later updates that would
+   break the match (see [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)).
+
+   Admission rejects the Pod with `Forbidden` if the referenced `PodCheckpoint` does not exist or
+   is not `Ready`: until then there is no `status.nodeName` to build the node affinity from and no
+   template to compare against. The `restore` authorization is checked first, so the error does not
+   tell a user who may not restore from the checkpoint whether it exists.
 2. **Kubelet, before the CRI restore.** The kubelet validates the live Pod's spec against
    `status.checkpointedPodTemplate` again, with the same two exemptions, and rejects a mismatch
    before calling `RestorePod`. This guards the window between admission and execution, so the
@@ -1065,17 +1273,18 @@ with its `Ready` condition set to `True`, recording the node on which the source
 checkpointed and the on-node archive path:
 
 ```yaml
-apiVersion: checkpoint.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1alpha1
 kind: PodCheckpoint
 metadata:
   name: myapp-snapshot-01
   namespace: team-a
+  uid: 3c9e1f7a-2d4b-4a6c-8e0f-5b7d9a1c3e42
 status:
   nodeName: node-1
   checkpointLocation:
     type: NodeLocal
     nodeLocal:
-      path: checkpoint-myapp_team-a-2026-05-28T10:14:22Z
+      path: checkpoint-3c9e1f7a-2d4b-4a6c-8e0f-5b7d9a1c3e42
   checkpointedPodTemplate:
     metadata:
       labels:
@@ -1083,7 +1292,9 @@ status:
     spec:
       containers:
       - name: app
-        image: registry.example.com/myapp:v1.4.0
+        # Resolved digest of the image the container ran (the source Pod used
+        # registry.example.com/myapp:v1.4.0).
+        image: registry.example.com/myapp@sha256:4e6a8c0b2d4f6e8a0c2b4d6f8e0a2c4b6d8f0e2a4c6b8d0f2e4a6c8b0d2f4e6a
       # ...scheduling constraints, resources, and security contexts as captured.
   conditions:
   - type: Ready
@@ -1094,7 +1305,7 @@ status:
 ```
 
 **Step 1 - User submits restore request.** The user applies a Pod manifest with
-`spec.restoreFrom` set to the checkpoint name. The user does **not** set `spec.nodeName` —
+`spec.restoreFrom.name` set to the checkpoint name. The user does **not** set `spec.nodeName` —
 admission injects the node-affinity constraint in Step 2 and the scheduler places the Pod. The
 Pod's spec must match `status.checkpointedPodTemplate` of `myapp-snapshot-01` (admission enforces
 this in Step 2, and the kubelet re-checks in Step 5):
@@ -1106,12 +1317,16 @@ metadata:
   name: myapp-restored
   namespace: team-a
 spec:
-  restoreFrom: myapp-snapshot-01
+  restoreFrom:
+    name: myapp-snapshot-01
+    # Optional runtime-specific options; each key must be allowed by the Pod's
+    # RuntimeClass. Omitted here.
   # No nodeName: admission injects a required node affinity for the checkpoint's
   # node and the scheduler binds the Pod there.
   containers:
   - name: app
-    image: registry.example.com/myapp:v1.4.0
+    # Must be the digest reference recorded in the checkpoint, not the tag.
+    image: registry.example.com/myapp@sha256:4e6a8c0b2d4f6e8a0c2b4d6f8e0a2c4b6d8f0e2a4c6b8d0f2e4a6c8b0d2f4e6a
     # ...rest of spec must match the spec inside myapp-snapshot-01
 ```
 
@@ -1123,6 +1338,8 @@ spec:
   Failure rejects the create with `Forbidden`. This is the verb split described in
   [Privilege model](#privilege-model): `create` on `PodCheckpoint` gates checkpoint creation;
   the dedicated `restore` verb on the referenced object gates restore.
+- Reads `myapp-snapshot-01` and rejects the create with `Forbidden` if it does not exist or its
+  `Ready` condition is not `True`.
 - Injects a required node affinity targeting `myapp-snapshot-01.status.nodeName` (`node-1`) — a
   `nodeSelectorTerm` with `matchFields: [{key: metadata.name, operator: In, values: [node-1]}]`.
   If the user already set a conflicting `spec.nodeName` or node affinity, the create is rejected
@@ -1133,8 +1350,11 @@ spec:
   (`spec.restoreFrom`, the injected node affinity, and the `spec.nodeName` the scheduler later
   sets). A mismatch rejects the create with `Invalid` and names the field that differs. The kubelet
   checks this again in Step 5.
+- Checks every key in `spec.restoreFrom.options` against
+  `podCheckpoint.allowedRestoreOptions` on the Pod's RuntimeClass. A key that is not allowed
+  rejects the create with `Forbidden`.
 
-All three checks are done by the `PodRestoreAuthorization` admission plugin.
+All of these checks are done by the `PodRestoreAuthorization` admission plugin.
 
 The Pod is persisted with a new Pod UID; the original checkpointed Pod's UID is not reused.
 
@@ -1157,7 +1377,8 @@ creation.
 1. **Checkpoint resolution.** The kubelet reads the `PodCheckpoint` `myapp-snapshot-01` and pulls
    `status.nodeName` and `status.checkpointLocation`. A missing or non-`Ready`
    `PodCheckpoint` fails with event reason `CheckpointNotReady` and the Pod stays in
-   `Pending`.
+   `Pending`. Admission already rejects a Pod whose checkpoint is missing or not `Ready`, so this
+   is a backstop, for example for a checkpoint whose status changed after the Pod was admitted.
 2. **Node match.** The kubelet rejects the restore unless it is running on
    `status.nodeName`. If the originally-checkpointed Pod has since moved, restore still
    targets the node where the checkpoint data lives, not the Pod's current location.
@@ -1168,8 +1389,10 @@ creation.
    fields (`spec.restoreFrom`, the injected node affinity, and the scheduler-assigned
    `spec.nodeName`). A mismatch fails with `PodSpecMismatch` and names the field in the
    event message. Admission already checked this in Step 2; the kubelet repeats it so it never
-   restores against a spec it has not confirmed, and to cover the case where the checkpoint became
-   `Ready` only after the Pod was admitted.
+   restores against a spec it has not confirmed.
+4. **Options allow-list.** The kubelet checks the keys in `spec.restoreFrom.options` against the
+   RuntimeClass allow-list again, since the RuntimeClass may have changed since admission. A key
+   that is no longer allowed fails with `RestoreOptionNotAllowed`.
 
 Alongside these checks, the kubelet takes a per-Pod restore lock keyed by the Pod's
 `(namespace, name)` rather than its UID (see [Privilege model](#privilege-model)). This is an
@@ -1190,13 +1413,21 @@ exist at once.
 object exactly as for a fresh Pod (log directory, cgroup parent, CNI annotations), with
 node-local fields overridden at restore time. It then calls `RestorePod` on the container
 runtime with the checkpoint path resolved from `status.checkpointLocation.nodeLocal.path` against
-its checkpoint root, the sandbox config, and
+its checkpoint root, the sandbox config,
 per-container `ContainerConfig` entries carrying mount information (`/etc/hosts`,
-termination log paths, and any volumes already supported by the runtime). The runtime
+termination log paths, and any volumes already supported by the runtime) and the security
+context, the options from `spec.restoreFrom.options`, and `status.checkpointDigest` as
+`expected_checkpoint_digest`. Before restoring any process state the runtime verifies the digest,
+and it applies the security context from the request rather than from the checkpoint data (see
+[Checkpoint archive integrity](#checkpoint-archive-integrity)). The runtime
 restores the sandbox and all containers from the archive, attaches the network namespace
-via CNI, and returns the new sandbox ID. The normal `SyncPod` container start steps
-(`startContainer` for init, regular, and ephemeral containers) are skipped: the restored
-containers are already running inside the restored sandbox.
+via CNI, and returns the new sandbox ID together with the restored containers, which are in the
+`CREATED` state and have not run yet. The kubelet does not create containers from their images as
+it would for a fresh Pod. For each restored container, in Pod-spec order, it runs its internal
+pre-start hooks and calls `StartContainer`, which resumes the restored processes. Completed
+non-restartable init containers are not restored and are not re-run. If a hook or
+`StartContainer` fails, the kubelet removes the restored sandbox and containers and the restore
+is retried (see Failure rollback below).
 
 **Step 7 - Status converges.** The kubelet updates Pod status:
 
@@ -1204,7 +1435,8 @@ containers are already running inside the restored sandbox.
 - The `Restoring=True` condition is cleared once the sandbox is up and container statuses
   are `Running`.
 - An event `RestoreSucceeded` is recorded on the Pod.
-- Container `restartCount` continues from the value captured in the checkpoint.
+- Container `restartCount` starts at 0: the restored Pod is a new Pod with a new UID, and its
+  containers have not been restarted.
 
 The Pod is now indistinguishable from any other `Running` Pod for controllers, schedulers,
 and monitoring tooling. `spec.restoreFrom` remains on the Pod as a record of provenance and
@@ -1218,27 +1450,161 @@ the reasons above and a `Restoring=False` condition. The Pod stays `Pending` and
 retries with backoff, the same as it does for `FailedCreatePodSandBox` or `ImagePullBackOff`; it
 is not moved to `Failed`.
 
-A restore that cannot proceed yet leaves the Pod `Pending` and is retried; it is not failed
-outright. The referenced checkpoint may not be `Ready` yet, or (once cross-node transfer lands)
-its data may not be on the node yet but could be copied there later. In both cases the same Pod
-proceeds once the checkpoint becomes available, with no need to resubmit it.
+**Incompatible node software.** Restore expects the node software to be the same as when the
+checkpoint was taken: kubelet, container runtime, OCI runtime, CRIU or gVisor, kernel, and device
+drivers. Even on the same node this can change between checkpoint and restore (for example after a
+CRIU or GPU driver upgrade). Kubernetes does not check this itself: the container runtime and CRIU
+decide whether a checkpoint can be restored, and return an error from `RestorePod` if it cannot.
+The kubelet records that error as a `RestoreFailed` event and a `Restoring=False` condition with
+the runtime's message, and the Pod stays `Pending` like any other restore failure. A runtime may
+later accept checkpoints from older versions if it is backward compatible. To make this
+detectable, runtimes should record a version for their checkpoint format and the versions of the
+software the checkpoint depends on (for example the runtime and CRIU versions and the container
+configuration) in the checkpoint data, and check them on restore. Restoring after any of this
+software has changed is undefined behavior unless the runtime explicitly supports it; the expected
+practice is to take a new checkpoint after an upgrade. Filtering nodes by these
+versions before scheduling is part of the scheduler follow-up (see [Open Questions](#open-questions)).
 
-This follows the usual Kubernetes pattern of declaring intent and letting the dependency be
-satisfied out of order. A Pod that names a ConfigMap, Secret, or PersistentVolumeClaim that does
-not exist yet is admitted and waits rather than being rejected, and a PersistentVolumeClaim may
-name a `VolumeSnapshot` as its data source before that snapshot is ready to use. Restoring from a
-`PodCheckpoint` works the same way: the Pod is admitted, and the kubelet waits for the checkpoint
-and validates it when it acts. A restore that never succeeds is retried with backoff like any
-other start failure, rather than being moved to `Failed`, and stays visible through the Pod's
-events and conditions.
+A restore that cannot proceed yet on the node leaves the Pod `Pending` and is retried; it is not
+failed outright. For example, once cross-node transfer lands, the checkpoint data may not be on the
+node yet but could be copied there later; the same Pod then proceeds when the data arrives, with no
+need to resubmit it. A restore that never succeeds is retried with backoff like any other start
+failure, rather than being moved to `Failed`, and stays visible through the Pod's events and
+conditions.
+
+This differs from references to ConfigMaps, Secrets, or PersistentVolumeClaims, which can be created
+after the Pod that uses them. A restore Pod must reference a `PodCheckpoint` that is already
+`Ready`, because admission needs the checkpoint's node and template to place and validate the Pod.
+
+### Pod updates during checkpoint and restore
+
+A checkpoint captures the Pod as it runs, and a restore recreates it from that capture, so neither
+works if the Pod spec changes in the middle. Several Pod fields are mutable today (for example
+container images, resources through in-place resize, and scheduling directives while the Pod is
+gated), and Dynamic Containers will add more. The rule is the same for both sides: the fields that
+describe what runs in the Pod must not change while the operation is in progress.
+
+- **Source Pod, during a checkpoint.** While the Pod has the `Checkpointing=True` condition, the
+  API server rejects updates that change the Pod's spec, including resize requests and new
+  Ephemeral Containers, with a `Conflict` error that names the checkpoint. The kubelet sets the
+  condition before it captures `checkpointedPodTemplate`. An update that was accepted just before
+  the condition was written is handled by the kubelet's per-Pod in-flight guard: the kubelet does
+  not apply it until the checkpoint finishes, so the capture is never a mix of old and new state
+  (see [Pod Specification and Metadata](#pod-specification-and-metadata)). The checkpoint does not
+  depend on the source Pod afterwards: once it is taken, the source Pod may change freely, and
+  restores are compared with `status.checkpointedPodTemplate`, not with the live source Pod.
+- **Restore Pod, before it is running.** Admission checks the restore Pod against the checkpoint
+  at create time, but a user could change the Pod right after it is created and before the kubelet
+  restores it. So for a Pod with `spec.restoreFrom` set, the `PodRestoreAuthorization` plugin
+  also runs on update: until the restore has completed (the Pod is `Running` and `Restoring` is
+  cleared) it rejects any change to a field that the equality check compares (`spec.restoreFrom`
+  itself is immutable). The only allowed changes are the ones the restore flow itself makes (scheduler binding
+  and removing scheduling gates). Scheduling directives cannot be changed either, because they
+  would conflict with the injected node affinity. The kubelet's equality check before `RestorePod`
+  remains the backstop.
+
+Normal Pods have the same issue: changing runtime fields before a Pod is running can cause races
+in the kubelet. Kubernetes does not consistently block this today, and fixing it for all Pods is
+outside the scope of this KEP.
+
+Requiring every field to match is deliberately strict. A likely way to relax it later is to
+compare only the fields that make up what is running in the Pod: the fields that go through the
+kubelet's allocation step, as in-place resize and Dynamic Containers do, and not fields such as
+`activeDeadlineSeconds`. This depends on that set of fields being defined, which is being
+discussed separately; until then every field must match (see [Open Questions](#open-questions)).
+
+### Runtime Options
+
+Checkpoint and restore take runtime-specific options that Kubernetes does not interpret:
+`PodCheckpoint.spec.checkpointOptions` is passed to `CheckpointPodRequest.options` and
+`pod.spec.restoreFrom.options` to `RestorePodRequest.options`. Keeping them opaque means
+Kubernetes does not need an API field for every CRIU or gVisor setting, and different runtimes can
+support different options. The risk is that an option added later could grant more privilege than
+the user holds (for example an option that trusts security settings from the checkpoint data), and
+because it is opaque, Kubernetes would pass it through unchecked.
+
+**Why users can set options at all.** Most checkpoint and restore settings are node-level and
+belong to the administrator. They stay in the runtime's own configuration (for example the CRIU
+configuration file) and in the RuntimeClass handler, and they are never passed through these
+fields. The fields exist only for the few choices that depend on the workload and the particular
+operation rather than on the node: for example whether established TCP connections are closed or
+preserved, or which certificate a checkpoint is encrypted with. Without them, the only way to make
+such a choice is a node-wide runtime configuration file that applies to every Pod on the node. A
+user does not need to know which runtime a node uses: the options that are available are the ones
+the administrator has allowed on the Pod's RuntimeClass, and with no allow-list the fields cannot
+be used at all. Options reach the runtime as untrusted user input and must never be used to carry
+administrator settings; a runtime that needs trusted configuration takes it from its own
+configuration, not from the CRI request.
+
+To prevent that, only option keys that the cluster administrator has allowed are accepted. The
+allow-list is set per runtime handler on the RuntimeClass, since the options depend on the
+runtime:
+
+```go
+type RuntimeClass struct {
+	// ...
+	// podCheckpoint configures Pod-level checkpoint and restore for Pods that
+	// use this RuntimeClass.
+	// +featureGate=PodLevelCheckpointRestore
+	// +optional
+	PodCheckpoint *RuntimeClassPodCheckpoint `json:"podCheckpoint,omitempty"`
+}
+
+type RuntimeClassPodCheckpoint struct {
+	// allowedCheckpointOptions lists the keys that may be set in
+	// PodCheckpoint.spec.checkpointOptions for Pods of this RuntimeClass.
+	// +optional
+	// +listType=set
+	AllowedCheckpointOptions []string `json:"allowedCheckpointOptions,omitempty"`
+
+	// allowedRestoreOptions lists the keys that may be set in
+	// pod.spec.restoreFrom.options for Pods of this RuntimeClass.
+	// +optional
+	// +listType=set
+	AllowedRestoreOptions []string `json:"allowedRestoreOptions,omitempty"`
+}
+```
+
+- The allow-list holds keys only. Values are validated by the runtime, which rejects values it
+  does not support. Value validation in the allow-list can be added later if a use case needs it.
+- If the Pod has no `runtimeClassName`, or its RuntimeClass has no `podCheckpoint` allow-list, no
+  options are accepted. Checkpoint and restore still work with the runtime's defaults.
+- Keys are checked at admission, where the user gets a synchronous error: the
+  `PodRestoreAuthorization` plugin checks `restoreFrom.options` on Pod create, and checks
+  `checkpointOptions` on `PodCheckpoint` create by resolving the source Pod's RuntimeClass. The
+  kubelet checks the keys again before the CRI call, because the RuntimeClass may have changed.
+- The kubelet config was also considered as a place for the allow-list, as with the unsafe-sysctls
+  allow-list. RuntimeClass is preferred because it is part of the API, so admission can enforce it,
+  and because it is already per runtime handler.
+- Options that Kubernetes itself needs to act on are not options: they get dedicated CRI and API
+  fields, as the post-checkpoint state will when `Stopped` is added. Options must not carry
+  secrets.
+
+The allow-list only helps if administrators can tell which options are safe to allow. The
+expected uses are listed below, sorted by whether an untrusted user (one who can create
+`PodCheckpoint` objects or restore Pods in a namespace, but has no node access) may set them. The
+WG is writing a separate document listing the options each runtime supports.
+
+| Use | Phase | Untrusted user? | Notes |
+|---|---|---|---|
+| Handling of established TCP connections (close or preserve) | checkpoint, restore | Yes | Affects only the user's own workload. CRIU supports both; gVisor only close. Preserving connections also needs CNI support (see [TCP Connection Handling](#tcp-connection-handling)). |
+| Compression and similar data-format settings | checkpoint | Yes | Affects only the size and speed of the user's own checkpoint. |
+| Encryption certificate (public key to encrypt; private key to decrypt on restore) | checkpoint, restore | Only if the runtime confines it | The value is a path to a certificate on the node, not key material. Safe only if the runtime restricts it to an administrator-configured key directory; otherwise it is an administrator-only setting. Needs the CRIU encryption work to land. |
+| GPU device mapping on restore | restore | No | Set by the runtime from the Pod's allocated devices. Must never be on an allow-list; runtimes reject it from users. |
+| Anything that weakens [Checkpoint archive integrity](#checkpoint-archive-integrity) (for example taking security settings from the checkpoint) | restore | No | Runtimes must not implement such options. |
+| Post-checkpoint state (leave running or stopped) | checkpoint | n/a | Not an option: it gets a dedicated CRI field when `Stopped` is added. |
+
+If a use case is found that trusted users should be allowed and untrusted users should not, it
+gets a structured API field that RBAC can control, rather than an opaque option.
 
 ### Post-Checkpoint State Semantics
 
 The post-checkpoint state selects what happens to the source Pod once the archive has been
-written. In the CRI it is a typed enum (rather than a boolean or an `options` key) so the runtime
-and kubelet can branch on it without parsing opaque pass-through configuration, and so additional
-states can be added later. Alpha always uses `Running`, and the Kubernetes API does not expose the
-choice yet.
+written. Alpha always uses `Running`: the `CheckpointPod` CRI contract requires the runtime to
+resume every container before it returns, and neither the CRI nor the Kubernetes API exposes a
+choice yet. When `Stopped` is added, the choice will be a dedicated, typed CRI field (rather than
+a boolean or an `options` key) so the runtime and kubelet can branch on it without parsing opaque
+pass-through configuration, and so additional states can be added later.
 
 - **Running (default).** After the archive is written, the runtime resumes execution
   of all processes in the Pod and the containers continue running. This is the right mode
@@ -1249,11 +1615,9 @@ choice yet.
 - **Stopped (reserved; not implemented in alpha).** The intent of `Stopped` is that, after
   the archive is written, the source Pod is not resumed but instead released so a restore
   can take over elsewhere. This is a migration concern, and **cross-node restore and live
-  migration are Non-Goals for alpha** (see [Non-Goals](#non-goals)). The value is defined in
-  the CRI enum for forward compatibility, but in alpha the kubelet always requests `Running` and
-  never sends `Stopped`, and there is no Kubernetes API field for a user to request it (see
-  [Checkpoint Handling](#checkpoint-handling)). It becomes user-selectable when the migration
-  follow-up implements it.
+  migration are Non-Goals for alpha** (see [Non-Goals](#non-goals)). In alpha there is no CRI or
+  Kubernetes API field to request it (see [Checkpoint Handling](#checkpoint-handling)). It becomes
+  selectable when the migration follow-up implements it.
 
 **Why `Stopped` is deferred.** "Terminate the source Pod but leave the object" is exactly
 the terminated-but-not-deleted state that Graceful Node Shutdown and its follow-ons had to
@@ -1277,16 +1641,12 @@ the source Pod analogous to GNS, and integration with controller replacement and
 detach, are deferred to the migration follow-up and will be designed with SIG Apps and SIG
 Storage.
 
-**CRI field.** A dedicated `post_checkpoint_state` field of enum type `PostCheckpointState`
-on `CheckpointPodRequest` (see [CheckpointPod](#checkpointpod)). The CRI enum retains the
-`STOPPED` value so runtimes may implement it ahead of Kubernetes, but in alpha the kubelet
-only ever sends `RUNNING`.
-
-**Kubernetes API.** There is no `postCheckpointState` field on `PodCheckpoint` in alpha. Because alpha
-always leaves the source Pod running, the field would have a single legal value and do nothing, so
-it is not added to the API yet. It will be introduced together with the `Stopped` behavior in the
-migration follow-up, when it is actually used. Until then the kubelet always requests `RUNNING`
-from the CRI.
+**CRI and Kubernetes API fields.** There is no post-checkpoint-state field on
+`CheckpointPodRequest` or `PodCheckpoint` in alpha. Because alpha always leaves the source Pod
+running, such a field would have a single legal value and do nothing. Both fields will be
+introduced together with the `Stopped` behavior in the migration follow-up, when they are actually
+used. Adding an optional field to the request later is backward compatible: a runtime that does
+not know it keeps the Pod running, which is the alpha behavior.
 
 **Interaction with restore.** The post-checkpoint state affects only the checkpoint side and
 has no effect on the restore path: the archive contents are identical regardless of what
@@ -1341,14 +1701,20 @@ the kubelet drops fields that are node-local or specific to the source cluster b
 `spec.nodeName`, `nodeSelector` and affinity entries that name specific nodes, and the Pod
 `status`, `uid`, `resourceVersion`, and `managedFields`. The equality check on restore skips these
 same fields, plus `spec.restoreFrom`, which the restore Pod sets but the source Pod never had.
-Container statuses, including containers that have already finished, are recorded separately in
-the runtime archive and the `status.checkpointedContainers` and `status.checkpointedInitContainers`
-lists.
+The containers captured in the checkpoint are listed in `status.checkpointedContainers`.
+
+The images of the checkpointed containers (regular containers and running sidecars) are recorded
+in the template as the resolved image digest references reported by the runtime, not as the tags
+in the source Pod. The checkpoint was taken from the exact image the container was running, and a
+tag can point at a different image by the time the Pod is restored. A restore Pod must therefore
+use the digest references from `status.checkpointedPodTemplate`; the equality check rejects the
+original tags. Images of completed non-restartable init containers are left as they were, because
+those containers are not restored.
 
 Checkpointing requires all non-restartable init containers to have completed; restartable init
-containers (sidecars) may still be running. The completed init containers and the running sidecars
-are recorded in `status.checkpointedInitContainers` (kept separate from regular containers, mirroring
-`PodStatus`). On restore, the running sidecars are restored running and remain restartable init
+containers (sidecars) may still be running. The running sidecars are captured and listed in
+`status.checkpointedContainers` together with the regular containers (container names are unique
+within a Pod); the completed init containers are not captured. On restore, the running sidecars are restored running and remain restartable init
 containers, while the completed init containers are reflected as completed from the captured state
 and are not re-run. Checkpointing a Pod whose non-restartable init containers are still running is
 out of scope for the initial implementation.
@@ -1386,6 +1752,11 @@ threads running in containers, including OCI container configurations, security 
 filesystem writable layers, and the checkpoint images needed to recreate the processes and
 resume their execution. The exact contents and format of this archive are determined by
 the container runtime and are opaque to Kubernetes.
+
+This KEP does not define the file layout of checkpoints because it differs between implementations
+(for example CRIU-based runtimes, gVisor, and Kata Containers). Each runtime that implements
+`CheckpointPod` documents the files it writes under the checkpoint directory (per-container data,
+Pod-level metadata, and the CRIU or gVisor images) and how its checkpoint digest is computed.
 
 #### Shared Pod Resources
 
@@ -1474,7 +1845,7 @@ the kubelet endpoint. Exposing Pod-level checkpoint and restore through namespac
 is a different security model. Mitigations:
 
 - `PodCheckpoint` is namespace-scoped and may only target Pods in the same namespace; the
-  API server enforces same-namespace lookups. `spec.restoreFrom` is a name reference and is
+  API server enforces same-namespace lookups. `spec.restoreFrom.name` is a name reference and is
   resolved in the namespace of the Pod that carries it; a user cannot point a Pod in
   namespace `A` at a `PodCheckpoint` in namespace `B`.
 - No principal is granted the `nodes/proxy` permission for this feature. Checkpoint is driven by
@@ -1486,7 +1857,7 @@ is a different security model. Mitigations:
   This write is tightly scoped: the `system:node` role grants `update`/`patch` on
   `podcheckpoints/status` only (this is what the Node authorizer evaluates), and the
   `NodeRestriction` admission plugin narrows it by allowing the write only when the checkpoint's
-  source Pod (`spec.sourcePodName`) is bound to the requesting node, reusing the same node↔Pod
+  source Pod (`spec.sourcePod.name`) is bound to the requesting node, reusing the same node↔Pod
   relationship that already limits a kubelet to writing its own Pods' status. The kubelet cannot create,
   delete, or modify the `spec` of a `PodCheckpoint`, and cannot finalize a checkpoint for a Pod it
   does not run. (This was reviewed with SIG Auth alongside the `restore` verb.)
@@ -1495,11 +1866,14 @@ is a different security model. Mitigations:
   their status, but neither path is reachable by end users.
 - Pre-defined namespaced ClusterRoles (viewer, editor, admin) are provided so administrators
   can bind checkpoint and restore access per namespace with `RoleBinding`.
-- `sourcePodName` and `sourcePodUID` on `PodCheckpoint` are immutable after creation,
+- `spec.sourcePod` (name and UID) on `PodCheckpoint` is immutable after creation,
   preventing post-creation namespace-escape attempts and ensuring the pinned instance cannot
-  be swapped after the object is admitted. `spec.restoreFrom` on Pod is *not* immutable:
-  sequential re-restores from a different `PodCheckpoint` are a legitimate use case (rollback,
-  repeated warm-start from a different snapshot).
+  be swapped after the object is admitted. `spec.restoreFrom` can only be set when the Pod is
+  created and is immutable, so a restore Pod cannot be pointed at a different checkpoint after
+  admission has checked it (see
+  [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore)). To
+  restore from a different `PodCheckpoint` (rollback, or warm start from a newer snapshot), create
+  a new Pod.
 - Pod-spec equality is validated against `status.checkpointedPodTemplate`, which is
   written by the kubelet at checkpoint time and immutable to users (see [Status and spec separation](#status-and-spec-separation)),
   so a user cannot forge the record being compared against. The API server enforces this equality
@@ -1550,7 +1924,68 @@ enforced by the kubelet at execution time and may reject an otherwise-authorized
 Checkpoint data may contain sensitive information from process memory, including secrets,
 tokens, and encryption keys. Checkpoint artifacts must be treated as sensitive data, stored
 with the handling expected for Secrets, and subject to the same access controls. Encryption of
-checkpoint data at rest is CRIU-level work and is out of scope for this KEP.
+checkpoint data at rest is CRIU-level work and is out of scope for this KEP. Once it is available,
+the certificate to use can be selected with a runtime option (see [Runtime Options](#runtime-options)).
+
+#### Checkpoint archive integrity
+
+Protecting the *contents* of a checkpoint (above) is one problem; trusting it on restore is
+another. A restore recreates processes from the checkpoint data, so the restore is only as
+trustworthy as that data. Anyone who can write to a checkpoint can make the runtime restore
+arbitrary process state, which is equivalent to root on the node. This matters today for
+node-local checkpoints and more once checkpoints are stored remotely or copied between nodes.
+Recent container runtime vulnerabilities in this area have led containerd and CRI-O to hold back
+restore support until it is addressed.
+
+This KEP requires two things of the restore path:
+
+1. **The Pod spec is authoritative for security settings.** The security-relevant settings of a
+   restored Pod come from the Pod spec, passed down through `RestorePodRequest.config` and
+   `container_configs`, never from the checkpoint data. This covers the security context
+   (privileged, capabilities, SELinux label, seccomp and AppArmor profiles, `no_new_privs`, user
+   and group IDs), namespaces, mounts, and devices. If the checkpoint data conflicts with the
+   request (for example the checkpoint adds `CAP_SYS_ADMIN` while the Pod drops all
+   capabilities), the runtime must either apply the value from the request or fail the restore.
+   CRI-O already follows this rule for mounts: on restore it uses the mounts in the container
+   configuration, not the ones recorded in the checkpoint. The Pod-spec equality check makes sure
+   the requested security context is the one the Pod had when it was checkpointed, so the source
+   Pod's security context, not the checkpoint data, is what a restore gets. Some settings have to
+   be recreated rather than copied (for example PIDs referenced in cgroups or open file
+   descriptors, and the new Pod UID); the runtime does this from the request as well.
+2. **The checkpoint data is verified before restore.** `CheckpointPod` returns a digest of the
+   checkpoint data, the kubelet records it in `status.checkpointDigest` (which only the kubelet
+   can write), and the kubelet passes it back as `RestorePodRequest.expected_checkpoint_digest`.
+   The runtime recomputes the digest before restoring any process state and fails the restore if
+   it does not match. This detects checkpoint data that was changed after it was written.
+
+The digest does not remove the need for (1): it shows that the data has not changed since the
+checkpoint was taken, not that the data is safe to trust. The runtime and CRIU must still enforce
+the rule in (1).
+
+Enforcing (1) is not possible in the container runtime alone today. CRIU restores process state
+such as capabilities, the seccomp filter (as a compiled BPF program), and user and group IDs
+directly from the checkpoint images, and its threat model assumes that those images are trusted.
+A runtime cannot practically inspect the images beforehand and prove that the restored state stays
+within what the Pod spec allows. Enforcement therefore needs support in CRIU (or the equivalent
+mechanism in other runtimes), for example a restore plugin or option that receives the bounds from
+the runtime and checks or applies them for each restored process. This is being worked out with
+the CRIU, containerd, and CRI-O maintainers, using the published container restore advisories as
+the list of cases to cover.
+
+**Who can write checkpoint status.** The digest and `checkpointLocation` can only be trusted if
+users cannot write them. Users create `PodCheckpoint` objects and set their `spec`; only the
+kubelet writes `status`, through the `podcheckpoints/status` subresource (see
+[Status and spec separation](#status-and-spec-separation)). The predefined viewer, editor, and
+admin ClusterRoles do not grant `podcheckpoints/status`. Anyone who can write that subresource and
+also write to a node's checkpoint directory can make a restore run arbitrary process state, which
+is equivalent to being able to create privileged Pods. The user documentation must say this
+explicitly, so that administrators do not grant the permission casually.
+
+These requirements are implemented in the container runtimes and CRIU, not in Kubernetes. The CRI
+fields are defined in alpha and may be left empty by runtimes that do not support them yet;
+enforcing both is a Beta blocker (see [Beta](#beta)). The WG is writing a threat-model document
+with the containerd and CRI-O maintainers that lists each setting and how it is handled on
+restore.
 
 #### Denial of service via excessive checkpointing
 
@@ -1604,7 +2039,8 @@ host path.
 
 Users write `spec`; `status` is written only through the status subresource, and only by the
 kubelet that runs the source Pod — the `InProgress` condition, `nodeName`, captured template,
-pinned UID, and the terminal `Completed`/`Failed` condition with `checkpointLocation`.
+pinned UID, and the terminal `Completed`/`Failed` condition with `checkpointLocation` and
+`checkpointDigest`.
 `PodCheckpoint` is a built-in API type and the REST storage layer enforces the separation: the
 main-object strategy strips `status` on user/controller updates (so the controller's finalizer
 write cannot touch `status`), and the status-object strategy strips `spec` on any status update.
@@ -1639,11 +2075,22 @@ Unit tests must cover at least:
 - Pod phase precondition (checkpoint rejected unless the Pod is `Running` with all init
   containers completed).
 - Timeout enforcement (the kubelet sets the CRI call's gRPC deadline from
-  `spec.timeoutSeconds`, and an expiry is recorded on the `PodCheckpoint` as `CheckpointFailed`).
+  `spec.timeoutSeconds`, uses `podCheckpointTimeout` when it is unset and clamps larger values to
+  it, and an expiry is recorded on the `PodCheckpoint` as `CheckpointFailed`).
 - Feature gate disabled: the kubelet does not watch or act on `PodCheckpoint` objects (no
   checkpoint is started).
 - Cgroup freeze and unfreeze sequence ordering and error recovery.
 - Pod condition `Checkpointing=True` is set and cleared around the operation.
+- Pod update validation: spec changes to a Pod with `Checkpointing=True` are rejected; changes
+  to `spec.restoreFrom` or to compared fields of a restore Pod are rejected until the restore
+  completes, while scheduler binding and removing scheduling gates are allowed.
+- The shared Pod-spec equality function returns the same result for the admission plugin and the
+  kubelet, and ignores exactly the documented restore-introduced fields.
+- Runtime options: keys not listed on the Pod's RuntimeClass are rejected for both
+  `checkpointOptions` and `restoreFrom.options`; with no RuntimeClass or no allow-list, any key is
+  rejected; allowed keys are passed unchanged to the CRI request.
+- `status.checkpointDigest` is set from `CheckpointPodResponse` and passed as
+  `expected_checkpoint_digest` on restore.
 
 ##### Integration tests
 
@@ -1666,11 +2113,19 @@ kubelet integration suite. The following scenarios must pass before Alpha:
   on) and `spec.restoreFrom` is rejected at Pod admission.
 - `spec.restoreFrom` happy path: the kubelet sees the field during `SyncPod`, calls
   `restorePodSandbox()`, and the Pod transitions to `Running`.
+- Admission rejects a restore Pod whose `PodCheckpoint` is missing or not `Ready`, and does not
+  reveal whether the checkpoint exists to a user without the `restore` permission.
+- `PodCheckpoint` creation is rejected when the source Pod does not exist, is not `Running`, is
+  being deleted, or does not match `spec.sourcePod.uid`.
 - Admission equality and affinity injection: the `PodRestoreAuthorization` plugin rejects a restore
   Pod whose spec does not match a `Ready` checkpoint's `status.checkpointedPodTemplate` (exempting
   `spec.restoreFrom` and the injected node affinity), admits one that matches, and injects the
   required node affinity targeting `status.nodeName` (rejecting a user-supplied conflicting
   `spec.nodeName`/affinity).
+- Admission options allow-list: a `PodCheckpoint` or restore Pod with an option key not listed on
+  the RuntimeClass is rejected with `Forbidden`.
+- Restore Pod updates: after a restore Pod is admitted, an update that changes a container image
+  is rejected while the Pod is `Pending`.
 
 ##### e2e tests
 
@@ -1688,9 +2143,12 @@ The alpha e2e suite covers:
   present and in the correct state after restore.
 - Same-node restore: restore on the same node as the checkpoint (the only supported mode in
   alpha).
-- Failure paths: missing or `Pending` checkpoint referenced by `spec.restoreFrom`; checkpoint
+- Failure paths: missing or not-`Ready` checkpoint referenced by `spec.restoreFrom` (rejected at
+  admission); checkpoint
   data missing on the target node; restore Pod scheduled to a node that does not have the
   checkpoint.
+- Digest mismatch: modifying the checkpoint data on the node after the checkpoint completes makes
+  the restore fail (on runtimes that report a digest).
 - RBAC boundary: a user with `editor` access in one namespace cannot create a `PodCheckpoint`
   referencing a Pod in another namespace, and cannot create a Pod with `spec.restoreFrom`
   pointing to a `PodCheckpoint` in another namespace.
@@ -1713,10 +2171,20 @@ Beta adds:
 - `PodCheckpoint` defined and implemented. Restore trigger implemented as a new optional
   `restoreFrom` field on Pod spec.
 - `PodRestoreAuthorization` admission plugin implemented: authorizes the `restore` verb on the
-  referenced `PodCheckpoint`, injects a node-affinity constraint pinning the Pod to the
+  referenced `PodCheckpoint`, rejects restores from a checkpoint that is missing or not `Ready`,
+  injects a node-affinity constraint pinning the Pod to the
   checkpoint's node (so it is scheduled there rather than binding `spec.nodeName` directly), and
   authoritatively validates Pod-spec equality against `status.checkpointedPodTemplate`.
-- Field selectors `spec.sourcePodName` and `status.nodeName` registered on the `PodCheckpoint`
+- `PodCheckpoint` creation rejected at admission when the source Pod is missing, not `Running`,
+  being deleted, or does not match `spec.sourcePod.uid`.
+- Pod update rules implemented: source Pod spec changes are rejected while `Checkpointing=True`,
+  and restore Pod changes that would break the equality check are rejected until the restore
+  completes.
+- Runtime options implemented with the RuntimeClass allow-list (`podCheckpoint.allowedCheckpointOptions`
+  and `allowedRestoreOptions`), checked at admission and by the kubelet.
+- `checkpoint_digest` and `expected_checkpoint_digest` defined in the CRI and recorded in
+  `status.checkpointDigest`; runtimes may leave them empty in alpha.
+- Field selectors `spec.sourcePod.name` and `status.nodeName` registered on the `PodCheckpoint`
   REST storage, so checkpoints can be listed by source Pod or by node.
 - Pod-snapshot-controller implemented.
 - End-to-end warm start workflow: checkpoint a running Pod, create a new Pod from that
@@ -1755,6 +2223,13 @@ Beta adds:
   a Pod stuck `Pending` forever.
 - Additional e2e testing for stabilization; known issues and gaps documented.
 - No open CVE-class issues for the feature.
+- Checkpoint archive integrity is enforced by at least two CRI implementations: the Pod spec is
+  authoritative for security settings on restore, and the checkpoint digest is always reported
+  and verified before restore. A threat-model document, reviewed with the containerd and CRI-O
+  maintainers and SIG Auth, is published (see
+  [Checkpoint archive integrity](#checkpoint-archive-integrity)).
+- The expected runtime options for each supported runtime are documented, with guidance on which
+  keys are safe to allow for untrusted users (see [Runtime Options](#runtime-options)).
 
 #### GA
 
@@ -1843,11 +2318,15 @@ you need any help or guidance.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `PodLevelCheckpointRestore`
   - Components depending on the feature gate:
-    - `kube-apiserver` - serves the `PodCheckpoint` built-in type, gates and validates the
+    - `kube-apiserver` - serves the `PodCheckpoint` built-in type (which also requires
+      `--runtime-config=node.k8s.io/v1alpha1=true`, as for any alpha API version), gates and
+      validates the
       `restoreFrom` Pod-spec field, and runs the `PodRestoreAuthorization` admission plugin
       (the `restore`-verb authorization, the injected node-affinity constraint pinning the Pod to
-      the checkpoint's node, and the
-      authoritative pod-template equality check).
+      the checkpoint's node, the
+      authoritative pod-template equality check, the runtime-options allow-list, and rejecting
+      Pod updates during checkpoint and restore). It also gates the `podCheckpoint` field on
+      RuntimeClass.
     - `kube-controller-manager` - runs the in-tree pod-snapshot-controller that reconciles
       `PodCheckpoint` lifecycle (finalizers and garbage collection); it is not on the checkpoint
       execution path.
@@ -1865,8 +2344,9 @@ No.
 
 Yes. By disabling the `PodLevelCheckpointRestore` feature gate.
 
-While the gate is off the API server stops serving the `checkpoint.k8s.io`
-group, so any `PodCheckpoint` objects created while it was on are **stranded**:
+While the gate is off the API server stops serving the `podcheckpoints`
+resource in `node.k8s.io/v1alpha1` (the rest of the `node.k8s.io` group, such as
+`RuntimeClass`, is unaffected), so any `PodCheckpoint` objects created while it was on are **stranded**:
 they remain in etcd but are not served (`get`/`list`/`delete` return 404), the
 controller and kubelet ignore them, and on-disk checkpoint archives stay until
 cleaned up. They consume no node or runtime resources while inert. Two caveats:
@@ -1885,7 +2365,7 @@ cleaned up. They consume no node or runtime resources while inert. Two caveats:
 The feature keeps no in-memory state across the gate flip, so re-enabling starts
 from a clean slate. Per component:
 
-- `kube-apiserver`: serves the `checkpoint.k8s.io` group and the Pod
+- `kube-apiserver`: serves the `podcheckpoints` resource and the Pod
   `spec.restoreFrom` field again. Any `PodCheckpoint` objects that survived the
   rollback (they remain stored, just inert) become readable and a `restoreFrom`
   reference to one is honored again.
@@ -1908,7 +2388,8 @@ coverage is per-component:
 
 - `kube-apiserver`. The `spec.restoreFrom` field uses the standard `dropDisabledFields`
   handling: it is cleared when the gate is off unless it was already set on the old object
-  (ratcheting). This is the disable-after-write "switch" test the PRR template calls for. The
+  (ratcheting). This is the disable-after-write "switch" test the PRR template calls for. The RuntimeClass
+  `podCheckpoint` field uses the same handling and has the same test. The
   gating logic and its ratcheting are implemented in `pkg/api/pod/util.go` and tested by
   `TestGetValidationOptionsRestoreFrom` in `pkg/api/pod/util_test.go`; validation rejects
   `restoreFrom` on create when the gate is off, and the `PodRestoreAuthorization` admission plugin
@@ -1930,13 +2411,13 @@ coverage is per-component:
 - `kube-controller-manager`. The pod-snapshot-controller is registered behind the gate via its
   `ControllerDescriptor` `requiredFeatureGates`, so it does not run when the gate is off (no
   restore-lock finalizers are reconciled). An integration test in `test/integration/podcheckpoint`
-  asserts that with the gate disabled the `checkpoint.k8s.io` group is not served, so a
+  asserts that with the gate disabled the `podcheckpoints` resource is not served, so a
   `PodCheckpoint` cannot be created, and that with the gate enabled a `PodCheckpoint` can be
   created and the controller adds and later removes the restore-lock finalizer as a Pod restores
   from it.
 
 Disablement does not affect running workloads. Existing `PodCheckpoint` objects remain stored in
-etcd but unserved while the gate is off (the `checkpoint.k8s.io` group is not served); a Pod's
+etcd but unserved while the gate is off (the `podcheckpoints` resource is not served); a Pod's
 `restoreFrom` field is likewise inert. See [Can the feature be disabled](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement) for how these stranded objects are drained on re-enable.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -2031,14 +2512,15 @@ API, Pods carrying `spec.restoreFrom`, and the kubelet-exposed checkpoint/restor
     `CheckpointFailed`.
   - Event reasons on the restored Pod: `RestoreSucceeded` on success; on the failure or retry
     paths the reason names the cause — `CheckpointNotReady`, `CheckpointWrongNode`,
-    `PodSpecMismatch`, `CheckpointDataMissing`, or `RestoreInProgress` (transient, while the Pod
+    `PodSpecMismatch`, `CheckpointDataMissing`, `RestoreOptionNotAllowed`, `RestoreFailed` (the
+    runtime rejected the restore, for example because of a digest mismatch or incompatible node
+    software; the message carries the runtime's error), or `RestoreInProgress` (transient, while the Pod
     waits on the kubelet's restore serialization lock). The Pod stays `Pending` and is retried for
     the non-terminal cases (see [End-to-end restore walkthrough](#end-to-end-restore-walkthrough)).
     A spec mismatch is normally surfaced earlier still: admission rejects the Pod create
     synchronously with an `Invalid` error naming the offending field, so the user sees it at
     `kubectl apply` time and no Pod is created. The kubelet's `PodSpecMismatch` event is the
-    defense-in-depth path that only fires in the narrow window where a restore was admitted against
-    a not-yet-`Ready` checkpoint.
+    defense-in-depth path; it fires only if a mismatch gets past admission.
   - Event reason on the source Pod: `CheckpointingPod`, emitted when the checkpoint window
     starts (the matching `Checkpointing=True` condition is what is set and later cleared).
 - [x] API `.status`
@@ -2134,7 +2616,7 @@ that already occurs in the existing Pod lifecycle.
 
 Yes:
 
-- `PodCheckpoint` in the `checkpoint.k8s.io/v1alpha1` API group, namespace-scoped. One object
+- `PodCheckpoint` in the `node.k8s.io/v1alpha1` API group version, namespace-scoped. One object
   per checkpoint operation. Its `status.checkpointedPodTemplate` embeds a sanitized
   `PodTemplateSpec` captured from the source Pod; this is bounded by the size of a single Pod
   template (kilobyte-scale, well within the etcd per-object limit) and is written once when
@@ -2142,8 +2624,9 @@ Yes:
   equality check can report which fields differ); the scaling concern is object *count*, bounded
   by garbage collection — see
   [increasing size or count](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects).
-- A new optional field `restoreFrom` on Pod spec referencing a `PodCheckpoint` in the same
-  namespace.
+- A new optional field `restoreFrom` on Pod spec (a `CheckpointReference` with the name of a
+  `PodCheckpoint` in the same namespace and optional runtime options).
+- A new optional field `podCheckpoint` on RuntimeClass with the allowed option keys.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -2151,8 +2634,9 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Pod spec gains one optional field, `restoreFrom`, a name reference to a `PodCheckpoint` in the
-same namespace. The additional bytes are negligible (a single name string).
+Pod spec gains one optional field, `restoreFrom`, a reference to a `PodCheckpoint` in the
+same namespace with optional runtime options (at most 64 entries). RuntimeClass gains an optional
+`podCheckpoint` allow-list of option keys. Both are small and set only when the feature is used.
 
 The feature also adds `PodCheckpoint` objects — one per checkpoint operation, each embedding a
 sanitized, kilobyte-scale `PodTemplateSpec` (kept in full rather than as a hash so the equality
@@ -2238,8 +2722,9 @@ details). For now, we leave it here.
 - Checkpoint timeout.
   - Detection: `kubelet_pod_checkpoint_operations_total{result="failure"}` increases; the
     `Ready` condition is `False` with reason `CheckpointFailed` (message notes the timeout).
-  - Mitigation: raise `PodCheckpoint.spec.timeoutSeconds`; reduce the workload in-memory
-    footprint; checkpoint fewer Pods concurrently.
+  - Mitigation: raise `PodCheckpoint.spec.timeoutSeconds`, and the kubelet's
+    `podCheckpointTimeout` if the effective timeout is already at that ceiling (larger values are
+    clamped to it); reduce the workload in-memory footprint; checkpoint fewer Pods concurrently.
   - Diagnostics: kubelet logs `checkpoint timed out after %d seconds` at V(2); CRIU logs in
     the runtime.
   - Testing: a unit test on timeout propagation and an e2e test with an artificially short
@@ -2255,7 +2740,7 @@ details). For now, we leave it here.
 - Checkpoint object is never picked up by a kubelet.
   - Detection: the `PodCheckpoint` stays with no `Ready` condition (or stuck at
     `CheckpointInProgress`) indefinitely, with no terminal status written.
-  - Mitigation: confirm the source Pod (`spec.sourcePodName`) is bound to a node, that node's
+  - Mitigation: confirm the source Pod (`spec.sourcePod.name`) is bound to a node, that node's
     kubelet has the `PodLevelCheckpointRestore` gate enabled, and the kubelet is watching
     `PodCheckpoint` objects (it requires `list`/`watch` on `podcheckpoints`).
   - Diagnostics: the kubelet logs `Starting PodCheckpoint watch` at startup and a per-object
@@ -2300,11 +2785,16 @@ details). For now, we leave it here.
     that supports normal Pods supports restore as well.
   - Diagnostics: `kubectl describe pod` on the restore Pod and CNI plugin logs.
   - Testing: an e2e test against at least one CNI implementation.
-- Clock skew on checkpoint filename timestamp.
-  - Detection: filename collisions or overwritten checkpoints.
-  - Mitigation: include a monotonically increasing suffix alongside the timestamp.
-  - Diagnostics: kubelet logs the full generated path.
-  - Testing: a unit test on path generation.
+- Restore fails because the checkpoint data does not match its digest, or the node software
+  changed since the checkpoint.
+  - Detection: the restore Pod stays `Pending` with a `RestoreFailed` event and a
+    `Restoring=False` condition carrying the runtime's error.
+  - Mitigation: for a digest mismatch, treat the checkpoint data as tampered with or corrupted,
+    delete the `PodCheckpoint`, and investigate the node; do not restore from it. For
+    incompatible node software, take a new checkpoint after the upgrade.
+  - Diagnostics: kubelet logs the `RestorePod` error; runtime and CRIU logs show which check
+    failed.
+  - Testing: an e2e test that modifies the checkpoint data before restore.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -2318,7 +2808,7 @@ operator should:
 3. If the kubelet is the source of failure, capture kubelet logs at V(4) and the runtime
    CRIU logs for the affected container.
 4. If an object is not being picked up at all (no `Ready` condition and no
-   `CheckpointInProgress`), confirm the source Pod (`spec.sourcePodName`) is bound to a node, that
+   `CheckpointInProgress`), confirm the source Pod (`spec.sourcePod.name`) is bound to a node, that
    node's kubelet has the `PodLevelCheckpointRestore` gate enabled, and that kubelet is watching
    `PodCheckpoint` objects. `status.nodeName` is written by the kubelet only once it picks the
    object up, so it is expected to be empty here and is not a useful signal for this case.
@@ -2332,23 +2822,6 @@ operator should:
 These are design questions to resolve during implementation; they do not change the alpha API
 shape described above.
 
-- **Should `CheckpointPod` and `RestorePod` be their own CRI service rather than methods on
-  `RuntimeService`?** A separate service — alongside the existing `RuntimeService` and
-  `ImageService` — could let checkpoint and restore be implemented by a component other than the
-  container runtime, and would make testing and development easier by allowing an independent
-  implementation or test double. The trade-off to tease out is that checkpoint/restore still needs
-  deep runtime cooperation (freezing containers, driving CRIU through the OCI runtime, access to
-  sandbox and container state), and a separate service means the kubelet has to discover and dial a
-  second endpoint with its own version negotiation. To be decided during implementation.
-
-- **Should the source-Pod identifiers be grouped into a `spec.sourcePod` reference object (a
-  `SourcePodReference`) instead of the flat `spec.sourcePodName` and `spec.sourcePodUID` fields?**
-  The WG settled that the source-Pod name is sufficient for the initial API (with the optional
-  `sourcePodUID` for instance pinning); grouping the two into a reference object was raised, and it
-  could also host a future selector-based source (checkpointing a replica without naming a specific
-  Pod). Deferred to API review. Moving flat fields into a struct is an incompatible change, so it
-  would be settled before the API stabilizes.
-
 - **When the allocated Pod has a pending desired change (e.g. an in-place resize in progress),
   should the checkpoint also record that intent and reapply it on restore?** The checkpoint
   captures the allocated (actual) state, so the immediate behavior is settled: restore recreates
@@ -2356,6 +2829,17 @@ shape described above.
   change so the restored Pod resumes converging toward it, versus restoring the allocated state and
   leaving the user to re-issue the resize/update. To be decided during implementation, and it
   becomes more pressing as features like Dynamic Containers widen the allocated-vs-desired gap.
+
+- **Which fields must match between the checkpoint and the restore Pod?** Alpha requires every
+  compared field to match. A possible relaxation is to compare only the fields that make up what
+  is running in the Pod (the fields that go through the kubelet's allocation step, as used by
+  in-place resize and Dynamic Containers). This depends on that set of fields being defined
+  first; see [Pod updates during checkpoint and restore](#pod-updates-during-checkpoint-and-restore).
+
+- **Do runtime options need value validation, or trusted-only options?** The RuntimeClass
+  allow-list holds keys only. Whether some options need values checked by Kubernetes, or should
+  be structured fields that only trusted users may set, depends on the use-case document described
+  in [Runtime Options](#runtime-options).
 
 - **Timing of the Node Declared Features dependency.** Restore relies on the scheduler (and
   checkpoint-create admission) to avoid nodes that cannot satisfy a restore, which is best driven by
@@ -2375,9 +2859,14 @@ shape described above.
   cannot process the snapshot. Some of these signals (CRIU/gVisor versions in particular) are not
   exposed to the control plane today, so surfacing them (for example through Node Declared Features
   or node status) is a prerequisite worth designing early, even though portability across
-  heterogeneous environments is a [Non-Goal](#non-goals) for alpha. A likely shape is a scheduler
-  plugin backed by the checkpoint controller that hints at compatible nodes. Node migration is large
-  enough to be its own KEP, designed with SIG Scheduling.
+  heterogeneous environments is a [Non-Goal](#non-goals) for alpha. A likely shape is a restore-aware
+  scheduler plugin backed by the checkpoint controller that hints at compatible nodes. It would
+  start by pinning a restore to the node the checkpoint came from, and then add compatibility
+  checks. DRA was also discussed: it can express GPU compatibility, but software versions such as
+  CRIU and the kernel are not devices, and relying on DRA would require a DRA driver on every
+  cluster that uses restore. Node migration is large enough to be its own KEP, designed with SIG
+  Scheduling. Other SIGs with future use cases (for example SIG Autoscaling, for creating replicas
+  from a checkpoint) will be consulted so the API can cover them later.
 
 ## Drawbacks
 
@@ -2442,6 +2931,15 @@ checkpoint/restore:
   kubelet swaps `createPodSandbox()` for `restorePodSandbox()` when `spec.restoreFrom` is
   set. The trade-off is a small Pod spec addition, which is justified by the simplification
   on every other axis.
+
+- **Requiring `spec.nodeName` in the restore Pod.** Having users set the checkpoint's node in the
+  restore Pod, bypassing the scheduler, was rejected. It forces users to copy node names into Pod
+  templates and update them for every checkpoint. Admission derives the node from the
+  `PodCheckpoint` instead, and the scheduler places the Pod.
+
+- **Unrestricted opaque runtime options.** Passing any option through to the runtime was rejected
+  because an option added later could grant more privilege than the user holds. Options must be
+  allowed on the RuntimeClass; see [Runtime Options](#runtime-options).
 
 - **`PodCheckpoint` as a CRD.** Shipping `PodCheckpoint` as a CRD (in an out-of-tree
   controller bundle) was considered and rejected for the in-tree KEP scope. As a CRD, the
