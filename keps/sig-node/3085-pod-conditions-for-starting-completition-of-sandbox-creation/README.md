@@ -155,15 +155,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -1748,6 +1748,9 @@ may leverage this feature.
     (see [kubernetes/kubernetes#134179](https://github.com/kubernetes/kubernetes/pull/134179)).
   - Updated pod-lifecycle documentation to reflect volume and DRA readiness.
     (see [kubernetes/website#54404](https://github.com/kubernetes/website/pull/54404))
+
+- GA Promotion in 1.37 ([Kubernetes#140488](https://github.com/kubernetes/kubernetes/pull/140488), [website#56185](https://github.com/kubernetes/website/pull/56185))
+  - Updated existing conformance test `Pods, completes the lifecycle of a Pod and the PodStatus` to cover resetting the `PodReadyToStartContainers` condition ([Kubernetes#141460](https://github.com/kubernetes/kubernetes/pull/141460))
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
