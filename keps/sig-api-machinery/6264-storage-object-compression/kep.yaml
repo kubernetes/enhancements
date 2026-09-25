@@ -1,0 +1,47 @@
+title: Storage Object Compression
+kep-number: 6264
+authors:
+  - "@hakuna-matatah"
+  - "@mengqiy"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-scalability
+status: implementable
+creation-date: 2026-09-02
+reviewers:
+  - "@deads2k"
+  - "@jpbetz"
+approvers:
+  - "@deads2k"
+  - "@jpbetz"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+# No feature gate: the write path is enabled only by --storage-compression-config,
+# and writes are disabled by removing that flag or by emptying the per-resource
+# policy. Decompression of already-persisted values is unconditional and is
+# deliberately NOT disableable; see the Feature Enablement and Rollback section.
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - apiserver_storage_compression_operations_total
+  - apiserver_storage_compression_duration_seconds
+  - apiserver_storage_compression_format_errors_total
+  - apiserver_storage_compression_unsupported_algorithm_total
+  - apiserver_storage_compression_rewrites_needed_total
+  - apiserver_storage_compression_inflation_wait_seconds
