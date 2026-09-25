@@ -1,0 +1,43 @@
+title: Stall and resume slow watch streams instead of terminating them
+kep-number: 6268
+authors:
+  - "@nami-ant"
+  - "@rpb-ant"
+owning-sig: sig-api-machinery
+status: implementable
+creation-date: 2026-08-06
+reviewers:
+  - "@wojtek-t"
+  - "@serathius"
+  - "@jpbetz"
+approvers:
+  - "@jpbetz"
+  - "@wojtek-t"
+# The PRR approver ("@wojtek-t" for alpha) is recorded in
+# keps/prod-readiness/sig-api-machinery/6268.yaml, as the repo requires.
+
+see-also: []
+replaces: []
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+  beta: "TBD"
+  stable: "TBD"
+
+feature-gates:
+  - name: WatchCacheStallResume
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics:
+  - apiserver_watch_cache_watcher_stalls_total
+  - apiserver_watch_cache_watcher_deferred_events_total
+  - apiserver_watch_cache_watcher_catchup_rounds_total
+  - apiserver_watch_cache_watcher_catchup_events
+  - apiserver_watch_cache_stalled_watchers
+  - apiserver_terminated_watchers_total
