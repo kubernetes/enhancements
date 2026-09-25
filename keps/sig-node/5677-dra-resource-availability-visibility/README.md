@@ -49,13 +49,15 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (1.36)](#alpha-136)
     - [Alpha (1.37)](#alpha-137)
-    - [Beta (1.38)](#beta-138)
-      - [API graduation](#api-graduation)
-      - [Semantics to correct before Beta](#semantics-to-correct-before-beta)
+    - [Alpha (1.38)](#alpha-138)
+      - [Semantics corrections](#semantics-corrections)
       - [Observability and operational hardening](#observability-and-operational-hardening)
       - [UX](#ux)
-      - [Test coverage required for Beta](#test-coverage-required-for-beta)
+      - [Test coverage](#test-coverage)
+    - [Beta (1.39)](#beta-139)
+      - [API graduation](#api-graduation)
       - [Out-of-tree validation](#out-of-tree-validation)
+      - [Version transition testing](#version-transition-testing)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -87,7 +89,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and
   SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints) — `UpdateStatus`
-    is still missing; see [Beta (1.38)](#beta-138)
+    is still missing; see [Alpha (1.38)](#alpha-138)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests]
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
@@ -96,7 +98,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for
-  publication to [kubernetes.io] — required for the 1.38 Beta promotion
+  publication to [kubernetes.io] — required for the 1.39 Beta promotion
 - [ ] Supporting documentation—e.g., additional design documents, links to
   mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -444,7 +446,7 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
    marker survives into the result — or exhausts its retries and is left
    with `status` unset until the 24-hour pending TTL deletes it. Either way
    the incomplete state is never visible to a reader. Reaching a terminal state in this case is
-   a Beta item; see [Beta (1.38)](#beta-138) under Graduation Criteria.
+   an Alpha 1.38 item; see [Alpha (1.38)](#alpha-138) under Graduation Criteria.
 
 8. **Generation handling**: ResourceSlices with older pool generations are
    ignored during computation (not counted as errors). Drivers are expected
@@ -457,10 +459,10 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
    devices in the pool regardless of whether they are also allocated,
    so a device that is both allocated and tainted is subtracted twice
    from `availableDevices`; the `max(0, …)` floor hides the resulting
-   underflow. Beta resolves this in favour of the field's stated meaning
+   underflow. Alpha 1.38 resolves this in favour of the field's stated meaning
    ("not available due to taints … but are not allocated") by excluding
    allocated devices from the taint tally; see
-   [Beta (1.38)](#beta-138) under Graduation Criteria.
+   [Alpha (1.38)](#alpha-138) under Graduation Criteria.
 
 ### Risks and Mitigations
 
@@ -471,8 +473,8 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
 | Request accumulation in etcd | Controller-side TTL cleanup (Alpha): 1h after completion, 24h for pending |
 | Large status objects (many pools) | Required `driver` field bounds response; `limit` field capped at 1000 (default 100); status `pools` list capped at `maxItems=1000` |
 | Controller processing spike | Work queue with default rate limiting; max 5 retries per request; a single worker bounds concurrent lister scans |
-| Simultaneous request flood | Per-user rate limiting (planned for Beta) |
-| TTL sweep spike | Cleanup lists from the informer cache, but issues one `delete` per expired object; batching / pacing is a Beta item |
+| Simultaneous request flood | Per-user rate limiting (planned for Alpha 1.38) |
+| TTL sweep spike | Cleanup lists from the informer cache, but issues one `delete` per expired object; batching / pacing is an Alpha 1.38 item |
 
 **Alpha approach:** The required `driver` field naturally bounds response
 size to one driver's pools, with `limit` (default 100, max 1000) as an
@@ -482,11 +484,12 @@ growth is bounded without user action. Cluster administrators can still
 enforce additional object-count limits via admission webhooks (e.g.
 Gatekeeper, Kyverno).
 
-**Beta improvements:** Per-user rate limiting for request creation, paced
+**Alpha 1.38 improvements:** Per-user rate limiting for request creation, paced
 TTL-delete sweeps, and consideration of configurable TTLs and a built-in
 cluster-wide object limit if Alpha feedback indicates a need. Scale
-validation at ≥100 pools with ≥1000 expired requests is a Beta gate; see
-[Beta (1.38)](#beta-138).
+validation at ≥100 pools with ≥1000 expired requests is an Alpha 1.38
+deliverable; see
+[Alpha (1.38)](#alpha-138).
 
 #### Operational Risks
 
@@ -718,7 +721,7 @@ non-nil status indicates the request has been processed.
 | `pools.totalDevices` | `*int32` (optional) | Total devices across all slices. Unset when `validationError` is set. |
 | `pools.allocatedDevices` | `*int32` (optional) | Devices allocated to claims. Unset when `validationError` is set. |
 | `pools.availableDevices` | `*int32` (optional) | `totalDevices - allocatedDevices - unavailableDevices`. Unset when `validationError` is set. |
-| `pools.unavailableDevices` | `*int32` (optional) | Count of devices with at least one `NoSchedule` or `NoExecute` taint, sourced from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s. **0 in Alpha 1.36** (hard-coded); computed from real taints since Alpha 1.37. Counted over all devices in the pool regardless of allocation, so a device that is both allocated and tainted is subtracted twice from `availableDevices`. **Corrected at Beta** to exclude allocated devices, matching this field's doc comment and making `total = allocated + unavailable + available` exact — see [Beta (1.38)](#beta-138). Unset when `validationError` is set. |
+| `pools.unavailableDevices` | `*int32` (optional) | Count of devices with at least one `NoSchedule` or `NoExecute` taint, sourced from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s. **0 in Alpha 1.36** (hard-coded); computed from real taints since Alpha 1.37. Counted over all devices in the pool regardless of allocation, so a device that is both allocated and tainted is subtracted twice from `availableDevices`. **Corrected in Alpha 1.38** to exclude allocated devices, matching this field's doc comment and making `total = allocated + unavailable + available` exact — see [Alpha (1.38)](#alpha-138). Unset when `validationError` is set. |
 | `pools.validationError` | `*string` (optional, max 256 bytes) | Set when the pool's data could not be fully validated. When set, the count fields above may be unset (incomplete pool) or still populated (a view-level error, which clears `partitionSummary` but leaves the counts valid). The controller emits a stable, machine-readable prefix followed by `: ` and a free-form detail so operators can grep / alert on the specific case without parsing the message body. Prefixes as of Alpha 1.37 (provisional, may grow): `PoolIncomplete:` (observed slices < declared `ResourceSliceCount`) — note that this one is **computed but never persisted**, because the controller aborts the status write and requeues whenever any pool carries it, so in practice a reader never observes it; the remaining prefixes are permanent and are written to status: `PartitionTypeMissing:` (a grouped device lacks the resolved partition-type attribute, or the pool resolves a grouping attribute but publishes no `sharedCounters`), `PartitionCostMismatch:` (devices of the same partition type publish different `ConsumesCounters` costs), `PartitionSummaryOverCap:` (distinct partition types exceed the 32-item cap), `ShareableSummaryOverCap:` (distinct shareable capacity keys exceed the 32-item cap). Promoting this field to a structured `{reason, message}` pair (Condition-style) is tracked as a Beta consideration. |
 | `pools.partitionSummary` | atomic list of `PartitionTypeStatus`, max 32, unique on (`attribute`, `type`) (Alpha 1.37, **provisional** — revisit at Beta) | Per-(attribute, partition-type) aggregate, emitted for a partitionable pool that publishes `SharedCounters` and for which a grouping attribute could be resolved — from `ResourceSlice.Spec.PartitionTypeAttribute` on a slice, or from `spec.defaultPartitionTypeAttribute` on the request. A pool that mixes partitions declared under different attributes reports each independently. When neither source names an attribute, the pool reports no `partitionSummary`. A grouped device missing the resolved attribute produces a per-pool `validationError`, as does a device whose `ConsumesCounters` cost differs from peers of the same type — both prevent silent bucketing. Cap of 32 is a provisional starting point that fits MIG-class pools (3–7 partition types typical); over-cap pools produce a per-pool `validationError` instead of silent truncation. Entries are sorted by (`attribute`, `type`). |
 | `pools.partitionSummary.attribute` | string (required) | Fully qualified name of the device attribute whose value groups this entry — the `PartitionTypeAttribute` declared by the devices' own slice, or the request's `defaultPartitionTypeAttribute` when their slice declares none. |
@@ -727,7 +730,7 @@ non-nil status indicates the request has been processed.
 | `pools.partitionSummary.allocatable` | `*int32` (required) | Number of additional devices of this partition type that can still be allocated under current shared-counter constraints, capped by the number of unallocated devices of this type in the pool. Computed by a greedy per-device fit check against `counterAvailable[s][c] = SharedCounters[s].Counters[c].Value − sum_{in-use d in s} d.ConsumesCounters[s][c]` (each in-use device debited once, per-device not per-claim — matches scheduler counter accounting). For the common single-counter-set case this reduces to `min(freshDevices[type], min over counters c of floor(counterAvailable[s_type][c] / consumesCounters[type][c]))`, where `freshDevices[type]` is the count of devices of this type currently unallocated. **Every entry is computed independently against the same baseline**, so entries describe mutually exclusive alternatives and must not be summed. See [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting) for the multi-counter-set algorithm. On shareable partitions (`allowMultipleAllocations=true`) this counts only fresh device slots, not capacity headroom on already-in-use devices; operators reading the same pool should consult `shareableSummary.capacity.available` for per-key headroom on shared devices. |
 | `pools.shareableSummary` | `*ShareableSummaryStatus` (optional) | Pool-level aggregate for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. Per-device detail was intentionally not included: a per-device list would scale to hundreds of entries on large pools, so the aggregate gives the operator-relevant signal in three small numbers plus a per-capacity-key breakdown. |
 | `pools.shareableSummary.fullyAvailableDevices` | `*int32` (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
-| `pools.shareableSummary.partiallyAvailableDevices` | `*int32` (required) | Count of shareable devices with **at least one** non-AdminAccess claim, regardless of how much of their capacity is still free — a fully consumed device is counted here, not excluded. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. The field's own doc comment ("some but not all capacity consumed") does not describe this behaviour; **Beta corrects the doc comment** to match the implementation rather than tightening the computation, since the in-use count is the intended signal and per-key remaining capacity is already reported by `capacity[]` — see [Beta (1.38)](#beta-138). |
+| `pools.shareableSummary.partiallyAvailableDevices` | `*int32` (required) | Count of shareable devices with **at least one** non-AdminAccess claim, regardless of how much of their capacity is still free — a fully consumed device is counted here, not excluded. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. The field's own doc comment ("some but not all capacity consumed") does not describe this behaviour; **Alpha 1.38 corrects the doc comment** to match the implementation rather than tightening the computation, since the in-use count is the intended signal and per-key remaining capacity is already reported by `capacity[]` — see [Alpha (1.38)](#alpha-138). |
 | `pools.shareableSummary.capacity` | atomic list of `ShareableCapacityStatus`, max 32 (Alpha 1.37) | Per-capacity-key aggregate across all shareable devices in the pool, sorted by key. Cap of 32 matches the per-device combined `Attributes + Capacity` cap (no single device can carry more than 32 capacity keys); aggregation across devices may introduce additional keys but homogeneous-schema pools rarely exceed this. |
 | `pools.shareableSummary.capacity.name` | string (required) | Capacity key as it appears in `ResourceSlice.Spec.Devices[].Capacity`. |
 | `pools.shareableSummary.capacity.total` | `*resource.Quantity` (required) | Sum of `Device.Capacity[name].Value` across all shareable devices in the pool that carry this key. Devices that do not carry the key contribute nothing (rather than zero), which is the correct behaviour for heterogeneous-schema pools. |
@@ -885,7 +888,7 @@ The controller:
 5. Runs a single worker (`controller.Run(ctx, 1)`). There is no
    `ConcurrentSyncs` configuration knob; a request is a one-shot
    read-and-summarise, so one worker has been sufficient. Revisiting this
-   is a Beta item if scale testing shows otherwise.
+   is an Alpha 1.38 item if scale testing shows otherwise.
 
 #### One-time Processing
 
@@ -932,7 +935,7 @@ is not re-read from later slices.
 
 The last point is a known rough edge: a user whose driver never finishes
 publishing gets silence rather than a diagnosable object. Giving incomplete
-pools a terminal state is tracked as a Beta item.
+pools a terminal state is tracked as an Alpha 1.38 item.
 
 #### Reusing Existing Informers
 
@@ -1001,7 +1004,7 @@ consistently:
    `Spec.Devices[].Taints` still contribute. Because the count is taken
    over all devices in the pool regardless of allocation, a device that
    is both allocated and tainted is subtracted twice from
-   `availableDevices` — see the Beta criteria.
+   `availableDevices` — see the Alpha 1.38 criteria.
 4. **`partitionSummary`** is emitted when the pool publishes
    `sharedCounters` **and** a grouping attribute can be resolved for
    at least one device. Resolution works pool-wide, not per device:
@@ -1163,7 +1166,7 @@ The three metrics are recorded only on the two code paths that reach
 `resourcepoolstatusrequest_controller_request_processing_errors_total`
 counts `UpdateStatus` failures only — a lister failure produces a
 `Failed` condition but no error sample — and the incomplete-pool requeue
-path records nothing at all. Widening metric coverage is a Beta item.
+path records nothing at all. Widening metric coverage is an Alpha 1.38 item.
 
 ##### Devices That Are Both Partitionable and Consumable
 
@@ -1243,8 +1246,8 @@ grants:
 
 The ClusterRole is only installed when `DRAResourcePoolStatus` is enabled.
 The events grant is currently unused — the controller has no event recorder
-and emits no events — and either wiring up events or dropping the grant is a
-Beta clean-up item.
+and emits no events — and either wiring up events or dropping the grant is an
+Alpha 1.38 clean-up item.
 
 ### kubectl Integration
 
@@ -1283,14 +1286,14 @@ $ kubectl get resourcepoolstatusrequests
 $ kubectl delete resourcepoolstatusrequest/my-request
 ```
 
-No short name (e.g. `rpsr`) and no resource category are registered in
-Alpha; adding them is a follow-up for Beta.
+No short name (e.g. `rpsr`) and no resource category are registered
+today; adding them is an Alpha 1.38 item.
 
 There is also no `kubectl describe` support. Because the table columns are
 cluster-wide sums, the per-pool detail that is the whole point of the API —
 `status.pools[]`, `partitionSummary`, `shareableSummary` and
 `validationError` — is only reachable via `-o yaml`/`-o jsonpath`. Adding a
-describer is the largest remaining UX gap and is a Beta requirement.
+describer is the largest remaining UX gap and is an Alpha 1.38 requirement.
 
 ### Test Plan
 
@@ -1342,7 +1345,7 @@ Added in Alpha 1.37:
   `shareableSummary.partiallyAvailableDevices`,
   `shareableSummary.capacity.consumed` and
   `partitionSummary.allocatable`; asserting that explicitly at the view
-  level is a Beta test-coverage item.
+  level is an Alpha 1.38 test-coverage item.
 - **`unavailableDevices` from taints**: a pool with `M` devices,
   `K` of which carry a `NoSchedule` or `NoExecute` taint (via
   `Spec.Devices[].Taints` or a matching `DeviceTaintRule`), reports
@@ -1417,10 +1420,10 @@ Added in Alpha 1.37:
   measures size before populating the field, avoiding a rejected write
   against the apiserver.
 
-Gaps carried into Beta: there is no `storage_test.go` for
+Gaps carried into Alpha 1.38: there is no `storage_test.go` for
 `pkg/registry/resource/resourcepoolstatusrequest/storage`, and the
 strategy unit tests currently cover only partition-attribute handling.
-Both are listed under [Beta (1.38)](#beta-138).
+Both are listed under [Alpha (1.38)](#alpha-138).
 
 #### Integration tests
 
@@ -1454,7 +1457,7 @@ The suite runs a single `feature-enabled` matrix entry with
 `DRAConsumableCapacity` all on. Storage-path coverage lives separately in
 `test/integration/etcd/data.go`.
 
-Not yet covered, and therefore listed under [Beta (1.38)](#beta-138): a
+Not yet covered, and therefore listed under [Alpha (1.38)](#alpha-138): a
 feature-gate-disabled matrix entry, RBAC enforcement (the test server
 runs with `AlwaysAllow`), and a scale case at ≥100 pools with ≥1000
 expired requests.
@@ -1501,7 +1504,7 @@ Added in Alpha 1.37 (the "control plane views" context):
    `partiallyAvailableDevices`, the per-key `capacity[]` aggregate, and
    `allocatedDevices` (cap-at-1 verified end-to-end).
 
-Not yet covered, and listed under [Beta (1.38)](#beta-138): the `UpdateStatus`
+Not yet covered, and listed under [Alpha (1.38)](#alpha-138): the `UpdateStatus`
 endpoint in the CRUD block (an explicit TODO in `dra.go` notes it must be
 added before graduation), and an AdminAccess-invisibility case at the e2e
 or integration level (currently unit-tested only, and only against the
@@ -1611,129 +1614,26 @@ recorded here because they are visible in the shipped shape:
   independently rather than being rejected.
 
 Two items from the Alpha reviewer follow-ups were **not** completed in
-1.37 and carry into Beta: batched / paced TTL-delete sweeps, and scale
+1.37 and carry into Alpha 1.38: batched / paced TTL-delete sweeps, and scale
 validation at ≥100 pools with ≥1000 expired requests. The metrics-test
 follow-up was addressed — the tests now compare gathered output with the
 timing-dependent histogram fields stripped — though they still exercise
 the metric objects rather than the controller's emission paths.
 
-#### Beta (1.38)
+#### Alpha (1.38)
 
-After two Alpha cycles (1.36 and 1.37) the shape of the API is settled and
-the accounting is correct for all three device shapes. Beta is about aligning
-the API's group version with its stability level, making the remaining
-semantics defensible, and closing the test gaps.
+A third Alpha cycle, targeted in place of the Beta promotion originally
+planned for 1.38. The API shape settled in 1.37 and the accounting is correct
+for all three device shapes, but graduating the group version is the last
+step, not the first: 1.38 closes the test gaps, corrects the remaining
+semantics, and hardens observability and UX while the type is still alpha and
+cheap to change. Locking a beta group version around behaviour that is still
+being corrected is the failure mode this ordering avoids.
 
-##### API graduation
+The work below is what 1.38 must deliver. `resource.k8s.io/v1alpha3` and the
+Alpha feature gates are unchanged.
 
-`ResourcePoolStatusRequest` currently lives only in
-`resource.k8s.io/v1alpha3`. Moving it to a beta group version does **not**
-make the feature reachable without explicit opt-in: beta group versions are
-disabled by default too, so an operator swaps
-`--runtime-config=resource.k8s.io/v1alpha3=true` for
-`--runtime-config=resource.k8s.io/v1beta2=true` and keeps the feature gate
-either way. The enablement burden is unchanged by this promotion.
-
-The move is still required, for reasons of lifecycle rather than
-reachability. A Beta-stability feature served only from an alpha group
-version is incoherent; there is no conventional `v1alpha3` → `v1` hop, so
-`v1beta2` is the only route to GA; and Beta starts the two-release clock that
-GA requires. `DeviceTaintRule` is the precedent to follow throughout — it was
-added to `v1beta2` at Beta in 1.36 and to `v1` at GA in 1.37.
-
-There is also a clock already running, set by `prerelease-lifecycle-gen`
-rather than by this KEP. Alpha kinds get their deprecation and removal
-releases derived automatically from `introduced` (+3 and +6), and
-`resource.k8s.io/v1alpha3` serves exactly two kinds:
-
-| Kind (v1alpha3) | Introduced | Deprecated | Removed |
-| --- | --- | --- | --- |
-| `DeviceTaintRule` | 1.33 | 1.36 | 1.39 |
-| `ResourcePoolStatusRequest` | 1.36 | 1.39 | **1.42** |
-
-Adding the type to `v1beta2` does not retire the `v1alpha3` copy — this KEP
-keeps it served for skew — so from 1.39 `ResourcePoolStatusRequest` is the
-only kind holding `resource.k8s.io/v1alpha3` open, until its own removal at
-1.42. What the 1.38 promotion buys is that a served successor exists well
-before then, so the `v1alpha3` copy can age out on its generated schedule
-without taking the feature with it. Promoting later compresses that margin.
-
-Concretely:
-
-- **Add `ResourcePoolStatusRequest` (and its status types) to
-  `resource.k8s.io/v1beta2`**, with
-  `+k8s:prerelease-lifecycle-gen:introduced=1.38`, conversions to and from
-  the internal type, and registration in `v1beta2Storage`
-  (`pkg/registry/resource/rest/storage_resource.go`). Move the storage
-  version override in `pkg/kubeapiserver/default_storage_factory_builder.go`
-  from `v1alpha3` to `v1beta2`. Keep `v1alpha3` served so 1.37 clients keep
-  working across the skew window.
-- **Mark the superseded `v1alpha3` type.** Add
-  `+k8s:prerelease-lifecycle-gen:replacement=resource.k8s.io,v1beta2,ResourcePoolStatusRequest`
-  to the `v1alpha3` kind (and its list type), so clients on the old version
-  get the standard replacement warning. `introduced`, `deprecated` and
-  `removed` are derived and need no edit. This is the convention for a
-  superseded version — `discovery.k8s.io/v1beta1` and
-  `authentication.k8s.io/v1beta1` are examples — and is the one
-  lifecycle-marker change the promotion requires.
-- **Promote the gate:**
-  `DRAResourcePoolStatus: {Version: "1.38", Default: false, PreRelease: Beta}`.
-  It stays default-off because `resource.k8s.io/v1beta2` is itself an
-  off-by-default beta group version — the same position `DRADeviceTaintRules`
-  was in at 1.36, where the gate carries the comment
-  `// Depends on an off-by-default beta API.`
-- **Promote `DRAPartitionableDevicesType` to Beta, default off:**
-  `{Version: "1.38", Default: false, PreRelease: Beta}`. It gates a field on
-  `ResourceSlice`, which is served from the GA `resource.k8s.io/v1`, so its
-  lifecycle is not automatically tied to the status API's — but holding it at
-  Alpha while its only consumer goes Beta would leave the typed
-  `partitionSummary` path behind an alpha gate for at least another release,
-  which undercuts the promotion. It **must stay default-off** as long as
-  `DRAResourcePoolStatus` is: `AddDependencies` rejects a default-enabled
-  feature that depends on a default-disabled one, and it likewise rejects a
-  dependent whose stability level is higher than a dependency's. Both
-  constraints are hard errors at registration, not warnings.
-  Beta/default-off satisfies both — the gate's
-  dependencies are `DynamicResourceAllocation` (GA, until the removal
-  described below drops it from the list), `DRAPartitionableDevices` (Beta)
-  and `DRAResourcePoolStatus` (Beta after this promotion), none of which sit
-  below Beta.
-
-  The two gates are coupled at runtime, not just at registration:
-  `AddDependencies` is checked again when gates are set, and enabling a
-  feature whose dependency is disabled is a startup error
-  (`"<feature> is enabled, but depends on features that are disabled"`). So
-  `DRAPartitionableDevicesType` cannot be switched on by itself — it requires
-  `DRAResourcePoolStatus` on as well. That coupling is another reason to move
-  both gates together rather than leaving one at Alpha.
-
-  The gates and the group version remain independent, though, and that
-  asymmetry is intentional. `ResourceSlice` is served from the GA
-  `resource.k8s.io/v1`, which is enabled by default, so a cluster running
-  `--feature-gates=DRAResourcePoolStatus=true,DRAPartitionableDevicesType=true`
-  and **no** `--runtime-config` change can accept
-  `ResourceSlice.Spec.PartitionTypeAttribute` from drivers while not serving
-  `ResourcePoolStatusRequest` at all. Drivers can therefore adopt the
-  attribute ahead of any cluster consuming it, which is the ordering this KEP
-  wants.
-- **Track the removal of `DynamicResourceAllocation`.** That gate is GA and
-  locked to default since 1.35 and is slated for complete removal in **1.38**
-  (`kubernetes/kubernetes#134459`) — the same release as this promotion. Both
-  of this KEP's gates name it in `defaultKubernetesFeatureGateDependencies`,
-  and `AddDependencies` fails on a dependency referencing an unknown feature,
-  so those entries have to be dropped in lockstep with the removal. This is
-  cross-cutting rather than specific to this KEP — 18 gates name it — so the
-  work is to stay coordinated with whoever lands the removal, not to own it.
-- **Settle the provisional caps.** `partitionSummary` and
-  `shareableSummary.capacity` both carry `+k8s:maxItems=32`, flagged in
-  Alpha as provisional. Confirm or change them before Beta locks the shape.
-- **Decide on structured `validationError`.** The field is a free-form
-  string with a machine-readable prefix convention
-  (`PoolIncomplete:`, `PartitionTypeMissing:`, …). Promoting it to a
-  Condition-style `{reason, message}` pair is cheap now and expensive later;
-  make the call at Beta.
-
-##### Semantics to correct before Beta
+##### Semantics corrections
 
 Three behaviours where the implementation and the field documentation
 disagree. Each is described as-shipped elsewhere in this KEP; the resolution
@@ -1743,8 +1643,9 @@ chosen for each is given here.
   Tainted devices are counted regardless of allocation, so a device that is
   both allocated and tainted is subtracted twice in
   `availableDevices = max(0, total − allocated − unavailable)`, and the
-  `max(0, …)` floor hides the underflow. Beta excludes allocated devices from
-  the taint tally, which is what the field's doc comment already says ("not
+  `max(0, …)` floor hides the underflow. Alpha 1.38 excludes allocated
+  devices from the taint tally, which is what the field's doc comment
+  already says ("not
   available due to taints … but are not allocated"). This is a controller-side
   fix with **no API change**, and it makes the three counts a true partition:
   `total = allocated + unavailable + available`, with `unavailableDevices`
@@ -1760,7 +1661,7 @@ chosen for each is given here.
 - **`partiallyAvailableDevices` means "in use" — correct the doc comment.**
   It counts shareable devices with at least one non-AdminAccess claim, so a
   device with *all* its capacity consumed is still reported as partially
-  available. Beta keeps both the field name and the computation, and fixes
+  available. Alpha 1.38 keeps both the field name and the computation, and fixes
   the doc comment to describe what the field actually measures: membership in
   the in-use set, not a measure of remaining capacity.
 
@@ -1784,14 +1685,12 @@ chosen for each is given here.
   pool becomes whole and the marker disappears, or the status is never
   written. That makes one of the five documented prefixes dead surface, and
   it makes the `(M incomplete)` wording in the `Complete` condition
-  unreachable for actual incompleteness. Beta should write the partial
+  unreachable for actual incompleteness. Alpha 1.38 should write the partial
   status once retries are exhausted, so the user gets a diagnosable object
   instead of silence and the prefix means something.
 
 ##### Observability and operational hardening
 
-- **Promote the metrics to BETA stability** alongside the gate; they are
-  registered at ALPHA today.
 - **Widen metric coverage.** All three metrics are recorded only on the
   paths that reach `UpdateStatus`. Incomplete-pool requeues and give-ups are
   invisible, and `..._request_processing_errors_total` counts `UpdateStatus`
@@ -1827,10 +1726,10 @@ chosen for each is given here.
   gap. The table columns are cluster-wide sums, so the per-pool detail that
   is the entire point of the API — `status.pools[]`, `partitionSummary`,
   `shareableSummary`, `validationError` — is only reachable through
-  `-o yaml` or `-o jsonpath`. A describer is required for Beta.
+  `-o yaml` or `-o jsonpath`. A describer is required before the promotion.
 - **Register a short name** (e.g. `rpsr`) and a resource category.
 
-##### Test coverage required for Beta
+##### Test coverage
 
 - **Registry storage tests.**
   `pkg/registry/resource/resourcepoolstatusrequest/storage/storage_test.go`
@@ -1853,8 +1752,133 @@ chosen for each is given here.
 - **Scale validation** at ≥100 pools with ≥1000 expired requests, asserting
   cleanup completes within the 10-minute sweep interval and that apiserver
   QPS for `delete resourcepoolstatusrequests` stays within a sensible bound.
-- **Upgrade → downgrade → upgrade** exercised manually and documented in the
-  PRR section.
+  This is a gate on the promotion, not a follow-up: the scale behaviour has
+  to be known before the API is graduated.
+
+#### Beta (1.39)
+
+Beta graduates the API once the 1.38 work above has landed and soaked. It is
+deliberately small: by this point the semantics are settled, the tests exist,
+and what remains is moving the type to a beta group version and proving it
+against a production driver.
+
+Entry criteria: every item under [Alpha (1.38)](#alpha-138) complete, with the
+scale validation and the test-coverage list closed rather than deferred.
+
+##### API graduation
+
+`ResourcePoolStatusRequest` currently lives only in
+`resource.k8s.io/v1alpha3`. Moving it to a beta group version does **not**
+make the feature reachable without explicit opt-in: beta group versions are
+disabled by default too, so an operator swaps
+`--runtime-config=resource.k8s.io/v1alpha3=true` for
+`--runtime-config=resource.k8s.io/v1beta2=true` and keeps the feature gate
+either way. The enablement burden is unchanged by this promotion.
+
+The move is still required, for reasons of lifecycle rather than
+reachability. A Beta-stability feature served only from an alpha group
+version is incoherent; there is no conventional `v1alpha3` → `v1` hop, so
+`v1beta2` is the only route to GA; and Beta starts the two-release clock that
+GA requires. `DeviceTaintRule` is the precedent to follow throughout — it was
+added to `v1beta2` at Beta in 1.36 and to `v1` at GA in 1.37.
+
+There is also a clock already running, set by `prerelease-lifecycle-gen`
+rather than by this KEP. Alpha kinds get their deprecation and removal
+releases derived automatically from `introduced` (+3 and +6), and
+`resource.k8s.io/v1alpha3` serves exactly two kinds:
+
+| Kind (v1alpha3) | Introduced | Deprecated | Removed |
+| --- | --- | --- | --- |
+| `DeviceTaintRule` | 1.33 | 1.36 | 1.39 |
+| `ResourcePoolStatusRequest` | 1.36 | 1.39 | **1.42** |
+
+Adding the type to `v1beta2` does not retire the `v1alpha3` copy — this KEP
+keeps it served for skew — so from 1.39 `ResourcePoolStatusRequest` is the
+only kind holding `resource.k8s.io/v1alpha3` open, until its own removal at
+1.42. What the 1.39 promotion buys is that a served successor exists well
+before then, so the `v1alpha3` copy can age out on its generated schedule
+without taking the feature with it. Promoting later compresses that margin.
+
+Concretely:
+
+- **Add `ResourcePoolStatusRequest` (and its status types) to
+  `resource.k8s.io/v1beta2`**, with
+  `+k8s:prerelease-lifecycle-gen:introduced=1.39`, conversions to and from
+  the internal type, and registration in `v1beta2Storage`
+  (`pkg/registry/resource/rest/storage_resource.go`). Move the storage
+  version override in `pkg/kubeapiserver/default_storage_factory_builder.go`
+  from `v1alpha3` to `v1beta2`. Keep `v1alpha3` served so 1.38 clients keep
+  working across the skew window.
+- **Mark the superseded `v1alpha3` type.** Add
+  `+k8s:prerelease-lifecycle-gen:replacement=resource.k8s.io,v1beta2,ResourcePoolStatusRequest`
+  to the `v1alpha3` kind (and its list type), so clients on the old version
+  get the standard replacement warning. `introduced`, `deprecated` and
+  `removed` are derived and need no edit. This is the convention for a
+  superseded version — `discovery.k8s.io/v1beta1` and
+  `authentication.k8s.io/v1beta1` are examples — and is the one
+  lifecycle-marker change the promotion requires.
+- **Promote the gate:**
+  `DRAResourcePoolStatus: {Version: "1.39", Default: false, PreRelease: Beta}`.
+  It stays default-off because `resource.k8s.io/v1beta2` is itself an
+  off-by-default beta group version — the same position `DRADeviceTaintRules`
+  was in at 1.36, where the gate carries the comment
+  `// Depends on an off-by-default beta API.`
+- **Promote `DRAPartitionableDevicesType` to Beta, default off:**
+  `{Version: "1.39", Default: false, PreRelease: Beta}`. It gates a field on
+  `ResourceSlice`, which is served from the GA `resource.k8s.io/v1`, so its
+  lifecycle is not automatically tied to the status API's — but holding it at
+  Alpha while its only consumer goes Beta would leave the typed
+  `partitionSummary` path behind an alpha gate for at least another release,
+  which undercuts the promotion. It **must stay default-off** as long as
+  `DRAResourcePoolStatus` is: `AddDependencies` rejects a default-enabled
+  feature that depends on a default-disabled one, and it likewise rejects a
+  dependent whose stability level is higher than a dependency's. Both
+  constraints are hard errors at registration, not warnings.
+  Beta/default-off satisfies both — the gate's
+  dependencies are `DynamicResourceAllocation` (GA, until the removal
+  described below drops it from the list), `DRAPartitionableDevices` (Beta)
+  and `DRAResourcePoolStatus` (Beta after this promotion), none of which sit
+  below Beta.
+
+  The two gates are coupled at runtime, not just at registration:
+  `AddDependencies` is checked again when gates are set, and enabling a
+  feature whose dependency is disabled is a startup error
+  (`"<feature> is enabled, but depends on features that are disabled"`). So
+  `DRAPartitionableDevicesType` cannot be switched on by itself — it requires
+  `DRAResourcePoolStatus` on as well. That coupling is another reason to move
+  both gates together rather than leaving one at Alpha.
+
+  The gates and the group version remain independent, though, and that
+  asymmetry is intentional. `ResourceSlice` is served from the GA
+  `resource.k8s.io/v1`, which is enabled by default, so a cluster running
+  `--feature-gates=DRAResourcePoolStatus=true,DRAPartitionableDevicesType=true`
+  and **no** `--runtime-config` change can accept
+  `ResourceSlice.Spec.PartitionTypeAttribute` from drivers while not serving
+  `ResourcePoolStatusRequest` at all. Drivers can therefore adopt the
+  attribute ahead of any cluster consuming it, which is the ordering this KEP
+  wants.
+- **Promote the metrics to BETA stability** alongside the gate. All three are
+  registered at ALPHA today. Metric stability tracks the feature's stage, so
+  this moves with the gate rather than in 1.38 — the widened coverage and the
+  histogram/SLO fix land in Alpha 1.38, and only the stability level changes
+  here.
+- **Track the removal of `DynamicResourceAllocation`.** That gate is GA and
+  locked to default since 1.35 and is slated for complete removal in **1.38**
+  (`kubernetes/kubernetes#134459`) — during the Alpha cycle above, a release
+  ahead of this promotion. Both of this KEP's gates name it in
+  `defaultKubernetesFeatureGateDependencies`, and `AddDependencies` fails on a
+  dependency referencing an unknown feature, so those entries have to be
+  dropped in lockstep with the removal. Retargeting Beta to 1.39 helps here:
+  the dependency cleanup lands in 1.38 as part of the cross-cutting change —
+  18 gates name it — rather than colliding with the promotion.
+- **Settle the provisional caps.** `partitionSummary` and
+  `shareableSummary.capacity` both carry `+k8s:maxItems=32`, flagged in
+  Alpha as provisional. Confirm or change them before Beta locks the shape.
+- **Decide on structured `validationError`.** The field is a free-form
+  string with a machine-readable prefix convention
+  (`PoolIncomplete:`, `PartitionTypeMissing:`, …). Promoting it to a
+  Condition-style `{reason, message}` pair is cheap now and expensive later;
+  make the call at Beta.
 
 ##### Out-of-tree validation
 
@@ -1890,9 +1914,18 @@ chosen for each is given here.
   `DRAPartitionableDevicesType` is enabled — which is why that gate is
   promoted alongside `DRAResourcePoolStatus` above.
 
-  Validating this needs a MIG-capable host, so it is a Beta criterion to be
-  satisfied during the 1.38 cycle, not a precondition of the enhancements
-  freeze.
+  Validating this needs a MIG-capable host, so it is a criterion to be
+  satisfied during the 1.39 cycle, not a precondition of the enhancements
+  freeze. The extra cycle helps here: the driver-side change can land and
+  soak during 1.38 while the in-tree work above is in flight.
+
+##### Version transition testing
+
+- **Upgrade → downgrade → upgrade** exercised manually and documented in the
+  PRR section. This belongs with the promotion rather than with the 1.38
+  work, because the transition being tested — `v1alpha3` storage read back
+  after the storage version moves to `v1beta2` — does not exist until the
+  group version is added.
 
 #### GA
 
@@ -1907,22 +1940,14 @@ chosen for each is given here.
 
 ### Upgrade / Downgrade Strategy
 
-**Upgrade (Alpha 1.37 → Beta 1.38):**
-- The gate moves to Beta but stays default off, because
-  `resource.k8s.io/v1beta2` is an off-by-default beta group version. A
-  cluster that does not opt in sees no behavioural change.
-- `ResourcePoolStatusRequest` is served from both
-  `resource.k8s.io/v1alpha3` and `resource.k8s.io/v1beta2`, with the
-  storage version moving to `v1beta2`. Objects written by 1.37 in
-  `v1alpha3` remain readable and are rewritten at `v1beta2` on their next
-  write; because requests are short-lived and TTL-swept within 24 hours,
-  no storage migration is required in practice. Operators who want the
-  old endpoint can keep `--runtime-config=resource.k8s.io/v1alpha3=true`
-  alongside the new one.
-- No fields are added, removed or renamed at Beta beyond whatever the
-  `validationError` decision produces, so a 1.37 client reading a 1.38
+**Upgrade (Alpha 1.37 → Alpha 1.38):**
+- No API version change and no gate change. The type stays in
+  `resource.k8s.io/v1alpha3` and `DRAResourcePoolStatus` stays Alpha,
+  default off, so a cluster that does not opt in sees no behavioural change
+  and one that does keeps the same endpoint and the same flags.
+- No fields are added, removed or renamed, so a 1.37 client reading a 1.38
   object sees the same shape.
-- One Beta correction changes reported numbers and must be called out in the
+- One 1.38 correction changes reported numbers and must be called out in the
   1.38 release notes, since Alpha clients may have scripted around the
   current values: `unavailableDevices` — and therefore `availableDevices` —
   stops double-counting devices that are both allocated and tainted. The
@@ -1930,11 +1955,33 @@ chosen for each is given here.
   value.
 
 **Downgrade (1.38 → 1.37):**
-- Objects stored at `v1beta2` are not readable by a 1.37 apiserver. The
+- Nothing to undo at the storage layer: both releases store the type at
+  `v1alpha3`, so objects written by 1.38 are readable by a 1.37 apiserver.
+- The only visible difference is that `unavailableDevices` reverts to the
+  1.37 double-counting behaviour on requests processed after the downgrade.
+  Requests are one-shot and TTL-swept within 24 hours, so this self-corrects.
+
+**Upgrade (Alpha 1.38 → Beta 1.39):**
+- The gate moves to Beta but stays default off, because
+  `resource.k8s.io/v1beta2` is an off-by-default beta group version. A
+  cluster that does not opt in sees no behavioural change.
+- `ResourcePoolStatusRequest` is served from both
+  `resource.k8s.io/v1alpha3` and `resource.k8s.io/v1beta2`, with the
+  storage version moving to `v1beta2`. Objects written by 1.38 in
+  `v1alpha3` remain readable and are rewritten at `v1beta2` on their next
+  write; because requests are short-lived and TTL-swept within 24 hours,
+  no storage migration is required in practice. Operators who want the
+  old endpoint can keep `--runtime-config=resource.k8s.io/v1alpha3=true`
+  alongside the new one.
+- No fields are added, removed or renamed at Beta beyond whatever the
+  `validationError` decision produces.
+
+**Downgrade (1.39 → 1.38):**
+- Objects stored at `v1beta2` are not readable by a 1.38 apiserver. The
   group version itself is not the problem — `resource.k8s.io/v1beta2`
-  already exists in 1.37 and serves ResourceSlice and DeviceTaintRule —
+  already exists in 1.38 and serves ResourceSlice and DeviceTaintRule —
   but the `ResourcePoolStatusRequest` *kind* is not registered in it
-  before 1.38, so the stored bytes fail to decode. Because requests are
+  before 1.39, so the stored bytes fail to decode. Because requests are
   ephemeral and carry no state anything else depends on, the practical
   remedy is to delete any remaining `ResourcePoolStatusRequest` objects
   before downgrading; users simply recreate them afterwards.
@@ -1955,22 +2002,26 @@ chosen for each is given here.
 ### Version Skew Strategy
 
 - **kube-apiserver and kube-controller-manager** must both have
-  `DRAResourcePoolStatus` enabled; the gate is default off in 1.36, 1.37
-  and 1.38, so both components must opt in explicitly. The apiserver
+  `DRAResourcePoolStatus` enabled; the gate is default off in 1.36 through
+  1.39, so both components must opt in explicitly. The apiserver
   additionally needs the group version enabled via `--runtime-config`
-  (`resource.k8s.io/v1alpha3=true` through 1.37,
-  `resource.k8s.io/v1beta2=true` from 1.38).
+  (`resource.k8s.io/v1alpha3=true` through 1.38,
+  `resource.k8s.io/v1beta2=true` from 1.39).
 - **1.36 ↔ 1.37 skew:** Status API is `resource.k8s.io/v1alpha3` in
   both releases. In the supported direction, a 1.36 KCM against a 1.37
   apiserver simply does not populate the fields added in 1.37; readers
   see a `PoolStatus` without `partitionSummary` or `shareableSummary`,
   which is indistinguishable from a pool that has neither.
-- **1.37 ↔ 1.38 skew:** the supported direction is a KCM no newer than
-  the apiserver it talks to. A 1.37 KCM against a 1.38 apiserver keeps
-  working through the `v1alpha3` endpoint, which 1.38 still serves;
+- **1.37 ↔ 1.38 skew:** both releases serve the status API from
+  `resource.k8s.io/v1alpha3`, so there is no endpoint difference. A 1.37 KCM
+  against a 1.38 apiserver reports `unavailableDevices` with the old
+  double-counting behaviour; the field shape is identical either way.
+- **1.38 ↔ 1.39 skew:** the supported direction is a KCM no newer than
+  the apiserver it talks to. A 1.38 KCM against a 1.39 apiserver keeps
+  working through the `v1alpha3` endpoint, which 1.39 still serves;
   since both versions describe the same internal type, the objects it
-  writes are readable through either endpoint. The reverse (a 1.38 KCM
-  against a 1.37 apiserver) is outside the supported skew policy and is
+  writes are readable through either endpoint. The reverse (a 1.39 KCM
+  against a 1.38 apiserver) is outside the supported skew policy and is
   not accounted for here.
 - **`ResourceSlice.Spec.PartitionTypeAttribute` skew:** the field
   lives in served `resource.k8s.io/v1` (and `v1beta1` / `v1beta2`).
@@ -2016,8 +2067,8 @@ attribute has been persisted.
 
 The gate alone is not sufficient: the API's group version is off by
 default, so the apiserver also needs it enabled via `--runtime-config`
-(`resource.k8s.io/v1alpha3=true` in 1.36 and 1.37,
-`resource.k8s.io/v1beta2=true` from 1.38).
+(`resource.k8s.io/v1alpha3=true` from 1.36 through 1.38,
+`resource.k8s.io/v1beta2=true` from 1.39).
 
 ###### Does enabling the feature change any default behavior?
 
@@ -2041,7 +2092,7 @@ its bootstrap ClusterRole is installed only when the gate is on, and the
 gated fields are covered by strategy and declarative-validation unit tests
 for both gate states. The integration suite, however, runs a single
 `feature-enabled` matrix entry — there is no gate-disabled integration case
-today. Adding one is a Beta requirement; see [Beta (1.38)](#beta-138).
+today. Adding one is an Alpha 1.38 requirement; see [Alpha (1.38)](#alpha-138).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -2053,7 +2104,7 @@ today. Adding one is a Beta requirement; see [Beta (1.38)](#beta-138).
   the resource is not served at all; without it on KCM requests are
   accepted but never processed, so `status` stays unset.
 - The group version not enabled via `--runtime-config`
-  (`resource.k8s.io/v1beta2=true` from 1.38). The gate alone is not
+  (`resource.k8s.io/v1beta2=true` from 1.39). The gate alone is not
   sufficient, since the version is off by default.
 - `DRAPartitionableDevicesType` enabled without its dependencies
   (`DynamicResourceAllocation`, `DRAPartitionableDevices`,
@@ -2081,25 +2132,28 @@ today. Adding one is a Beta requirement; see [Beta (1.38)](#beta-138).
   full-lister scans over slices and claims. Note this histogram tops out at
   16.384s (`ExponentialBuckets(0.001, 2, 15)`), below the 30s SLO stated
   above, so the SLO itself is not directly measurable from it — see
-  [Beta (1.38)](#beta-138).
+  [Alpha (1.38)](#alpha-138).
 - KCM restart / crash-loop counts.
 - Elevated apiserver request rate for `resourcepoolstatusrequests`, including
   the controller's own TTL `delete` traffic.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not yet. This is a Beta requirement and will be exercised manually before
-the 1.38 promotion and documented here. The specific path to test is
-1.37 → 1.38 → 1.37: create requests on 1.37 (`v1alpha3`), upgrade and
-confirm they remain readable while new ones are stored at `v1beta2`, then
-downgrade and confirm the cluster is healthy after the remaining objects
-are deleted. There is no persistent state outside the request objects
+Not yet, and it is not applicable in 1.38: that release keeps the type in
+`resource.k8s.io/v1alpha3` with no storage-version change, so there is no
+version transition to exercise. This is a Beta requirement and will be
+exercised manually before the 1.39 promotion and documented here. The
+specific path to test is 1.38 → 1.39 → 1.38: create requests on 1.38
+(`v1alpha3`), upgrade and confirm they remain readable while new ones are
+stored at `v1beta2`, then downgrade and confirm the cluster is healthy after
+the remaining objects are deleted. There is no persistent state outside the
+request objects
 themselves, and they are TTL-swept within 24 hours, so the blast radius of
 the storage-version move is limited to objects created in the window.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No removals in 1.38. `resource.k8s.io/v1alpha3` remains served alongside
+No removals in 1.38 or 1.39. `resource.k8s.io/v1alpha3` remains served alongside
 `v1beta2` so 1.37 clients keep working. The alpha endpoint is already
 scheduled for removal in 1.42 (recorded as `RemovedVersion` in
 `test/integration/etcd/data.go`), which is well past the Beta promotion and
@@ -2160,8 +2214,8 @@ sample — and the incomplete-pool requeue path records nothing at all.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes. Two gaps follow from the coverage caveat above and are tracked as Beta
-items: requeues and give-ups on incomplete pools are invisible, and
+Yes. Two gaps follow from the coverage caveat above and are tracked as
+Alpha 1.38 items: requeues and give-ups on incomplete pools are invisible, and
 calculation failures that produce a `Failed` condition are not counted as
 errors.
 
@@ -2255,7 +2309,7 @@ Requests cannot be created or read. No workload impact.
 | Controller not running | ResourcePoolStatusRequest controller in KCM is not running or crashed | Requests stay with `status` unset (no `Complete`/`Failed` condition); `resourcepoolstatusrequest_controller_requests_processed_total` stays at 0 | Restart KCM, check KCM logs | Check KCM logs for controller startup errors, verify feature gate enabled | Covered by integration tests |
 | Informers not synced | ResourceSlice or ResourceClaim informers have not completed initial sync | Controller logs warning, requests delayed | Wait for informer sync, check API server connectivity | Check KCM logs for informer sync status | Covered by integration tests |
 | Incomplete pool data | Fewer slices published than `ResourceSliceCount` declared by the driver | Controller requeues up to 5 times, giving the driver time to finish publishing; once the pool is whole the status is written normally, with no incompleteness marker | Ensure driver fully publishes slices; retry by recreating request | While requeueing, the request stays `Pending`; check driver logs and `kubectl get resourceslices` for the pool | Covered by unit tests |
-| Pool never completes | A driver stops publishing partway through a generation, so a pool stays below its declared `ResourceSliceCount` | The request keeps `status` unset indefinitely — no `Complete` or `Failed` condition, no metric sample — because the sync returns an error before writing status and gives up after 5 retries | Fix the driver so it publishes the full slice set; the request is removed by the 24h pending TTL | `kubectl get` shows `Pending` with no `COMPLETED` timestamp; check driver logs and `kubectl get resourceslices` for the pool | Requeue path covered by unit tests; giving this case a terminal state is a Beta item |
+| Pool never completes | A driver stops publishing partway through a generation, so a pool stays below its declared `ResourceSliceCount` | The request keeps `status` unset indefinitely — no `Complete` or `Failed` condition, no metric sample — because the sync returns an error before writing status and gives up after 5 retries | Fix the driver so it publishes the full slice set; the request is removed by the 24h pending TTL | `kubectl get` shows `Pending` with no `COMPLETED` timestamp; check driver logs and `kubectl get resourceslices` for the pool | Requeue path covered by unit tests; giving this case a terminal state is an Alpha 1.38 item |
 | Request accumulation | Users create many requests | etcd storage grows, `kubectl get resourcepoolstatusrequests` shows many objects | Built-in TTL cleanup deletes completed requests after 1h, pending after 24h | List requests, check etcd metrics; check KCM cleanup logs | Covered by integration tests |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -2298,17 +2352,23 @@ Requests cannot be created or read. No workload impact.
   `defaultPartitionTypeAttribute`, and `partitionSummary` entries are
   keyed by `(attribute, type)` rather than assuming one grouping
   attribute per pool. See "Alpha (1.37)" in Graduation Criteria.
-- 1.38 (Beta, planned): promote `ResourcePoolStatusRequest` into
+- 1.38 (Alpha, planned): a third Alpha cycle, taken in place of the Beta
+  promotion originally proposed for this release. The API stays at
+  `resource.k8s.io/v1alpha3` and both gates stay Alpha, default off. The
+  cycle delivers the semantics corrections (`unavailableDevices` stops
+  counting allocated devices; the `partiallyAvailableDevices` doc comment is
+  corrected to describe the in-use count it actually reports — no field is
+  added or renamed), observability and operational hardening, the
+  `kubectl describe` support, and the outstanding test coverage including
+  scale validation. See "Alpha (1.38)" in Graduation Criteria.
+- 1.39 (Beta, planned): promote `ResourcePoolStatusRequest` into
   `resource.k8s.io/v1beta2` and move both `DRAResourcePoolStatus` and
   `DRAPartitionableDevicesType` to Beta, each default off. Note that the
   move to `v1beta2` does not reduce the enablement burden — beta group
   versions are disabled by default too — it aligns the group version with
-  the feature's stability level and opens the path to GA. Two semantic
-  corrections ship with it: `unavailableDevices` stops counting allocated
-  devices, and the doc comment on
-  `shareableSummary.partiallyAvailableDevices` is corrected to describe the
-  in-use count it actually reports. No field is added or renamed. See
-  "Beta (1.38)" in Graduation Criteria.
+  the feature's stability level and opens the path to GA. Validation against
+  a production DRA driver lands here. See "Beta (1.39)" in Graduation
+  Criteria.
 
 ## Drawbacks
 

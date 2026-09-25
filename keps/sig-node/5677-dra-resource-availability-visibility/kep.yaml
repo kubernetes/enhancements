@@ -16,19 +16,18 @@ reviewers:
   - "@pohly"
 approvers:
   - "@mrunalp"
-  - "@harche" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
   - "/keps/sig-node/3063-dynamic-resource-allocation"
 
-stage: beta
+stage: alpha
 
 latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.36"
-  beta: "v1.38"
+  beta: "v1.39"
 
 feature-gates:
   - name: DRAResourcePoolStatus
