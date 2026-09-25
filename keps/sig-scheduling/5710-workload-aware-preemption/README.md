@@ -35,6 +35,8 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
+    - [Beta (<code>PodGroupPreemptionPolicy</code>)](#beta-podgrouppreemptionpolicy)
+    - [GA (<code>PodGroupPreemptionPolicy</code>)](#ga-podgrouppreemptionpolicy)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -303,6 +305,8 @@ type DisruptionMode struct {
 	Single *SingleDisruptionMode 
 
 	// All specifies that all children can only be disrupted together.
+	// Cannot be set when SchedulingPolicy is Basic (the disruption scope
+	// cannot be wider than the scheduling scope).
 	//
 	// +optional
 	All *AllDisruptionMode
@@ -338,8 +342,25 @@ type PodGroupSpec struct {
 }
 ```
 
-Given that preemption unit shouldn't be larger then the scheduling unit, additional validation
-will be added to prevent `All` disruption mode for PodGroups with BasicSchedulingPolicy.
+Ideally, the preemption unit (disruption scope) should not be wider than the scheduling unit
+(scheduling scope)—for example, a `PodGroup` (or `CompositePodGroup`) with `BasicSchedulingPolicy`
+(where pods are scheduled individually) should not use the `All` disruption mode. However, because
+this API validation was omitted when the feature graduated to Beta, introducing an unconditional
+validation rule during GA promotion would break backward compatibility for existing objects and
+Beta API clients. To address this without breaking backward compatibility:
+
+1. **Runtime handling for existing objects with a wider disruption scope**: If an object already
+   exists in the cluster (or is created via the Beta API) with a disruption scope wider than its
+   scheduling scope, `kube-scheduler` will continue to function and respect the `All` disruption
+   mode when evaluating preemption victims (preempting or reprieving all pods in the group
+   together), even though the resulting preemption and scheduling behavior may be suboptimal
+   (e.g., all pods in the group are preempted together despite being scheduled one by one without
+   gang guarantees).
+2. **Validation in the `v1` API for new and updated objects**: Following Kubernetes precedent for
+   tightening validation across API version promotions (Beta to `v1`) and validation ratcheting,
+   validation disallowing a disruption scope wider than the scheduling scope is enforced when creating
+   new objects or updating existing objects via the `v1` API (unless the existing object already had this
+   configuration and those fields are unchanged).
 
 The DisruptionMode is modeled as a struct to allow future extensibility, especially with the 
 upcoming CompositePodGroup. This KEP approval does not mean that these plans are approved
@@ -1026,6 +1047,15 @@ For GA, we promote these e2e tests to conformance.
 
 ### Graduation Criteria
 
+This KEP tracks two feature gates that graduate on separate schedules:
+- `GenericWorkload` (originally `WorkloadAwarePreemption` in v1.36 Alpha): gates core
+  Workload-Aware Preemption (`DisruptionMode` and pod group priorities), which promoted to Beta in
+  v1.37 and graduates to GA in v1.38.
+- `PodGroupPreemptionPolicy`: gates the `preemptionPolicy` field on pod group entities (`Workload`
+  templates, `CompositePodGroup`, and `PodGroup`). Because this field was not part of the v1.36
+  Alpha release and was introduced as Alpha in v1.37, it lags one release behind `GenericWorkload`
+  (promoting to Beta in v1.38 and targeting GA in v1.39).
+
 #### Alpha
 
 - The API & feature is implemented behind the feature flag
@@ -1042,11 +1072,19 @@ For GA, we promote these e2e tests to conformance.
 
 #### GA
 
-- Validation checking that the preemption unit is not bigger than the scheduling unit.
+- Validation in the `v1` API preventing new or updated objects from setting a preemption unit (disruption scope) wider than the scheduling unit, while maintaining backward compatibility and graceful (best-effort) runtime handling in the scheduler for existing objects.
 - Scheduler initialization check logging an error when `PostFilter` plugins do not implement `PodGroupPostFilter`.
 - E2E test promoted to conformance
 - Performance benchmarks have well defined thresholds and are run as part of the scheduler-perf of sig-scalability-benchmarks
 - All known issues resolved
+
+#### Beta (`PodGroupPreemptionPolicy`)
+
+- E2E test covering `preemptionPolicy` for pod group entities that can then be promoted to conformance
+
+#### GA (`PodGroupPreemptionPolicy`)
+
+- E2E test covering `preemptionPolicy` for pod group entities promoted to conformance
 
 
 ### Upgrade / Downgrade Strategy
