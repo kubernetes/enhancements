@@ -179,9 +179,9 @@ consume.
   extensible: future CSI spec revisions MAY add values, drivers
   that adopt a newer spec MAY report them alongside existing
   ones, and COs MUST tolerate values they do not recognize. A
-  CO that does not recognize a reported condition MUST surface it
-  as the `Unknown` status, carrying the driver's `reason` and
-  `message` through unchanged, rather than dropping it or
+  CO that does not recognize a reported condition MAY surface it
+  with status `Unknown` for observability purposes, preserving the
+  driver's `reason` and `message`, rather than dropping it or
   misclassifying it as healthy.
 - Distinguish a volume reported healthy from one whose driver does
   not report health at all. When a driver advertises a volume-health
