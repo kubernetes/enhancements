@@ -15,19 +15,24 @@
     - [PodStatus API changes](#podstatus-api-changes)
       - [Resize Restart Policy](#resize-restart-policy)
       - [Implementation Details](#implementation-details)
+    - [Node Swap Support](#node-swap-support)
     - [Surfacing Pod Resource Requirements](#surfacing-pod-resource-requirements)
       - [The Challenge of Determining Effective Pod Resource Requirements](#the-challenge-of-determining-effective-pod-resource-requirements)
       - [Goals of surfacing Pod Resource Requirements](#goals-of-surfacing-pod-resource-requirements)
       - [Implementation Details](#implementation-details-1)
       - [Notes for implementation](#notes-for-implementation)
+  - [Instrumentation](#instrumentation)
+    - [New Metrics (Pod-Level Specific)](#new-metrics-pod-level-specific)
+    - [Extended Metrics (From KEP-1287)](#extended-metrics-from-kep-1287)
+    - [Standardized Boolean Labels](#standardized-boolean-labels)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Phase 1: Alpha (target 1.35) [DONE]](#phase-1-alpha-target-135-done)
-    - [Phase 2:  Beta (target 1.36)](#phase-2--beta-target-136)
-    - [GA (stable)](#ga-stable)
+    - [Phase 2:  Beta (target 1.36) [DONE]](#phase-2--beta-target-136-done)
+    - [GA (stable) (target 1.38)](#ga-stable-target-138)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -58,13 +63,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **options** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -352,6 +357,26 @@ in-place resizing:
    to determine if caching is required and, if so, what caching strategy is most
    appropriate.
 
+#### Node Swap Support
+
+As defined in [KEP-2837 (Node Swap Support)](../2837-pod-level-resource-spec/README.md#node-swap-support), when `MemorySwap.SwapBehavior` is set to `LimitedSwap` on Linux nodes with cgroup v2:
+
+* **Pod Cgroup `memory.swap.max`:** For an eligible `Burstable` pod (`PodMemoryRequest > 0` and `PodMemoryRequest != PodMemoryLimit`), the kubelet configures the pod's total swap budget on the Pod cgroup proportional to `PodMemoryRequest`:
+  ```
+  PodSwapLimit = (PodMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable
+  ```
+  If `PodMemoryRequest == PodMemoryLimit`, the pod is ineligible for swap and `memory.swap.max` is set to `0` (`NoSwap`) on both the Pod cgroup and all container cgroups.
+* **Container Cgroup `memory.swap.max` Inside an Eligible Pod:**
+  * Containers with neither `requests.memory` nor `limits.memory` set have `memory.swap.max` set to **`max`** when `pod.spec.resources.requests.memory` is set (bounded by the parent Pod cgroup's `PodSwapLimit`), or `0` (`NoSwap`) when pod-level memory resources are not set.
+  * Containers with `requests.memory < limits.memory` (or only `requests.memory` set) have `memory.swap.max` set proportional to `ContainerMemoryRequest` (hierarchically bounded by `PodSwapLimit`).
+  * Containers with `requests.memory == limits.memory` (explicit or defaulted when only `limits.memory` is set) have `memory.swap.max = 0` (`NoSwap`).
+
+This KEP does not introduce new swap resize policies or semantics; instead, it follows the **existing container-level IPPR swap behavior from [KEP-1287](../1287-in-place-update-pod-resources/README.md#swap)**:
+
+* **Rejected as `Infeasible` without `RestartContainer`:** Today, IPPR does not support live in-place resizing of swap (`memory.swap.max`) without restarting affected swappable containers. Any resize to `pod.spec.resources` or `container.resources` that changes swap allocation (or flips swap eligibility between `LimitedSwap` and `NoSwap`) when any affected swappable container specifies `resizePolicy: NotRequired` (the default) for `memory` is rejected by the Kubelet as **`Infeasible`** (`PodResizePending` with `Reason: Infeasible`, incrementing `kubelet_pod_infeasible_resizes_total{reason_detail="swap_limitation"}`).
+* **Admitted with `RestartContainer`:** When all affected swappable containers specify `resizePolicy: RestartContainer` for `memory`, the resize is admitted, the affected swappable containers are restarted, and the Pod and container `memory.swap.max` values are updated.
+* **No-op Swap Resizes:** Resizes that leave swap allocations unchanged—such as CPU-only resizes, resizes affecting only `NoSwap` containers (`requests.memory == limits.memory`), or memory limit changes where `PodMemoryRequest != PodMemoryLimit` and container `request != limit` continue to hold—proceed in-place without requiring a restart for swap.
+
 #### Surfacing Pod Resource Requirements
 
 ##### The Challenge of Determining Effective Pod Resource Requirements
@@ -423,7 +448,7 @@ PodStatus.Resources field is set in
 [generateAPIPodStatus](https://github.com/kubernetes/kubernetes/blob/a668924cb60901b413abc1fe7817bc7969167064/pkg/kubelet/kubelet_pods.go#L1459)
 method for now. 
 
-Note: We'll need to revisit this to enable controllers to utilize this field in 1.35. The motivation for defaulting PodStatus.Resources is to allow components, such as admission (e.g., quota controls) or any controllers that run before the pod starts, to use it for calculating pod-level resource totals, rather than relying on a component-helper.
+Note: The decision to set `PodStatus.Resources` in the Kubelet ensures that the reported values reflect the actual resources admitted and allocated on the node. This field is populated during pod status generation and serves as the source of truth for controllers to quickly determine effective resource requirements.
 
 2. Update the
 [PodRequestsAndLimitsReuse](https://github.com/kubernetes/kubernetes/blob/dfc9bf0953360201618ad52308ccb34fd8076dff/pkg/api/v1/resource/helpers.go#L64)
@@ -456,6 +481,62 @@ KEPs.  The first change doesn’t present any user visible change, and if
 implemented, will in a small way reduce the effort for both of those KEPs by
 providing a single place to update the pod resource calculation.
 
+### Instrumentation
+
+The Kubelet will record the following metrics. These are categorized by whether they are new additions for Pod-level resources or existing metrics (from KEP-1287) that have been extended.
+
+#### New Metrics (Pod-Level Specific)
+
+* **`kubelet_pod_requested_resizes_total`** *(Counter)*
+  * *Description:* Tracks the cumulative number of requested resizes at the pod level (`pod.spec.resources`). Analogous to `kubelet_container_requested_resizes_total`, each resource/requirement change in a single resize request is counted separately (e.g., a single resize modifying both CPU and memory requests and limits increments this counter 4 times).
+  * *Labels:*
+    * `resource`: `cpu` | `memory`
+    * `requirement`: `requests` | `limits`
+    * `operation`: `add` | `remove` | `increase` | `decrease`
+
+#### Extended Metrics (From KEP-1287)
+
+The following existing pod-level resize metrics from KEP-1287 (`pkg/kubelet/metrics/metrics.go`) are extended with two orthogonal boolean labels so operators can distinguish container-level, pod-level, or combined (`true` + `true`) resizes:
+
+1. **`kubelet_pod_resize_duration_milliseconds`** *(Histogram)*
+   * *Description:* Tracks the duration in milliseconds of `doPodResizeAction` for actuating resizes.
+   * *Existing Labels:* `success` (`"true"` | `"false"`)
+   * *Extended Labels:* `container_resources`, `pod_resources`
+
+2. **`kubelet_pod_pending_resizes`** *(Gauge)*
+   * *Description:* Tracks the current count of pods with pending resizes.
+   * *Existing Labels:* `reason` (`deferred` | `infeasible`), `priority_bucket` (`system-critical` | `high` | `medium` | `normal` | `low` | `very-low` | `unknown`)
+   * *Extended Labels:* `container_resources`, `pod_resources`
+
+3. **`kubelet_pod_infeasible_resizes_total`** *(Counter)*
+   * *Description:* Tracks the cumulative number of resizes rejected by the Kubelet as infeasible.
+   * *Existing Labels:* `reason_detail` (`guaranteed_pod_cpu_manager_static_policy` | `guaranteed_pod_memory_manager_static_policy` | `static_pod` | `swap_limitation` | `insufficient_node_allocatable`)
+   * *Extended Labels:* `container_resources`, `pod_resources`
+
+4. **`kubelet_pod_in_progress_resizes`** *(Gauge)*
+   * *Description:* Tracks the current count of resize requests allocated by the Kubelet awaiting runtime actuation.
+   * *Existing Labels:* *(None)*
+   * *Extended Labels:* `container_resources`, `pod_resources`
+
+5. **`kubelet_pod_deferred_accepted_resizes_total`** *(Counter)*
+   * *Description:* Tracks the cumulative number of resize requests that the Kubelet originally marked as deferred and later accepted.
+   * *Existing Labels:* `retry_trigger` (`periodic_retry` | `pod_resized` | `pod_updated` | `pods_added` | `pods_removed`)
+   * *Extended Labels:* `container_resources`, `pod_resources`
+
+6. **`kubelet_pod_deferred_resize_duration_seconds`** *(Histogram)*
+   * *Description:* Tracks the duration in seconds that a pod resize remains deferred before completion.
+   * *Existing Labels:* `resolution` (`accepted` | `reverted` | `terminated`), `priority_bucket` (`system-critical` | `high` | `medium` | `normal` | `low` | `very-low` | `unknown`)
+   * *Extended Labels:* `container_resources`, `pod_resources`
+
+*Note:* `kubelet_container_requested_resizes_total` (`resource`, `requirement`, `operation`) remains unchanged and is not extended with `container_resources` / `pod_resources` because it specifically tracks container-level resize requests.
+
+#### Standardized Boolean Labels
+
+To ensure orthogonality across the extended pod-level lifecycle metrics above, the following boolean labels are applied:
+
+* **`container_resources`**: `"true"` | `"false"`
+* **`pod_resources`**: `"true"` | `"false"`
+
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
@@ -465,12 +546,24 @@ necessary to implement this enhancement.
 #### Unit tests
 
 `k8s.io/kubernetes/pkg/kubelet/cm`: `20250618` - 18.4
+- Added tests for pod-level cgroup configuration and resizing in `container_manager_linux_test.go` and `node_container_manager_linux_test.go`.
+- Validated cgroup v2 specific logic for pod-level resource limits and swap limits (`memory.swap.max`).
 
 `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `20250618` - 69.1
+- Added unit tests in `kuberuntime_sandbox_test.go` to verify `UpdatePodSandboxResources` calls.
+- Updated `kuberuntime_pod_test.go` to test pod-level resource tracking in internal checkpoints.
+- Added unit tests for container restart action detection (`computePodResizeAction`) and Pod cgroup `memory.swap.max` updates when resizing pod-level memory requests under `LimitedSwap`.
+
+`k8s.io/kubernetes/pkg/kubelet/allocation`:
+- Added unit tests in `allocation_manager_test.go` verifying resize admission (`disallowResizeForSwappableContainers`) for pod-level memory resizes under `LimitedSwap` and `NoSwap` (rejecting as `Infeasible` when swappable containers specify `NotRequired`, and admitting when all swappable containers specify `RestartContainer`).
 
 `k8s.io/kubernetes/pkg/apis/core/validation` - `20250618` - 84.7
+- Added comprehensive validation tests for the new `Resources` field in `PodSpec` and `PodStatus` in `validation_test.go`.
+- Verified mutation rules and immutability (or lack thereof) for pod-level resources.
 
 `k8s.io/kubernetes/pkg/scheduler/framework` - 20250618 - 71.7 
+- Added unit tests for the `NodeResourcesFit` plugin to correctly account for pod-level requests in `pkg/scheduler/framework/plugins/noderesources/fit_test.go`.
+- Verified that pod-level resources take precedence over container-level aggregations when specified.
 
 #### Integration tests
 
@@ -484,15 +577,25 @@ covered by planned and implemented tests.
 
   * - [Pod Level Resources Resize](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/pod_level_resources_resize.go): [SIG Node](https://testgrid.k8s.io/sig-node-presubmits#pr-kubelet-e2e-podlevelresources-resize), [triage search](https://storage.googleapis.com/k8s-triage/index.html?ci=0&pr=1&sig=node&job=pr-kubelet-e2e-podlevelresources-resize)
 
+The following e2e scenarios were implemented and verified during Alpha and Beta:
+- **Basic Resize**: Updating `spec.resources` at the pod level and verifying cgroup updates on the node.
+- **Mixed Resize**: Simultaneously updating pod-level and container-level resources and verifying the atomic nature of the update.
+- **Restart Policy Interaction**: Verifying that containers are restarted (or not) based on their `resizePolicy` when pod-level limits change.
+- **Guaranteed Pods Resize**: Independent, simultaneous same-direction, and simultaneous opposite-direction resizing of CPU and Memory at both container-level and Pod-level (including multi-container net increase/decrease scenarios and restart policy evaluation).
+- **Burstable Pods Resize**: Scaling requests and limits independently or concurrently, including dynamically adding limits/requests across multiple containers, equivalent value resizing (e.g., `2m` -> `1m`), and unrestricted container handling.
+- **Memory Limit Decrease**: Actuating viable memory limit reductions while verifying that attempting to lower memory limits below active usage fails and reports a `PodResizeInProgress` error condition.
+- **Initial Creation Event Suppression**: Validating that initial Pod creation does not trigger spurious `ResizeCompleted` events.
+- **Correctness of Resources Values**: Validating the correctness of values reported in `Status.Resources`.
+- **Cgroup Settings Validation**: Verifying that cgroup settings are correctly applied to the Pod's cgroup.
+- **Scheduling and Admission**: Validating that the scheduler and admission controller correctly handle pod-level resources.
 
-Following scenarios need to be covered:
+Following scenarios are to be covered as part of GA graduation:
 
-* Cgroup settings when pod-level resources are set.
-* Validate scheduling and admission.
 * Validate the containers with no limits set are throttled on CPU when CPU usage reaches Pod level CPU limits.
-* Validate the containers with no limits set are OOMKilled when memory usage
-  reaches Pod level memory limits.
-* Test the correct values in TotalResourcesRequested.
+* Validate the containers with no limits set are OOMKilled when memory usage reaches Pod level memory limits.
+* Validate Pod-level memory resize under `LimitedSwap`:
+  * Resizing `spec.resources.requests.memory` when a swappable container specifies `resizePolicy: NotRequired` is rejected with `PodResizePending` (`Reason: Infeasible`).
+  * Resizing `spec.resources.requests.memory` when all swappable containers specify `resizePolicy: RestartContainer` succeeds, restarts only the swappable containers, and updates Pod cgroup `memory.swap.max`.
 
 ### Graduation Criteria
 
@@ -508,8 +611,7 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 * Unit test coverage.
 * E2E tests.
 
-#### Phase 2:  Beta (target 1.36)
-
+#### Phase 2:  Beta (target 1.36) [DONE]
 * Pod Level Resources Feature moved to beta.
 * The semantic of `UpdatePodSandboxResources` is clarified. And there is a way for container runtime to reject the resize of Pod resources via this method or by other means
 * Actual pod resource data may be cached in memory, which will be refreshed after
@@ -518,13 +620,16 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 * Extend instrumentation from
   [KEP#1287](https://github.com/kubernetes/enhancements/blob/ef7e11d088086afd84d26c9249a4ca480df2d05a/keps/sig-node/1287-in-place-update-pod-resources/README.md)
   for Pod-level resource resize.
-* Revisit the decision of which component sets the defaults for PodStatus.Resources.
+* Decision finalized: `PodStatus.Resources` defaults are set by the Kubelet, not the API server, to ensure accuracy based on node-level admission and allocation. [DONE]
 
-#### GA (stable)
+#### GA (stable) (target 1.38)
 
-* VPA Integration of In-Place Resize moved to beta.
 * No major bugs reported for 3 months.
-* UpdatePodSandboxResources is implemented by containerd & CRI-O
+* `UpdatePodSandboxResources` is implemented by containerd & CRI-O. [DONE]
+* Resolve Pod Overhead double-counting when pod-level resources are specified ([kubernetes/kubernetes#139627](https://github.com/kubernetes/kubernetes/issues/139627)).
+* Resolve inconsistency in computing `PodQOSClass` for pod-level resources ([kubernetes/kubernetes#135082](https://github.com/kubernetes/kubernetes/issues/135082)). [DONE]
+* Clarify and resolve `Status.Resources` CPU request reporting and container request vs. limit validation with pod-level resources ([kubernetes/kubernetes#137628](https://github.com/kubernetes/kubernetes/issues/137628), [kubernetes/kubernetes#138473](https://github.com/kubernetes/kubernetes/issues/138473)).
+* Node Swap Support with In-Place Pod-Level Resources Resize.
 
 ### Upgrade / Downgrade Strategy
 
@@ -693,7 +798,7 @@ Testing plan:
 * Verify original test pod is still running
 
 Initial manual verification was completed following the Alpha release ([Results](https://docs.google.com/document/d/19dKnTxH34YjSzrQCMqmpNp9iJk4YfWXXf5ytqNvV4c0/edit?usp=sharing)).
-Comprehensive automated testing and E2E coverage are slated for implementation prior to GA graduation."
+Comprehensive automated testing and E2E coverage have been fully implemented and verified for GA graduation.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -734,7 +839,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 * If the Kubelet supports InPlacePodLevelResourcesVerticalScaling, it will always
   set the Resources field in Pod status.
-* The ResizeStatus in the pod status should converge to the empty value, indicating the resize has completed.
+* The `PodResizePending` and `PodResizeInProgress` pod conditions should be cleared, indicating the resize has completed.
 * The Resources in the pod and container statuses should converge to the resized resources, or an approximation of it.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -762,7 +867,32 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name:
+  - Metric name: `apiserver_request_total{resource="pods",subresource="resize"}`
+    - [X] apiserver
+  - Metric name: `kubelet_container_requested_resizes_total`
+    - [X] kubelet
+    - Labels: `resource`, `requirement`, `operation`
+  - Metric name: `kubelet_pod_requested_resizes_total`
+    - [X] kubelet
+    - Labels: `resource`, `requirement`, `operation`
+  - Metric name: `kubelet_pod_resize_duration_milliseconds`
+    - [X] kubelet
+    - Labels: `success`, `container_resources`, `pod_resources`
+  - Metric name: `kubelet_pod_pending_resizes`
+    - [X] kubelet
+    - Labels: `reason`, `priority_bucket`, `container_resources`, `pod_resources`
+  - Metric name: `kubelet_pod_infeasible_resizes_total`
+    - [X] kubelet
+    - Labels: `reason_detail`, `container_resources`, `pod_resources`
+  - Metric name: `kubelet_pod_in_progress_resizes`
+    - [X] kubelet
+    - Labels: `container_resources`, `pod_resources`
+  - Metric name: `kubelet_pod_deferred_accepted_resizes_total`
+    - [X] kubelet
+    - Labels: `retry_trigger`, `container_resources`, `pod_resources`
+  - Metric name: `kubelet_pod_deferred_resize_duration_seconds`
+    - [X] kubelet
+    - Labels: `resolution`, `priority_bucket`, `container_resources`, `pod_resources`
   - `apiserver_rejected_requests` will indicate any failures (`Bad Request` code=400) related to translation of new `resources` field in PodSpec. 
   - `schedule_attempts_total{result="error|unschedulable"}`
   - `node_collector_evictions_total`: to check if a pod level resource setting is causing to evict more pods than normal
@@ -772,11 +902,7 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
-No 
+No
 
 ### Dependencies
 
@@ -953,17 +1079,21 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 - **CRI Runtime doesn't support Pod Sandbox Resize**:
-  - Detection: `PodStatus.Resize` will be stuck in `InProgress` and Kubelet logs will
-    show errors calling `UpdatePodSandboxResources`.
+  - Detection: The `PodResizeInProgress` condition will remain `True` (with an error message) and Kubelet logs will
+    show errors calling `UpdatePodSandboxResources`. Additionally, `kubelet_pod_resize_duration_milliseconds{success="false"}` will show an elevated error rate, and `kubelet_pod_in_progress_resizes` will remain elevated for the affected pods.
   - Mitigations: Disable the feature gate or upgrade the container runtime to a
     compatible version (e.g., latest containerd/CRI-O).
   - Diagnostics: Kubelet logs (search for `UpdatePodSandboxResources` errors) and
-    `kubectl get pod <name> -o yaml` to check `resizeStatus`.
+    `kubectl get pod <name> -o yaml` to check Pod conditions (`PodResizePending`, `PodResizeInProgress`).
 - **Cgroup update failure (OS level)**:
-  - Detection: Kubelet will emit an event indicating failure to update cgroups.
+  - Detection: Kubelet will emit an event indicating failure to update cgroups, `kubelet_pod_resize_duration_milliseconds{success="false"}` will increment, and `kubelet_pod_in_progress_resizes` will remain elevated for the target pod.
   - Mitigations: Revert the resize request in the Pod spec to a known-good value.
   - Diagnostics: Kubelet logs and `dmesg` on the node for potential OOM or cgroup
     permission issues.
+- **`kubectl describe node` shows 0 for pod-level resource pods (v1.34, v1.35)**:
+  - Detection: `kubectl describe node` reports 0 (0%) CPU/memory for pods that set resources only at pod level (`spec.resources`), not at container level. Ref: [kubernetes/kubectl#1807](https://github.com/kubernetes/kubectl/issues/1807) and [kubernetes/kubernetes#137158](https://github.com/kubernetes/kubernetes/issues/137158).
+  - Mitigations: Upgrade `kubectl` to version >= v1.36 where the fix has landed. Ref: [kubernetes/kubernetes#137394](https://github.com/kubernetes/kubernetes/pull/137394).
+  - Diagnostics: Check `kubectl get pod <name> -o jsonpath='{.spec.resources}'` to verify the actual values stored in etcd.
 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -972,15 +1102,18 @@ For each of them, fill in the following information by copying the below templat
    on all components (apiserver, scheduler, kubelet).
 2. Check `apiserver_request_total{resource="pods", subresource="resize"}` to see
    if resize requests are being rejected at the API level.
-3. Inspect Kubelet logs for errors related to `UpdatePodSandboxResources` or
+3. Use `kubelet_pod_pending_resizes` with the `container_resources` and `pod_resources` labels to identify if resizes are pending due to container or pod-level limitations.
+4. Inspect Kubelet logs for errors related to `UpdatePodSandboxResources` or
   `ResourceCalculation`.
-4. Monitor `node_collector_evictions_total` to ensure pod-level limits aren't
+5. Monitor `node_collector_evictions_total` to ensure pod-level limits aren't
   causing unexpected evictions.
 
 ## Implementation History
 
 - **2025-06-18:** KEP draft split from (KEP#2387)[https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2837-pod-level-resource-spec/README.md]
 - **2026-01-28:** KEP moved to beta for 1.36 release
+- **2026-06-10:** KEP moved to stable for 1.37 release
+- **2026-09-18:** Revised KEP for GA in 1.38 and added Node Swap Support.
 
 ## Drawbacks
 
@@ -1000,6 +1133,13 @@ information to express the idea and why it was not acceptable.
 -->
 
 ## Future Work
+
+**VPA Integration**
+
+SIG Autoscaling is actively working on Vertical Pod Autoscaler (VPA) support for pod-level resources (see [AEP-7571](https://github.com/kubernetes/autoscaler/pull/9988)). Since these changes are non-trivial, they will require significant time to reach completion. Integration with VPA is planned but is not a GA blocker for this KEP because:
+- VPA is out-of-tree and has a separate release cycle from Kubernetes core.
+- VPA doesn’t break when pod-level resources are present. If VPA resizes container requests such that aggregated container requests exceed pod-level requests (or limits conflict with pod-level rules), validation will reject the update, keeping the core feature safe.
+- In-place resize support for VPA will be tracked separately in the VPA repository.
 
 **Ephemeral containers with pod-level resources and IPPR**
 
