@@ -1,0 +1,946 @@
+<!--
+**Note:** When your KEP is complete, all of these comment blocks should be removed.
+
+Follow the guidelines of the [documentation style guide].
+In particular, wrap lines to a reasonable length, to make it
+easier for reviewers to cite specific portions, and to minimize diff churn on
+updates.
+
+[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
+
+To get started with this template:
+
+- [ ] **Pick a hosting SIG.**
+  Make sure that the problem space is something the SIG is interested in taking
+  up. KEPs should not be checked in without a sponsoring SIG.
+- [ ] **Create an issue in kubernetes/enhancements**
+  When filing an enhancement tracking issue, please make sure to complete all
+  fields in that template. One of the fields asks for a link to the KEP. You
+  can leave that blank until this KEP is filed, and then go back to the
+  enhancement and add the link.
+- [ ] **Make a copy of this template directory.**
+  Copy this template into the owning SIG's directory and name it
+  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
+  leading-zero padding) assigned to your enhancement above.
+- [ ] **Fill out as much of the kep.yaml file as you can.**
+  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
+  "Status", and date-related fields.
+- [ ] **Fill out this file as best you can.**
+  At minimum, you should fill in the "Summary" and "Motivation" sections.
+  These should be easy if you've preflighted the idea of the KEP with the
+  appropriate SIG(s).
+- [ ] **Create a PR for this KEP.**
+  Assign it to people in the SIG who are sponsoring this process.
+- [ ] **Merge early and iterate.**
+  Avoid getting hung up on specific details and instead aim to get the goals of
+  the KEP clarified and merged quickly. The best way to do this is to just
+  start with the high-level sections and fill out details incrementally in
+  subsequent PRs.
+
+Just because a KEP is merged does not mean it is complete or approved. Any KEP
+marked as `provisional` is a working document and subject to change. You can
+denote sections that are under active debate as follows:
+
+```
+<<[UNRESOLVED optional short context or usernames ]>>
+Stuff that is being argued.
+<<[/UNRESOLVED]>>
+```
+
+When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
+focused. If you disagree with what is already in a document, open a new PR
+with suggested changes.
+
+One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
+You do not need a new KEP to move from beta to GA, for example. If
+new details emerge that belong in the KEP, edit the KEP. Once a feature has become
+"implemented", major changes should get new KEPs.
+
+The canonical place for the latest set of instructions (and the likely source
+of this file) is [here](/keps/NNNN-kep-template/README.md).
+
+**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
+it is marked `implementable`, must be approved by each of the KEP approvers.
+If none of those approvers are still appropriate, then changes to that list
+should be approved by the remaining approvers and/or the owning SIG (or
+SIG Architecture for cross-cutting KEPs).
+-->
+# KEP-6377: Publish & Maintain VEX attestations
+
+<!--
+This is the title of your KEP. Keep it short, simple, and descriptive. A good
+title can help communicate what the KEP is and should be considered as part of
+any review.
+-->
+
+<!--
+A table of contents is helpful for quickly jumping to sections of a KEP and for
+highlighting any additional information provided beyond the standard KEP
+template.
+
+Ensure the TOC is wrapped with
+  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
+tags, and then generate with `hack/update-toc.sh`.
+-->
+
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+  - [How VEX Attestations Reduce Triage Toil](#how-vex-attestations-reduce-triage-toil)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [US1 - As a kubernetes user I would like to have VEX data available for Kubernetes vulnerabilities](#us1---as-a-kubernetes-user-i-would-like-to-have-vex-data-available-for-kubernetes-vulnerabilities)
+    - [US2 - As kubernetes component maintainer I would like to amend VEX content so that it reflects the CVE analysis performed](#us2---as-kubernetes-component-maintainer-i-would-like-to-amend-vex-content-so-that-it-reflects-the-cve-analysis-performed)
+    - [US3 - As kubernetes release or security team I would like to periodically update VEX content for kubernetes](#us3---as-kubernetes-release-or-security-team-i-would-like-to-periodically-update-vex-content-for-kubernetes)
+    - [US4 - As kubernetes component maintainer, I want PR Presubmits to verify govulncheck at symbol level](#us4---as-kubernetes-component-maintainer-i-want-pr-presubmits-to-verify-govulncheck-at-symbol-level)
+    - [US5 (Out of scope)- As kubernetes component maintainer I would like VEX content to be useful to reduce toil generated by scanners](#us5-out-of-scope--as-kubernetes-component-maintainer-i-would-like-vex-content-to-be-useful-to-reduce-toil-generated-by-scanners)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Component: kubernetes/.vexflow repository](#component-kubernetesvexflow-repository)
+  - [Component: Bridge binary](#component-bridge-binary)
+  - [Component: Prow jobs](#component-prow-jobs)
+  - [Vexflow Issue Lifecycle](#vexflow-issue-lifecycle)
+  - [Consuming VEX Attestations: How Maintainers Leverage Published Data](#consuming-vex-attestations-how-maintainers-leverage-published-data)
+  - [For Engineers Evaluating New CVE Reports](#for-engineers-evaluating-new-cve-reports)
+  - [For the Snyk Scan Job (Optional or out of scope)](#for-the-snyk-scan-job-optional-or-out-of-scope)
+  - [For Cherry-pick Reviews](#for-cherry-pick-reviews)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+    - [Relationship to PR #200 (manual OpenVEX workflow)](#relationship-to-pr-200-manual-openvex-workflow)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Future plans - Beta](#future-plans---beta)
+  - [Consuming the Official CVE Feed as Affected VEX Statements](#consuming-the-official-cve-feed-as-affected-vex-statements)
+    - [Proposed Extension (Beta)](#proposed-extension-beta)
+    - [Changes to Bridge Binary](#changes-to-bridge-binary)
+    - [Data Flow](#data-flow)
+<!-- /toc -->
+
+## Release Signoff Checklist
+
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
+
+## Summary
+
+Kubernetes periodically generates and publishes an [OSV feed](https://github.com/kubernetes-sigs/cve-feed-osv.git). It aggregates known vulnerabilities affecting kubernetes components, with a description of the vulnerability itself as well as precise version ranges affected. [OSV feeds](https://osv.dev/) are consumed by security scanners, in order to report vulnerabilities, by matching packages found in an SBOM with the corresponding vulnerabilities found in the OSV feed.
+
+When a certain version of a component or library is marked as affected by a vulnerability, this doesn't necessarily mean that the vulnerability or weakness is exploitable in the context of that component. Many times, after analyzing the code, maintainers may find that the vulnerable code is not reachable from their codebase.
+
+### How VEX Attestations Reduce Triage Toil
+
+Published VEX attestations provide maintainers with concrete mechanisms to reduce duplicate triage work:
+
+1. **Automated suppression in the Snyk job** - The [periodic Snyk scan job](https://testgrid.k8s.io/sig-security-snyk-scan#ci-kubernetes-snyk-master) currently fails when it encounters a CVE with no existing tracking issue in `kubernetes/kubernetes`. Once VEX attestations are published, the job can be enhanced to check for existing `not_affected` VEX statements before failing. If a CVE has already been triaged and published as `not_affected`, the job can suppress it from the failure report, avoiding duplicate triage requests.  
+     
+2. **Quick lookup for duplicate reports** - When engineers receive a new CVE report (from external sources, Dependabot alerts, or security researchers), they can quickly check if it's already been analyzed by:  
+     
+   - Running `vexflow ls --repo kubernetes/kubernetes --branch master` to list all open/closed triages   
+   - Querying the `VEX triage repository (GitHub repository containing all CVE issues for VEX attestation generation)`directly for issues/attestations matching the CVE ID  
+   - Using `cosign verify-attestation` to retrieve and verify signed VEX statements
+
+   
+
+   This prevents duplicate analysis and triage requests, reducing maintainer burden. It allows these questions to be answered in a self-service way.
+
+   
+
+3. **Evidence for cherry-pick policy enforcement** — The Kubernetes cherry-pick policy (see [cherry-picks.md](https://github.com/kubernetes/community/blob/main/contributors/devel/sig-release/cherry-picks.md)) states that "dependency updates that just aim to silence some scanners and do not fix any vulnerable code are NOT eligible for cherry-picks." Published VEX `not_affected` attestations provide authoritative, machine-readable, and cryptographically signed evidence that a CVE does not affect the codebase. Reviewers can point to the signed VEX statement instead of re-analyzing the CVE, reducing back-and-forth in cherry-pick discussions.
+
+
+## Motivation
+
+In Kubernetes, VEX files can already be generated for the golang source code thanks to script [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) introduced with [sig-security issue \#116](http://github.com/kubernetes/sig-security/issues/116).  
+This script runs with every PR presubmit, within job pull-kubernetes-verify.  
+The results  from `govulncheck` on the master branch and the PR HEAD are compared, and sent to the standard output of the prow job. However, results are not further surfaced to address reachability of the vulnerable code.  
+This initiative was part of [Artifact Vulnerability Scanning and Triage Policy](https://github.com/kubernetes/sig-security/issues/3#top) organizing activities around vulnerability management for Kubernetes.
+
+At the moment, [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) is set to scan at package level, while other scanners are set to symbol level. By modifying the govulncheck scan to symbol level, we will reduce a LOT of false positives.
+
+A concrete recurring example: k8s.io/kubernetes module has golang.org/x/crypto/ssh as a dependency, only for some test code, only using the ssh client, but the ssh server intermittently gets ~high severity vulns => we get noise from downstream scanners. By publishing symbol aware source code scanning, these will be excluded.
+
+Furthermore, by publishing VEX results alongside OSV feeds, we give the Kubernetes maintainers and community more accurate and up-to-date information about which CVEs have been analyzed, which ones are affecting the product, and which ones are not.
+
+By preemptively generating VEX documents and publishing them as cryptographically signed attestations, this will **reduce toil on k8s maintainers** in the three concrete ways explained above (see [How VEX Attestations Reduce Triage Toil](#how-vex-attestations-reduce-triage-toil)).
+
+### Goals
+
+* Generate and publish VEX documents for Kubernetes master branch via periodic prow jobs  
+* Identify how VEX reports can be safely updated  
+  * Use GitHub Issues (with slash commands) as the maintainer interface for VEX triage (authorization)
+* Sign VEX documents with sigstore and publish as attestations for integrity and authenticity  
+* Build a bridge between existing CVE triage issues (`kubernetes/kubernetes`) and vexflow triage issues  
+* Support only for the `not_affected` OpenVEX status, and its five `not_affected` justifications
+* Update [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) to perform scanning at symbol level  
+* Establish a foundation for future alpha-to-beta graduation (release branches, additional statuses, scanning) by opening discussions on: 
+  * Can snyk scanning take vex files into account?  
+  * Can the go-vulncheck VEX outputs be integrated with the VEX feed generation process to further facilitate the work of Kubernetes maintainers?
+  * Is there value in publishing VEX attestations per release?
+  * Is there value in including VEX statements for CVEs in states `fixed`, `affected`, `under_investigation`?
+  
+
+### Non-Goals
+
+* generate VEX attestations specific to release versions (postponed to beta or stable version)   
+* automated vulnerability scanning (no disruption to the existing Snyk periodic scanning)  
+* Publishing VEX attestations as OCI manifests (OCI Referrers API) attached to the OCI images  
+* Publishing VEX attestations to VexHub   
+* `affected`/`fixed` statuses - see [Future: Consuming the Official CVE Feed](#future-plans---beta) for a proposal to add this in beta  
+* Identify why govulncheck is focused on scope package when scanning, and if it makes sense to be increased  
+* Extend scope outside of Go code (container image contents) - future work  
+* Use VEX formats other than OpenVEX
+
+## Proposal
+
+This KEP's first implementation (alpha) uses [vexflow](https://github.com/carabiner-dev/vexflow) to automate VEX generation and publishing for the Kubernetes master branch. 
+
+> Vexflow handles the lifecycle of VEX information for projects through GitHub issues. When new vulnerabilities are discovered in the monitored branches, vexflow opens a new triage issue. As long as the vulnerability is present in the branch, the issue remains open waiting for an assessment from the authorized maintainers.\
+> Using vexflow's chatops interface, maintainers create an assessment using one of the recognized slash commands (`/fixed`, `/affected`, `/not_affacted`).\
+> Vexflow then publishes the assessments through signed OpenVEX attestations.
+
+The alpha scope focuses on CVEs determined to be `not_affected` by the Kubernetes maintainers. 
+
+VEX documents are generated from existing triage determinations (recorded in `kubernetes/kubernetes` issues labeled `vex-unaffected-feed`). VEX documents are signed with sigstore, and published as attestations to a separate GitHub repository, `kubernetes/.vexflow`.
+
+```mermaid
+sequenceDiagram
+  participant member as Community Member
+  participant maintainer
+  participant kkiss as k/k Issue
+  participant bridge as Bridge Job
+
+  participant viss as k/.vexflow Issue
+  participant sig as SIG Security
+  participant publish as Publish Job
+
+  member ->> kkiss: Create an issue for vulnerability analysis
+  maintainer ->> kkiss: Analyze vulnerability, add label `vex-unaffected-feed`
+  Note over maintainer,kkiss: SRC can also assist in the analysis.
+  bridge ->> kkiss: Read issue
+  bridge ->> viss: Create issue with metadata from k/k issue
+  sig ->> viss: Update issue with comments (contain slash commands)
+  publish ->> viss: Runs Vexflow
+  Note over publish,viss: Update the issue and use content to publish VEX in-toto attestation
+```
+
+### User Stories
+
+#### US1 - As a kubernetes user I would like to have VEX data available for Kubernetes vulnerabilities
+
+A Prow job generates VEX documents, signs them with sigstore, and publishes them as attestations to the `kubernetes/.vexflow` repository. 
+
+The OpenVEX attestations are generated by [vexflow](https://github.com/carabiner-dev/vexflow) and are an aggregation of the triaged CVE issues in the  `kubernetes/.vexflow` repository.
+
+Consumers (scanners, enterprises) can verify attestations using `cosign verify-attestation` with the Fulcio root certificate.
+
+Attestations are discoverable via the GitHub Attestations API. This provides:
+
+- **Integrity & authenticity** - cryptographic proof that Kubernetes maintainers created the VEX statement  
+- **Discoverability** - centralized location for all Kubernetes VEX data  
+- **No infrastructure cost** - GitHub attestation storage is included with public repos
+
+#### US2 - As kubernetes component maintainer I would like to amend VEX content so that it reflects the CVE analysis performed
+
+The proposal is not to allow a human to directly update the VEX files for kubernetes.  
+The workflow is:
+
+1. **k/k code scan** - \[Current situation\] The Prow job `ci-kubernetes-snyk-master` scans the `kubernetes/kubernetes` code base and fails if CVEs are detected against the code base.   
+2. **Issues are opened manually** - \[Current situation\] A community member opens an issue in kubernetes/kubernetes, which will be triaged and analyzed by the maintainers.   
+3. **Bridge job creates the issue** - A periodic Prow job monitors `kubernetes/kubernetes` for issues labeled `vex-unaffected-feed`. For each labeled issue, the bridge job creates a corresponding issue in `kubernetes/.vexflow` with:  
+     
+   - Title: the CVE ID  
+   - Hidden metadata: [vexflow](https://github.com/carabiner-dev/vexflow)'s `VEXFLOW==DATA` JSON block (branch, CVE, component, status)  
+   - OPTIONAL - A slash command comment with the justification extracted from the original k/k issue  
+4. **SIG Security team validates** - SIG Security team (as defined by the `OWNERS` file in `kubernetes/.vexflow`) interacts with the issues created by the Bridge job in `kubernetes/.vexflow` and verifies that the justification is accurate and comes from authorized maintainers and adds a slash command comment to the issue.  
+     
+5. **Slash command execution** - Only users listed in the `.vexflow` repo's `OWNERS` file (approvers) can issue commands. Updates to OWNERS file is allowed with 2/3 SIG Security Chair(s) Approval only. Vexflow parses the command and updates the issue status:  
+     
+   - `/not_affected:component_not_present`  
+   - `/not_affected:vulnerable_code_not_present`  
+   - `/not_affected:vulnerable_code_not_in_execute_path`  
+   - `/not_affected:vulnerable_code_cannot_be_controlled_by_adversary`  
+   - `/not_affected:inline_mitigations_already_exist`
+
+Any text after the command is treated as the impact statement.
+
+6. **VEX publishing job** - Vexflow's periodic update job detects issues with slash commands, generates OpenVEX documents, signs them, and publishes attestations. The issue is then closed.
+
+This approach:
+
+- Requires no new tooling - vexflow's native slash commands  
+- Enforces access control - OWNERS file controls who can authorize VEX statements  
+- Preserves the audit trail - GitHub issue history shows all changes  
+- Maintains simplicity - maintainers work in familiar GitHub interface
+
+#### US3 - As kubernetes release or security team I would like to periodically update VEX content for kubernetes
+
+A two-job pipeline automates the generation and publication of VEX documents:
+
+* **Bridge job** - Periodic job that monitors `kubernetes/kubernetes` for issues labeled `vex-unaffected-feed`:  
+  * Queries GitHub API for all matching issues (open and closed)  
+  * Extracts CVE IDs and maintainer determinations  
+  * Creates corresponding triage issues in `kubernetes/.vexflow` with hidden metadata and slash command comments  
+  * Posts the determination as a slash command on the created issue
+
+
+* **Publish job** - Periodic job that runs `vexflow update --repo kubernetes/kubernetes --branch master --triage-repo kubernetes/.vexflow --scan=false`:  
+  * Lists all open triage issues  
+  * Detects issues with slash commands (status: `WAITING_STATEMENT`)  
+  * Generates OpenVEX documents from the issue metadata and comments with slash commands  
+  * Signs documents with sigstore (keyless via Fulcio)  
+  * Publishes attestations to GitHub attestation store in `kubernetes/.vexflow`  
+  * Closes completed triage issues
+
+**Future (Beta/GA):** Enable `--scan=true` to automatically detect new vulnerabilities, support release branches, and support `affected`/`fixed` statuses
+
+#### US4 - As kubernetes component maintainer, I want PR Presubmits to verify govulncheck at symbol level
+
+In Kubernetes, VEX files can already be generated for the golang source code thanks to script [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) introduced with [sig-security issue \#116](http://github.com/kubernetes/sig-security/issues/116).   
+This script runs with every PR presubmit, within job pull-kubernetes-verify.   
+The results  from `govulncheck`, at package level, on the master branch and the PR HEAD are compared, and sent to the standard output of the prow job. However, results are not further used.
+
+By configuring the job to perform `govulncheck` scans at symbol level, we can reduce a lot of false positives from snyk scans. 
+
+#### US5 (Out of scope)- As kubernetes component maintainer I would like VEX content to be useful to reduce toil generated by scanners
+
+**Alpha Status:** Out of scope for alpha in terms of scanner integration. Scanner integration (Snyk, Trivy, etc.) is planned for beta/GA.
+
+Published VEX attestations in `kubernetes/.vexflow` are already consumable by tools that support OpenVEX and can fetch attestations via `cosign verify-attestation`. 
+
+However, see [Future: Consuming the Official CVE Feed](#future-plans---beta) below for a proposal to extend alpha scope to include `affected` and `fixed` VEX statements.
+
+### Notes/Constraints/Caveats
+
+In this proposal, we did not wish to impact the existing security job at all, nor the current process established for SRC committee to create the OSV feed. The proposal attempts to find the path that impacts the maintainers the least.
+
+### Risks and Mitigations
+| Risk | Mitigation|
+|------|-----------|
+| A simple contributor (not in component's OWNERS) labels a CVE issue `vex-unaffected-feed` when it shouldn't | In alpha, the `vex-unaffected-feed` label can be restricted to folks from sig-arch, sig-release, sig-security and SRC as an initial list ([configuration sample](https://github.com/smarticu5/test-infra/blob/01b26ce1cbbef312b333a7a724e514bf3630f9e6/config/prow/plugins.yaml#L192-L205)). After alpha is delivered, and starts getting used, we can gather more information about how to more accurately configure this permission. In Beta, we can also investigate ways to reliably tie a CVE issue to a component, and by doing so make the Bridge job verify labeling was done by component's OWNERS (or priviledged contributors), and ignore otherwise.  |
+| `vex-unaffected-feed` isn't added to an issue | The CVE will not appear as `not-affected` in the VEX attestations (stale data). This can be fixed by a bulk operation on kubernetes/kubernetes issues by SIG-Security officials |
+| Bridge job fails | The impact to the Kubernetes ecosystem is very low: VEX reports will not contain fresh data until the Bridge job is fixed |
+| Publish job fails | The impact to the Kubernetes ecosystem is very low: New VEX reports will not be published until the job is fixed |
+| Unauthorized user adds a chatops (slash) comment to an issue in kubernetes/.vexflow | The vexflow binary, running in the Publish job will ignore any comments by contributors not listed in the OWNERS file |
+| Unauthorized user adds themselves to kubernetes/.vexflow's ONWERS | The main branch of .vexflow is protected, and pull requests need to be approved by owners in order to affect the main branch |
+| **Publish job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/.vexflow (marking CVEs as fixed when they really affect K8s for example), or to publish attestations to kubernetes/.vexflow without going through the Prow job | Not a net new risk compared to other prow jobs |
+| **Bridge job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/kubernetes (which is already open) and kubernetes/.vexflow (marking CVEs as fixed when they really affect K8s for example). | Not a net new risk compared to other prow jobs |
+| Prow jobs (Bridge or Publish) have too many issues to parse through | A worst case scenario mitigation: the binaries running through the prow jobs should be configurable via command line arguments for a max number of issues to handle. Ex: k/k repo has 10000 issues labeled `vex-unaffected-feed`, the job is configured with max-issues=500. 20 runs of the jobs are needed to go through the complete list of issues. (no context deadline exceeded, no out of memory) 
+
+## Design Details
+
+The alpha implementation consists of three components:
+
+1. **Label trigger** - Maintainers add `vex-unaffected-feed` to `kubernetes/kubernetes` issues  
+2. **Bridge job** - Translates k/k issues to vexflow triage issues in `kubernetes/.vexflow`  
+3. **Further verification by SIG Security** \- slash commands are added to triage issues in  `kubernetes/.vexflow` in order to confirm issues are not affecting k/k (OPTIONAL)  
+4. **Publish job** - Runs `vexflow update --scan=false` to generate/sign/publish VEX attestations
+
+### Component: kubernetes/.vexflow repository
+
+- Triage repository for vexflow  
+- OWNERS file with `sig-security-leads` as approvers  
+- Issues contain hidden `VEXFLOW==DATA` metadata  
+- Attestations published to GitHub attestation store
+
+### Component: Bridge binary
+
+- Go binary in `kubernetes/sig-security`, under `sig-security-tooling/vex-feed/hack/bridge/`  
+- Queries GitHub API: `is:issue label:vex-unaffected-feed repo:kubernetes/kubernetes`  
+- For each labeled issue:  
+  1. Extract CVE IDs (regex scan of title \+ body \+ comments)  
+  2. Extract component information (package name, purl)  
+  3. Check if a `.vexflow` issue already exists for this CVE \+ branch  
+  4. If not, create the issue with VEXFLOW==DATA metadata  
+  5. Post a slash command comment with the justification (If clearly identified)
+
+### Component: Prow jobs
+
+**Bridge job** (`ci-kubernetes-vex-bridge`):
+
+- Periodic, every 6 hours  
+- Runs the bridge binary  
+- Secrets: `GITHUB_TOKEN` with read (k/k) and write (.vexflow) access
+
+**Publish job** (`ci-kubernetes-vex-publish`):
+
+- Periodic, every 6 hours  
+- Runs: `vexflow update --repo kubernetes/kubernetes --branch master --triage-repo kubernetes/.vexflow --scan=false`  
+- Secrets: `GITHUB_TOKEN` with write access to `.vexflow`  
+- Sigstore: keyless signing via Fulcio (prow service account OIDC identity)
+
+### Vexflow Issue Lifecycle
+
+1. Bridge creates issue - status: `WAITING_USER`  
+2. Bridge (or SIG Security team) posts slash command → status: `WAITING_STATEMENT`. The Bridge can only post the command if it can parse the information from the original issue. Otherwise, it does not guess, and leaves the action to SIG Security team. 
+3. vexflow update generates VEX doc → signs with sigstore → publishes attestation  
+4. vexflow posts publish notice → closes issue → status: CLOSED
+
+### Consuming VEX Attestations: How Maintainers Leverage Published Data
+
+Once VEX attestations are published to `kubernetes/.vexflow`, maintainers and automation can consume them to reduce triage work:
+
+### For Engineers Evaluating New CVE Reports
+
+When a new CVE report arrives (from the Snyk scan, external researchers, or Dependabot):
+
+1. **Check for existing analysis \- options**:
+
+```shell
+# List all triages (open and closed) for the branch
+vexflow ls --repo kubernetes/kubernetes --branch master
+
+# Search for a specific CVE in .vexflow issues
+gh issue list --repo kubernetes/.vexflow --search "CVE-2026-XXXXX"
+
+# Verify a published attestation (after attestation support is added)
+cosign verify-attestation --certificate-identity-regexp ".*" \
+  --certificate-oidc-issuer-regexp ".*" \
+  ghcr.io/kubernetes/.vexflow/attestations
+```
+
+2. **Outcome**: If a `not_affected` VEX statement already exists for the CVE, the engineer knows:  
+     
+   - The CVE has been analyzed  
+   - The analysis is documented in a signed, verifiable attestation  
+   - No duplicate triage is needed
+
+### For the Snyk Scan Job (Optional or out of scope)
+
+The periodic Snyk scan job currently fails when it detects a CVE without a tracking issue. In the future (beta/GA), the job could be enhanced to:
+
+1. **Fetch published VEX data**:
+
+```shell
+vexflow assemble --repo kubernetes/kubernetes --branch master --out vex-feed.json
+```
+
+This generates a consolidated OpenVEX document from all published attestations in `.vexflow`.
+
+
+2. **Suppress already-triaged CVEs**: The job would parse the assembled VEX document and check each detected CVE against it. If a `not_affected` statement exists, the CVE is suppressed from the failure report.  
+     
+3. **Outcome**: The Snyk job only fails for truly new CVEs or CVEs where a re-analysis has changed the determination. This dramatically reduces alert fatigue and duplicate triage requests.
+
+### For Cherry-pick Reviews
+
+When a PR attempts to update a dependency (e.g., bump gRPC version to silence a scanner alert), reviewers can now check if a VEX statement exists:
+
+1. **Engineer requests cherry-pick**:  
+   - "Please backport gRPC v1.79.3 to v1.32 to fix CVE-2026-25679"  
+   - The cherry-pick policy requires that actual vulnerable code be fixed, not just silence scanners.
+2. **Reviewer checks VEX**:  
+   - Query `.vexflow` for a `not_affected` VEX statement for CVE-2026-25679 on master  
+   - If found, point to the signed attestation: "This CVE is already marked as not\_affected on master with justification X, so the backport is not necessary per policy."
+3. **Outcome**: Reviewers have authoritative evidence and can reject scanner-silencing updates faster, reducing reviewer burden.
+
+### Test Plan
+
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+This is a process KEP implemented using periodic prow job. This KEP is not implemented for any functional use cases of kubernetes. So no e2e/unit/integration tests are applicable and going forward test plan will mostly include :
+* the unit tests around the binaries used by the Bridge and Publish jobs. The code for those binaries is maintained under the kubernetes/sig-security repository. The unit tests will run locally.
+* the scenarios around monitoring of the prow job for any failures as and when needed. 
+
+
+### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented with VEX attestations appearing under https://github.com/kubernetes/.vexflow/attestations, verifiable with sigstore
+- Alerting setup for detecting failures
+
+#### Beta
+
+- Gather feedback from developers and end users regarding:
+  - Include states `affected`, `fixed`, `under-investigation`
+  - Create attestations per release version
+  - Adapting process to include data from govulncheck
+  - Adapting scanning process (Snyk today)
+
+### Upgrade / Downgrade Strategy
+
+Not applicable
+
+### Version Skew Strategy
+
+Not applicable
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
+
+### Feature Enablement and Rollback
+
+<!--
+This section must be completed when targeting alpha to a release.
+-->
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+This feature is not intended to be delivered to kubernetes end users, and will not be deployed to clusters. 
+
+This feature only impacts the Kubernetes CI/CD (Prow). 
+
+Both Bridge and Publish jobs can be added/removed from the https://github.com/kubernetes/test-infra/tree/master/config/jobs/kubernetes/sig-security repository.
+
+###### Does enabling the feature change any default behavior?
+
+No
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, by simply removing the job configuration from the repository.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+After re-creating the prow jobs, the initial execution of the job might have a larger quantities of issues to parse through, which might lead to longer execution time.
+
+This is something that we expect can happen (see risks), and mitigations have been considered for these cases.  
+
+###### Are there any tests for feature enablement/disablement?
+
+Not applicable
+
+### Rollout, Upgrade and Rollback Planning
+
+Synchronization with testing and infra SIGs can be key in resolving dependencies (new GitHub repo, appropriate tokens for the jobs, job configuration, PR reviews)
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+Prow jobs can fail but should have no impact on Kubernetes release process.
+Not applicable for running workloads.
+
+###### What specific metrics should inform a rollback?
+
+Job failures
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Not Applicable
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No
+
+### Monitoring Requirements
+
+Not applicable
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
+
+###### How can an operator determine if the feature is in use by workloads?
+
+<!--
+Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+checking if there are objects with field X set) may be a last resort. Avoid
+logs or events for this purpose.
+
+
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+
+
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
+
+### Dependencies
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
+
+### Scalability
+
+Not applicable
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
+
+For beta, this section is required: reviewers must answer these questions.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### Will enabling / using this feature result in any new API calls?
+Not applicable for kubernetes clusters.
+
+Running the jobs in Prow will require Prow to :
+* Read / write GitHub issues in both kubernetes/kubernetes and kubernetes/.vexflow
+* write attestations to GitHub kubernetes/.vexflow
+* interact with sigstore to sign in-toto attestations
+
+<!--
+Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+Focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+-->
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+<!--
+Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+-->
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+<!--
+Describe them, providing:
+  - Which API(s):
+  - Estimated increase:
+-->
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+<!--
+Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+-->
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+<!--
+Look at the [existing SLIs/SLOs].
+
+Think about adding additional work or introducing new steps in between
+(e.g. need to do X to start a container), etc. Please describe the details.
+
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+-->
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+<!--
+Things to keep in mind include: additional in-memory state, additional
+non-trivial computations, excessive access to disks (including increased log
+volume), significant amount of data sent and/or received over network, etc.
+This through this both in small and large cases, again with respect to the
+[supported limits].
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+Not applicable
+
+###### What are other known failure modes?
+
+Not applicable
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Not applicable
+
+## Implementation History
+
+- 2026-09: Alpha proposal - vexflow-based pipeline for not\_affected VEX on master branch  
+- 2026-07: [PR \#200](https://github.com/kubernetes/sig-security/pull/200) - Manual OpenVEX workflow (build-feed, new-issue tools)  
+- [Initial KEP draft](https://docs.google.com/document/d/1JdCYfwBU-1eoDSKa0lFL_VfVr3du2-gDT3RhILETUrQ/edit?usp=sharing) - govulncheck-based VEX generation exploration
+
+#### Relationship to PR \#200 (manual OpenVEX workflow)
+
+The existing work in PR \#200 (hack/build-feed, hack/new-issue, hack/openvex) implements a manual workflow where maintainers edit per-issue OpenVEX JSON files and a build tool merges them into a combined feed. The vexflow-based approach replaces this with an automated pipeline:
+
+| Aspect | PR \#200 (manual) | vexflow (automated) |
+| :---- | :---- | :---- |
+| Issue tracking | Per-issue `.openvex.json` files | GitHub issues in `.vexflow` |
+| Merge logic | Custom Go build tool | vexflow handles internally |
+| Publishing | JSON file in sig-security repo | Sigstore attestations |
+| Authorization | Git commit access | OWNERS file \+ slash commands |
+| Triggering | Manual scaffold \+ edit | Label on k/k issue |
+| Consumption | Files in repo (no auth) | Signed attestations (verifiable) |
+
+The manual tools from PR \#200 may still be useful for bootstrapping initial VEX data or for scenarios where vexflow is not suitable.
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+
+## Alternatives
+
+- **Asking maintainers to use the slash commands themselves on the issues in the kubernetes/kubernetes repository:**  
+  - This requires a little process change but shouldn't be extra heavy  
+  - The prow bridge job that creates the triage issues in .vexflow from the original issues can decide to copy the comments over only if the commenter belongs to the OWNERS file of the corresponding component  
+  - Advantage: reduces the need for SIG-Security to review the issues in kubernetes/.vexflow  
+- **Enabling scan on Vexflow:** Vexflow uses osv scanner, not snyk. It will duplicate all the CVEs found into .vexflow and will require maintainers to also triage the issues in .vexflow as well as the ones created after snyk scans fail.   
+  - **govulncheck-based generation**: We can definitely couple the Vexflow scan with [govulncheck verify job](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh), so that the issues opened in .vexflow can automatically be updated with relevant slash commands based on results from govulncheck.  
+- **Manual OpenVEX workflow (PR \#200)**: Maintainers edit JSON files directly. Simpler but doesn't scale and lacks signing/attestation.  
+- **VexHub**: Publishing VEX files for the Aqua VexHub crawler. Viable for distribution but doesn't provide signing or attestation provenance.  
+- **OCI referrers**: Attaching VEX to container images. Ideal for container consumers but requires registry access and is complex for alpha.  
+- **Using kubernetes/kubernetes as the triage repository:**  
+  -  [Vexflow\#6](https://github.com/carabiner-dev/vexflow/issues/6) needs to be implemented as we have one OWNERS file per component  
+  - [Vexflow\#114](https://github.com/carabiner-dev/vexflow/issues/114) needs to be implemented: especially if we choose k/k to be the triage-repo, the number of issues is very high, and the job might take ages to go through all bodies of all issues (including closed)
+- **VEX distribution**: Distributing through VexHub (distributing VEX files via Aqua's crawler) or as OCI referrers (attaching VEX to container images) require release branch support and broader ecosystem integration.
+
+
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
+
+## Infrastructure Needed (Optional)
+
+- `kubernetes/.vexflow` GitHub repository  
+- `vex-unaffected-feed` label in `kubernetes/kubernetes`  
+- GitHub token/App secret for prow jobs (read k/k, write `.vexflow`)  
+- Sigstore/Fulcio access from prow cluster (for keyless signing)  
+- TestGrid dashboard: `sig-security-vex-feed`
+
+## Future plans - Beta
+
+### Consuming the Official CVE Feed as Affected VEX Statements
+
+The `official-cve-feed` labeled issues in `kubernetes/kubernetes` represent CVEs that **genuinely affect Kubernetes** — they have been triaged by the Security Response Committee (SRC), assigned a CVSS score, analyzed for affected version ranges, and given specific fix guidance. Each issue contains an embedded OSV JSON blob with structured component names and version ranges.
+
+Publishing these as VEX `affected` (or `fixed`) statements would:
+
+1. **Complete the VEX picture** — Alpha currently only covers `not_affected`. Adding `affected`/`fixed` means consumers get a full view: "these CVEs don't affect k8s" AND "these ones do, here's the action to take"  
+2. **Leverage existing structured data** — the OSV blob already has component names, version ranges, and fix versions; no manual extraction required  
+3. **Deliver immediate value** — security scanners need both `affected` and `not_affected` to make informed recommendations. Publishing only `not_affected` is incomplete.
+
+#### Proposed Extension (Beta)
+
+The bridge binary can be extended with minimal additional work to consume `official-cve-feed` labeled issues in parallel with `vex-unaffected-feed`:
+
+#### Changes to Bridge Binary
+
+1. Add a second GitHub API query: `label:official-cve-feed repo:kubernetes/kubernetes`  
+2. For each `official-cve-feed` issue:  
+   - Parse the embedded OSV JSON blob from the issue body's `<details>` section  
+   - Extract CVE ID, component name, version ranges, fix version  
+   - Determine VEX status based on issue state:  
+     - **Open issue** → `/affected` (CVE still present on master)  
+     - **Closed with state\_reason=completed** → `/fixed` (fix merged to master)  
+     - **Closed with state\_reason=not\_planned** → `/affected` with action\_statement explaining "will not fix"  
+   - Create a `.vexflow` issue with:  
+     - `VEXFLOW==DATA` metadata for the affected component  
+     - A slash command comment: `/affected` or `/fixed` followed by the action statement (e.g., "Upgrade kube-apiserver to v1.31.12 or later; for details see [source issue](http://kubernetes/kubernetes#XXXX)")
+
+
+#### Data Flow
+```mermaid
+flowchart TD  
+    OSV_Issue["official-cve-feed issues<br/>(CVEs affecting k/k)"] -->|"OSV JSON blob in issue body<br/>(component, versions, fix)"| Bridge["[Bridge Binary]"]  
+    CVE_Unaffected["vex-unaffected-feed issues<br/>(CVEs NOT affecting k/k)"] -->|"Free-form analysis in comments<br/>(extracted to justification)"| Bridge  
+
+    Bridge --> VexFlowIssue["kubernetes/.vexflow issues<br/>(with /affected, /fixed, /not_affected commands)"]  
+    VexFlowIssue --> Publish["[Vexflow update --scan=false]"]  
+    Publish --> VexDoc["OpenVEX documents → Sigstore attestations"]  
+```
+
+ 
