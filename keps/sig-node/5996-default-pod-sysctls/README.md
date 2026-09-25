@@ -606,6 +606,20 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+- `kubelet_run_podsandbox_errors_total`: A sustained increase on nodes where
+  `defaultPodSysctls` is configured, compared to the baseline before the
+  rollout, indicates that the configured sysctls are rejected by the OCI
+  runtime or the kernel (e.g. invalid key/value or unnamespaced `net.*`
+  sysctl).
+- `kubelet_started_pods_errors_total`: An increase indicates new pods are
+  failing to start on the node.
+- `kubelet_run_podsandbox_duration_seconds`: A noticeable increase in latency
+  would indicate unexpected overhead during sandbox creation (not expected,
+  since the feature only adds entries to an in-memory map).
+
+Operators should also watch for `FailedCreatePodSandBox` warning events on pods
+scheduled to nodes with `defaultPodSysctls` configured.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -614,11 +628,51 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+1. Start a node with a Kubelet version with the `DefaultPodSysctls` feature
+   gate disabled (v1.37.0). Create a pod and verify its sysctls equal the
+   node defaults.
+
+```
+$ kubectl exec plain -- sysctl net.ipv4.tcp_keepalive_time kernel.shm_rmid_forced
+net.ipv4.tcp_keepalive_time = 7200
+kernel.shm_rmid_forced = 0
+```
+2. Enable the feature gate and set `defaultPodSysctls` in the
+   KubeletConfiguration as follows, then restart the Kubelet.
+
+```
+$ vim kubelet-config.yaml
+featureGates:
+  DefaultPodSysctls: true
+defaultPodSysctls:
+  net.ipv4.tcp_keepalive_time: "600"
+  kernel.shm_rmid_forced: "1"
+```
+
+3. Verify the pod from step 1 keeps running unchanged. Create a new pod,
+   and verify it has the default sysctls applied. Besides, verify a pod
+   setting the same sysctl in `spec.securityContext.sysctls` overrides
+   the default.
+
+```
+$ kubectl exec override -- sysctl net.ipv4.tcp_keepalive_time
+net.ipv4.tcp_keepalive_time = 600
+kernel.shm_rmid_forced: 1
+```
+
+4. Disable the feature gate, removing `defaultPodSysctls` from the
+   KubeletConfiguration, and restart the Kubelet. Verify existing pods keep
+   running with their sysctls, and new pods no longer receive the defaults.
+
+5. Upgrade again (re-enable) and verify new pods receive the defaults again.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -650,13 +704,17 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Events
+  - Event Reason: `FailedCreatePodSandBox` (emitted by the Kubelet on the pod
+    when the configured default sysctls cannot be applied; absence of this
+    event together with the pod reaching `Running` indicates the defaults were
+    applied successfully).
+- [x] Other (treat as last resort)
+  - Details: Run `kubectl exec <pod> -- sysctl <key>` (or read
+    `/proc/sys/<path>`) inside a pod on the node and verify the value matches
+    the one configured in `defaultPodSysctls`, unless it is overridden in the
+    pod's `spec.securityContext.sysctls`. The effective Kubelet configuration
+    can also be inspected via the Kubelet `configz` endpoint.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -675,18 +733,31 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+This feature does not introduce new SLOs. Enabling it with a valid
+`defaultPodSysctls` configuration should not change the existing
+[pod startup latency SLO](https://git.k8s.io/community/sig-scalability/slos/pod_startup_latency.md),
+and the rate of pod sandbox creation errors on nodes using the feature should
+stay at the same level as on nodes without it.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `kubelet_run_podsandbox_errors_total`
+  - [Optional] Aggregation method: rate over time, compared between nodes with
+    and without `defaultPodSysctls` configured
+  - Components exposing the metric: Kubelet
+- [x] Metrics
+  - Metric name: `kubelet_run_podsandbox_duration_seconds`
+  - [Optional] Aggregation method: p99 over time
+  - Components exposing the metric: Kubelet
+- [x] Metrics
+  - Metric name: `kubelet_started_pods_errors_total`
+  - [Optional] Aggregation method: rate over time
+  - Components exposing the metric: Kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -694,6 +765,13 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No new metrics are planned. Failures to apply the default sysctls surface
+through the existing sandbox creation error metrics and `FailedCreatePodSandBox`
+events, and sysctls that are skipped because they are not namespaced for the
+pod are logged by the Kubelet. A dedicated metric (e.g. a counter of skipped
+default sysctls) was not added because the configuration is static per node,
+so the same skip happens for every pod and adds little signal beyond the log.
 
 ### Dependencies
 
@@ -855,7 +933,28 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 * Invalid Sysctl keys or values leading to WriteSysctl failure.
+  - Detection: Increase in `kubelet_run_podsandbox_errors_total` and
+    `kubelet_started_pods_errors_total` on affected nodes; pods stay in
+    `Pending` with `FailedCreatePodSandBox` warning events containing
+    `error applying sysctl options`.
+  - Mitigations: Fix or remove the offending entry in `defaultPodSysctls` (or
+    disable the `DefaultPodSysctls` feature gate) and restart the Kubelet.
+    Already running pods are not affected.
+  - Diagnostics: The `FailedCreatePodSandBox` event message and the container
+    runtime / Kubelet logs include the failing sysctl key and value.
+  - Testing: Unit tests cover the merge and filtering logic; e2e tests cover
+    applying valid sysctls. Invalid values are rejected by the OCI runtime and
+    kernel, outside of Kubelet's control.
 * Unnamespaced sysctls (some `net.` params) failed to be set in pods.
+  - Detection: Same as above (`FailedCreatePodSandBox` events and sandbox
+    creation error metrics).
+  - Mitigations: Remove the unnamespaced `net.*` sysctl from
+    `defaultPodSysctls` and restart the Kubelet. Such sysctls should be set on
+    the host instead.
+  - Diagnostics: The `FailedCreatePodSandBox` event message includes the
+    sysctl key the runtime failed to write.
+  - Testing: e2e tests verify sysctls not namespaced for the pod (e.g. `net.*`
+    for `hostNetwork` pods) are skipped instead of failing.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
