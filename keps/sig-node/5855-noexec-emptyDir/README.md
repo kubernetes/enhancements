@@ -426,36 +426,27 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+Running workloads are not affected - bind options are applied only at container creation time, and only when the pod spec explicitly sets `bindMountOptions`. During an HA rollout where some API servers have the gate enabled and others do not, the field may be accepted by one API server and stripped by another; this is standard feature-gate behavior and resolves once all API servers are updated. A rollback cannot break existing pods since their volumes are already mounted.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+A spike in `volume_mount` failures in the `storage_operation_duration_seconds` kubelet metric for pods that set `bindMountOptions`, or an increase in pod startup failures correlated with pods using the field.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Yes. The upgrade->downgrade->upgrade path was manually tested using `hack/local-up-cluster.sh` with CRI-O as the container runtime. The test used `PRESERVE_ETCD=true` with a persistent etcd directory across cluster restarts.
+
+**Phase 1 (gate ON):** Deployed pods with `bindMountOptions: [noexec, nosuid, nodev]` on both disk-backed and tmpfs emptyDir volumes. Verified: (1) `bindMountOptions` is preserved in the pod spec via the API server, (2) `/proc/self/mountinfo` shows `nosuid,nodev,noexec` flags on the volume mount, (3) executing a script on the mount fails with "Operation not permitted", (4) a control pod without `bindMountOptions` allows execution normally.
+
+**Phase 2 (gate OFF - downgrade):** Restarted the cluster with `VolumeBindMountOptions=false`. Deployed new pods with the same manifests. Verified: (1) `bindMountOptions` is stripped from new pod specs by the API server (field dropping), (2) `/proc/self/mountinfo` does not show `noexec,nosuid,nodev` flags, (3) execution succeeds on the mount (default behavior restored).
+
+**Phase 3 (gate ON - re-upgrade):** Restarted the cluster with `VolumeBindMountOptions=true`. Deployed new pods. Verified: (1) `bindMountOptions` is preserved again, (2) mount flags are enforced again, (3) execution is blocked again. Feature works correctly after being disabled and re-enabled.
+
+Unit tests (`TestDropVolumeBindMountOptions` in `pkg/api/pod`) also verify that `bindMountOptions` is stripped when the gate is disabled and preserved when enabled or when the field is already persisted on an existing pod.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -468,67 +459,30 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Check if any pods use `bindMountOptions`:
+
+```bash
+kubectl get pods -A -o yaml | grep bindMountOptions
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Exec into the pod and check mount flags with `cat /proc/self/mountinfo | grep /path/to/mount`. The output should show `noexec`, `nosuid`, and/or `nodev` flags matching the requested `bindMountOptions`. Additionally, attempting to execute a script on a `noexec` mount should fail with "Permission denied" or "Operation not permitted".
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+No impact on existing SLOs. The change adds a few string values to the CRI mount message and OCI spec. The container runtime already performs a bind + remount for every mount; the only difference is that additional flags are included in the remount syscall.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `storage_operation_duration_seconds` (existing metric)
+  - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No. The feature piggybacks on the existing volume mount path and does not introduce new operations that would benefit from separate metrics.
 
 ### Dependencies
 
@@ -587,39 +541,26 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature runs in the kubelet and container runtime. After the pod spec is retrieved from the API server, bind options are applied locally during container creation. If the API server or etcd becomes unavailable, it does not affect the bind option enforcement on already-created containers.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Container runtime does not support `mount_options`
+  - Detection: Pods with `bindMountOptions` fail to start. Pod events show an error indicating the runtime does not advertise `mount_options` support. The kubelet rejects the pod before sending it to the runtime.
+  - Mitigations: Upgrade the container runtime to a version that supports `mount_options`, or remove `bindMountOptions` from the affected pod specs.
+  - Diagnostics: Kubelet logs at default verbosity will show the rejection reason. Pod events will contain the error message.
+  - Testing: Unit tests verify kubelet behavior when `runtimeFeatures` does not include `mount_options`.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Disable the `VolumeBindMountOptions` feature gate on the kubelet and kube-apiserver and restart both components. This will cause the API server to strip `bindMountOptions` from new pods and restore default mount behavior.
 
 ## Implementation History
 
 - 2026-01-30: KEP created
+- 2026-09-25: KEP updated for beta targeting v1.38
 
 ## Drawbacks
 

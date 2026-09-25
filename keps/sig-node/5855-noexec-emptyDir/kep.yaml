@@ -19,8 +19,8 @@ approvers:
   - "@haircommander" # sig-node-assigned-approver
 see-also:
 replaces:
-stage: alpha
-latest-milestone: "v1.37"
+stage: beta
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"
