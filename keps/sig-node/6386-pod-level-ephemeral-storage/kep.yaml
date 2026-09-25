@@ -1,0 +1,53 @@
+title: Ephemeral Storage Support for Pod-Level Resource Specifications
+kep-number: 6386
+authors:
+  - "@ndixita"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-scheduling
+status: provisional
+creation-date: 2026-09-17
+reviewers:
+  - "@mrunalp"
+  - "@tallclair" # sig-node-assigned-reviewer
+  - "@alculquicondor"
+approvers:
+  - "@dchen1107"
+see-also:
+  - "/keps/sig-node/2837-pod-level-resource-spec"
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PodLevelResourcesEphemeralStorage
+    components:
+      - kube-apiserver
+      - kube-scheduler
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - kubelet_pod_level_resources_admission_total
+  - kubelet_evictions
+  - apiserver_rejected_requests
+  - schedule_attempts_total{result="error|unschedulable"}
+  - node_collector_evictions_total
+  - started_pods_errors_total
+  - started_containers_errors_total
