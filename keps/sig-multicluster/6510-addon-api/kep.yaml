@@ -1,0 +1,23 @@
+title: ClusterProfile AddOn API
+kep-number: 6510
+authors:
+  - "@kahirokunn"
+  - "@mikeshng"
+owning-sig: sig-multicluster
+participating-sigs:
+  - sig-cloud-provider
+  - sig-cluster-lifecycle
+status: provisional
+creation-date: 2026-09-24
+reviewers:
+  - "@johnkeates"
+  - "@MrFreezeex"
+approvers:
+  - "@jeremyot"
+  - "@lauralorenz"
+  - "@skitt"
+
+see-also:
+  - "/keps/sig-multicluster/4322-cluster-inventory"
+
+stage: alpha

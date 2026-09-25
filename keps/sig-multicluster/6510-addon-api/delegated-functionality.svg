@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="310" viewBox="0 0 900 310" role="img" aria-labelledby="title description">
+  <title id="title">An existing controller or service provides functionality through its API</title>
+  <desc id="description">An AddOn Manager reconciles addon-a, which targets cluster-a. The manager manages and observes an integration resource or service request. An existing controller or service handles that request and provides functionality for cluster-a. The manager reports the resulting installation state in the AddOn. This is a logical view; positions do not specify execution locations. Arrows point from each actor to what it reconciles, manages, handles, or provides.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#595959" />
+    </marker>
+  </defs>
+  <style>
+    text { font-family: Arial, sans-serif; font-weight: 400; fill: #202020; }
+    .kind { font-size: 15px; text-anchor: middle; }
+    .detail { font-size: 12px; text-anchor: middle; }
+    .flow { fill: none; stroke: #595959; stroke-width: 1.5; marker-end: url(#arrow); }
+  </style>
+  <rect width="900" height="310" fill="#ffffff" />
+  <g id="boundaries" />
+  <g id="connections">
+    <path id="reconcile-addon" class="flow" d="M 283 77.5 H 177" />
+    <path id="manage-request" class="flow" d="M 462 77.5 H 648" />
+    <path id="handle-request" class="flow" d="M 462 220 H 580 V 97.5 H 648" />
+    <path id="provide-functionality" class="flow" d="M 462 255 H 648" />
+  </g>
+  <g id="resources">
+    <g id="addon">
+      <rect x="25" y="40" width="150" height="75" rx="6" fill="#fff2cc" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="100.0" y="61.5">AddOn</text>
+      <text class="detail" x="100.0" y="81.5">addon-a</text>
+      <text class="detail" x="100.0" y="101.5">target: cluster-a</text>
+    </g>
+    <g id="manager">
+      <rect x="285" y="40" width="175" height="75" rx="24" fill="#cfe2f3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="372.5" y="71.5">AddOn Manager</text>
+      <text class="detail" x="372.5" y="91.5">reports AddOn status</text>
+    </g>
+    <g id="request">
+      <rect x="650" y="40" width="200" height="75" rx="6" fill="#fff2cc" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="750.0" y="71.5">Integration resource</text>
+      <text class="detail" x="750.0" y="91.5">or service request</text>
+    </g>
+    <g id="delegate">
+      <rect x="285" y="200" width="175" height="75" rx="24" fill="#cfe2f3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="372.5" y="231.5">Existing controller</text>
+      <text class="kind" x="372.5" y="251.5">or service</text>
+    </g>
+    <g id="functionality">
+      <rect x="650" y="220" width="200" height="70" rx="6" fill="#d9ead3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="750.0" y="249.0">Provided functionality</text>
+      <text class="detail" x="750.0" y="269.0">for cluster-a</text>
+    </g>
+  </g>
+  <g id="annotations">
+    <g id="reconcile-addon-label">
+      <rect x="194.0" y="50.5" width="72.0" height="21" rx="3" fill="#ffffff" />
+      <text x="230" y="65.5" font-size="13" text-anchor="middle" fill="#333333">reconciles</text>
+    </g>
+    <g id="manage-request-label">
+      <rect x="484.5" y="50.5" width="131.0" height="21" rx="3" fill="#ffffff" />
+      <text x="550" y="65.5" font-size="13" text-anchor="middle" fill="#333333">manages / observes</text>
+    </g>
+    <g id="handle-request-label">
+      <rect x="589" y="151" width="58.0" height="21" rx="3" fill="#ffffff" />
+      <text x="595" y="166" font-size="13" text-anchor="start" fill="#333333">handles</text>
+    </g>
+    <g id="provide-functionality-label">
+      <rect x="519.0" y="228" width="62.0" height="21" rx="3" fill="#ffffff" />
+      <text x="550" y="243" font-size="13" text-anchor="middle" fill="#333333">provides</text>
+    </g>
+  </g>
+</svg>
