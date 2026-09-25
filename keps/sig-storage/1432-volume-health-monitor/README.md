@@ -106,6 +106,12 @@ volume) and `CSINode.Status.StorageHealth` (per driver, per node). A
 single feature gate, `CSIVolumeHealth`, gates the kubelet and the
 apiserver.
 
+Health is reported through dedicated RPCs and status fields, allowing
+drivers to surface unrecognized conditions as `Unknown` rather than
+dropping them, and enabling automation to distinguish between healthy
+volumes (reported with no adverse conditions) and volumes whose drivers
+do not report health.
+
 This is not the first attempt. An alpha for KEP-1432 shipped in
 Kubernetes v1.21 that embedded `ListVolumes`, `ControllerGetVolume`,
 and `NodeGetVolumeStats` with an embedded `VolumeCondition` field and
@@ -172,8 +178,12 @@ consume.
   extensible: future CSI spec revisions MAY add values, drivers
   that adopt a newer spec MAY report them alongside existing
   ones, and COs MUST tolerate values they do not recognize. A
-  CO that does not recognize a value SHOULD surface it for
-  observability and MUST NOT misclassify it as healthy.
+  CO that does not recognize a reported condition MAY surface it
+  with status `Unknown` for observability purposes, preserving the
+  driver's `reason` and `message`, rather than dropping it or
+  misclassifying it as healthy.
+- Distinguish a volume reported healthy from one whose driver does
+  not report health at all.
 - Make health reporting opt-in per driver (via CSI capabilities) and
   per cluster (via the `CSIVolumeHealth` feature gate). A driver
   that implements no health capability is not probed and incurs no
@@ -655,11 +665,9 @@ type PersistentVolumeClaimStatus struct {
 
 type VolumeHealthStatus struct {
     // conditions is the set of adverse conditions reported by
-    // the CSI controller plugin. An empty list (or absence)
-    // means the controller plugin reports no adverse condition.
-    // Conditions are uniquely identified by the (status, reason)
-    // tuple, matching the CSI spec's uniqueness rule for
-    // VolumeHealthEntry.
+    // the CSI controller plugin. Conditions are uniquely identified
+    // by the (status, reason) tuple, matching the CSI spec's
+    // uniqueness rule for VolumeHealthEntry.
     // +optional
     // +listType=map
     // +listMapKey=status
@@ -673,7 +681,13 @@ type VolumeHealthStatus struct {
 
 type VolumeHealthCondition struct {
     // status is the machine-parseable category. One of
-    // "Inaccessible", "DataLoss", "Degraded".
+    // "Inaccessible", "DataLoss", "Degraded", "Unknown", or "Healthy".
+    // "Unknown" is assigned when the driver reports a condition
+    // whose category this Kubernetes version does not recognize
+    // (for example a value added by a newer CSI spec), for
+    // observability purposes. "Healthy" is assigned when the driver
+    // advertises volume-health capability and reports no adverse
+    // conditions.
     Status VolumeHealthStatusType `json:"status"`
     // reason is a brief CamelCase machine-parseable reason
     // (e.g. "VolumeNotFound"). Required; together with status
@@ -689,6 +703,15 @@ const (
     VolumeHealthInaccessible VolumeHealthStatusType = "Inaccessible"
     VolumeHealthDataLoss     VolumeHealthStatusType = "DataLoss"
     VolumeHealthDegraded     VolumeHealthStatusType = "Degraded"
+    // VolumeHealthUnknown is the category a writer assigns to a
+    // driver-reported condition whose VolumeHealthErrorType it does
+    // not recognize, so the condition is surfaced rather than
+    // dropped.
+    VolumeHealthUnknown      VolumeHealthStatusType = "Unknown"
+    // VolumeHealthHealthy is the status a writer assigns when a
+    // driver advertises volume-health capability and reports no
+    // adverse conditions for a volume.
+    VolumeHealthHealthy      VolumeHealthStatusType = "Healthy"
 )
 ```
 
@@ -730,8 +753,8 @@ type PodVolumeHealth struct {
 
     // conditions is the set of adverse conditions reported by
     // the CSI node plugin for this volume on this node. Keyed by
-    // (status, reason) to match the CSI spec's uniqueness rule for
-    // VolumeHealthEntry.
+    // (status, reason) to match the CSI spec's uniqueness rule
+    // for VolumeHealthEntry.
     // +optional
     // +listType=map
     // +listMapKey=status
@@ -774,7 +797,13 @@ type StorageHealthCondition struct {
     // name is the CSI driver name, matching CSINodeDriver.name.
     Name string `json:"name"`
 
-    // status is one of "StorageUnreachable", "StorageDegraded".
+    // status is one of "StorageUnreachable", "StorageDegraded",
+    // "StorageUnknown", or "StorageHealthy". "StorageUnknown" is
+    // assigned when the driver reports a StorageHealthErrorType this
+    // Kubernetes version does not recognize, for observability
+    // purposes. "StorageHealthy" is assigned when the driver
+    // advertises storage-health capability and reports no adverse
+    // conditions.
     Status StorageHealthStatusType `json:"status"`
 
     // reason is a brief CamelCase machine-parseable reason.
@@ -802,6 +831,14 @@ type StorageHealthStatusType string
 const (
     StorageHealthUnreachable StorageHealthStatusType = "StorageUnreachable"
     StorageHealthDegraded    StorageHealthStatusType = "StorageDegraded"
+    // StorageHealthUnknown surfaces a backend condition whose
+    // StorageHealthErrorType the CO does not recognize, rather than
+    // dropping it.
+    StorageHealthUnknown     StorageHealthStatusType = "StorageUnknown"
+    // StorageHealthHealthy is the status a writer assigns when a
+    // driver advertises storage-health capability and reports no
+    // adverse conditions for the backend.
+    StorageHealthHealthy     StorageHealthStatusType = "StorageHealthy"
 )
 ```
 
@@ -818,6 +855,25 @@ Both writers (the sidecar and the kubelet) do the same thing on
 each polling cycle: call the driver, build the desired `Conditions`
 list from the response, and PATCH the API object only if the new
 list differs from what's stored.
+
+When building the desired list, the writer maps each CSI
+`VolumeHealthErrorType` to its `VolumeHealthStatusType`
+(`INACCESSIBLE` → `Inaccessible`, `DATA_LOSS` → `DataLoss`,
+`DEGRADED` → `Degraded`). Any value the writer's Kubernetes version
+does not recognize — a category added by a newer CSI spec, or the
+zero value — is mapped to `Unknown` for observability purposes, rather
+than being silently dropped. Backend-health reports map the same way,
+with unrecognized `StorageHealthErrorType` values surfaced as
+`StorageUnknown`. This mapping lives entirely in the Kubernetes
+APIs — the core API for volume health (`Unknown`) and the storage
+API for backend health (`StorageUnknown`) — and is performed by the
+Kubernetes writers; it requires no change to the CSI spec, which
+continues to let a CO ignore values it does not recognize.
+
+The writer applies no-op suppression to minimize PATCH traffic: it
+compares the desired conditions list to the stored value and only
+PATCHes on difference. In steady state with healthy volumes reporting
+no adverse conditions, the sustained PATCH rate is zero.
 
 The driver's report is authoritative. The writer overwrites the
 stored list with the driver's; it does not merge. A condition the
@@ -841,7 +897,7 @@ in which the volume is absent. A driver that also advertises
 confirm with a single `ControllerGetVolumeHealth` call instead.
 For `ControllerGetVolumeHealth` and `NodeGetVolumeHealth`, an empty
 `health_statuses` is the explicit recovery signal and clears the
-stored conditions immediately.
+stored conditions to the empty (healthy) list immediately.
 
 The kubelet does not call `NodeGetVolumeHealth` for a volume it has
 never attempted to mount. Drivers may gate health probing on
@@ -914,19 +970,24 @@ implementation:
   `k8s.io/kubernetes/pkg/apis/storage/validation`: validation of
   the new fields, including the composite-key uniqueness rules
   (`(status, reason)` for `VolumeHealthCondition` and
-  `(name, status, reason)` for `StorageHealthCondition`) and
-  rejection of empty `reason` values.
+  `(name, status, reason)` for `StorageHealthCondition`),
+  rejection of empty `reason` values, and acceptance of the
+  `Unknown` and `StorageUnknown` status values.
 - `pkg/registry/core/{persistentvolumeclaim,pod}` and
   `pkg/registry/storage/csinode`: feature-gate drop-on-save,
   including the case where the field is already set on the old
   object and the gate is now disabled.
-- `pkg/kubelet/volumemanager`: probing, `Pod.Status` patching, and
-  no-op suppression.
+- `pkg/kubelet/volumemanager`: probing, `Pod.Status` patching,
+  no-op suppression, the present-but-empty (healthy) report, and
+  the mapping of unrecognized values to `Unknown`.
 - `plugin/pkg/auth/authorizer/node`: own-pod and own-node scoping
   for the new PATCH permissions.
 - `kubernetes-csi/external-health-monitor`: capability detection,
-  list-vs-get fallback, no-op suppression, and the
-  two-cycle (or Get-confirmed) recovery rule.
+  list-vs-get fallback, no-op suppression, the
+  two-cycle (or Get-confirmed) recovery rule, mapping of
+  unrecognized `VolumeHealthErrorType` values to `Unknown`, and
+  emitting a present, empty (healthy) status for managed volumes
+  with no adverse condition.
 
 ##### Integration tests
 
@@ -940,10 +1001,17 @@ hostpath CSI driver and mock injection hooks in e2e framework.
 - Volume-side enums (`Inaccessible`, `DataLoss`, `Degraded`)
   injected via the hostpath driver: verify each surfaces on
   `pvc.status.healthStatus` and `pod.status.volumeHealth`, then
-  recovery clears the condition.
+  recovery clears the adverse conditions.
 - Backend-side enums (`StorageUnreachable`, `StorageDegraded`)
   injected via the hostpath driver: verify each surfaces on
   `csinode.status.storageHealth`, then recovery clears.
+- An unrecognized `VolumeHealthErrorType` injected via the hostpath
+  driver: verify it surfaces as a condition with status `Unknown`
+  carrying the driver's `reason` and `message`, rather than being
+  dropped.
+- A health-capable driver reporting no adverse condition: verify it
+  is reflected in `pvc.status.healthStatus` and
+  `pod.status.volumeHealth`.
 
 ### Graduation Criteria
 
@@ -958,6 +1026,8 @@ hostpath CSI driver and mock injection hooks in e2e framework.
   NodeRestriction admission extensions.
 - The external monitor sidecar uses the new RPCs and writes to
   `pvc.status.healthStatus`.
+- Writers map unrecognized driver conditions to `Unknown` status for
+  observability purposes.
 - Initial unit and integration tests are in place.
 
 #### Beta
@@ -1018,9 +1088,7 @@ on the data path, so every skew combination degrades cleanly:
 - Mixed kubelet rollout: `Pod.Status.VolumeHealth` is populated
   inconsistently across the cluster, depending on which node a pod
   runs on. Consumers handle this the way they handle any other
-  best-effort `Pod.Status` field. Absence of a value is not the
-  same as a healthy report, and dashboards joining health to pod
-  identity should be node-aware.
+  best-effort `Pod.Status` field.
 - Old driver: a driver that does not advertise the new capabilities
   is not probed by either writer, and the feature is dormant for
   that driver. There is no pressure on driver authors to upgrade.
@@ -1202,9 +1270,9 @@ prescribe an implementation.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Three new optional status fields. Each entry holds a small list
-of conditions (status / reason / message / timestamps). Fields
-are populated only when a driver reports adverse conditions, so
-typical steady-state cost is zero.
+of conditions (status / reason / message / timestamps). With
+no-op suppression, the steady-state write cost is zero for
+stable clusters.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1268,6 +1336,11 @@ driver, the CO, or the apiserver path.
   ([container-storage-interface/spec#604][spec-pr]).
 - 2026-05-27: KEP rewritten end-to-end against the redesigned CSI
   APIs and Kubernetes status fields. Targeting v1.37 alpha.
+- 2026-09-16: Add an `Unknown` health status so driver-reported
+  conditions the CO does not recognize are surfaced rather than
+  dropped, and specify explicit "healthy" reporting (a present,
+  empty status) as distinct from an absent field (no health
+  information available).
 
 ## Drawbacks
 
