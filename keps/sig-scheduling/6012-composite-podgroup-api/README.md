@@ -45,7 +45,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [API validation](#api-validation)
     - [<code>Workload</code>](#workload)
     - [Group hierarchy](#group-hierarchy)
-      - [Runtime validation in Beta](#runtime-validation-in-beta)
+      - [Runtime validation](#runtime-validation)
   - [Changes in kube-scheduler](#changes-in-kube-scheduler)
     - [Multi-level gang scheduling](#multi-level-gang-scheduling)
       - [Prerequisites](#prerequisites)
@@ -84,6 +84,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [<code>PodSubGroup</code> and <code>PodSet</code>](#podsubgroup-and-podset)
   - [Naming of the new API](#naming-of-the-new-api)
   - [Validation of <code>CompositePodGroup</code>](#validation-of-compositepodgroup)
+  - [Mitigations for resource stealing](#mitigations-for-resource-stealing)
+    - [Double-pass evaluation within a single scheduling cycle](#double-pass-evaluation-within-a-single-scheduling-cycle)
+    - [Decoupled passes across distinct scheduling cycles](#decoupled-passes-across-distinct-scheduling-cycles)
+  - [Backtracking in the scheduling algorithm](#backtracking-in-the-scheduling-algorithm)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -105,20 +109,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -212,7 +216,14 @@ upon accordingly.
 - Guarantee an optimal result of multi-level scheduling algorithms.
   - Bin packing is inherently an NP-hard problem and it becomes even more
     complex for multi-level structures. While we aim to design efficient
-	heuristics, guaranteeing an optimal placement is out of scope.
+    heuristics, guaranteeing an optimal placement is out of scope.
+- Support differing group-level priorities across a single hierarchy tree.
+- Separate queueing priority from preemption priority.
+- Optimize scheduling for cases where `minCount` / `minGroupCount` is below the
+  actual count of pods / child groups, respectively.
+  - The proposal focuses on the most common use cases where these values equal
+    the actual counts of pods and child groups, while leaving the door open for
+    optimizing other cases in the future.
 
 ## Proposal
 
@@ -617,7 +628,6 @@ information.
 // CompositePodGroups are created by workload controllers (LWS, JobSet, etc...) from
 // Workload.compositePodGroupTemplates.
 // CompositePodGroup API enablement is toggled by the CompositePodGroup feature gate.
-// FOR API REVIEW: Alternative Names: CompositeGroup
 type CompositePodGroup struct {
 	metav1.TypeMeta
 
@@ -788,7 +798,6 @@ type GangGroupSchedulingPolicy struct {
 	// +optional
 	// +k8s:required
 	// +k8s:minimum=1
-	// +k8s:immutable
 	MinGroupCount int32
 }
 ```
@@ -832,7 +841,6 @@ API:
 // DisruptionMode defines how individual entities within a composite pod group can be disrupted.
 // Exactly one mode must be set.
 // +union
-// FOR API REVIEW: Alternative Names: GroupDisruptionMode
 type CompositeDisruptionMode struct {
 	// Single specifies that children can be disrupted independently from each other.
 	//
@@ -851,14 +859,12 @@ type CompositeDisruptionMode struct {
 
 // SingleCompositeDisruptionMode means that individual children of a CompositePodGroup
 // can be disrupted or preempted independently.
-// FOR API REVIEW: Alternative Names: SingleGroupDisruptionMode
 type SingleCompositeDisruptionMode struct {
 	// This is intentionally empty.
 }
 
 // AllCompositeDisruptionMode means that children of a CompositePodGroup can only be
 // disrupted or preempted together.
-// FOR API REVIEW: Alternative Names: AllGroupDisruptionMode
 type AllCompositeDisruptionMode struct {
 	// This is intentionally empty.
 }
@@ -887,18 +893,16 @@ groups configured with either the `Single` or `All` disruption modes.
 Runtime structure validation and more complex configurations will be considered for Beta and
 future releases once concrete production use-cases and community feedback are established.
 
-
-
 The `Priority` and the `PriorityClassName` fields are resolved in the exact same
 way as they already are for Pods and `PodGroups` - specifically, the `Priority`
 admission controller gets extended to additionally support the
 `CompositePodGroup` API.
 
-For the **Alpha** release, we enforce a strict single-priority constraint: all
-member groups and pods within a single group hierarchy tree **must share the exact
-same priority and PriorityClassName**. Support for differing group-level
-priorities under basic scheduling policies will be explored for the **Beta**
-release.
+We enforce a strict single-priority constraint: all member groups and pods
+within a single group hierarchy tree **must share the exact same priority**.
+Support for differing group-level priorities under basic scheduling policies it
+will be explored independently of KEP-6012 in a dedicated KEP when we prioritize
+the relevant usecases.
 
 The value of the `Priority` field is being used in the following two contexts:
 
@@ -1019,41 +1023,71 @@ of group objects that form a hierarchy which is not reflected in that
 
 - Is deeper than allowed,
 - Contains a cyclical parent reference relationship,
-- References to more than a single `Workload`.
+- References to more than a single `Workload`,
+- Contains differing priorities or preemption policies,
+- Contains semantically improper parent-child relationships:
+  - A `gang` parent group with a `basic` child group,
+  - A parent group with `All` disruption mode that has a child group with the
+    `Single` disruption mode.
 
 Each of these should be treated as a failure mode since it is essentially a
 manifestation of the API misuse. Because of that we will make kube-scheduler
-responsible for discovering them in runtime. Specifically, if scheduler notices
-any of these modes, it will update the status of all the groups within the group
-hierarchy accordingly (i.e. deeming those groups invalid) and will not proceed
-to scheduling it at all.
+responsible for discovering them at runtime and preventing invalid hierarchies
+from being scheduled. For rooted hierarchies that enter the scheduling cycle,
+the scheduler will also update the status of all groups within the hierarchy
+accordingly (deeming those groups invalid).
 
-##### Runtime validation in Beta
+##### Runtime validation
 
-A complete implementation of runtime hierarchy validation — including verifying that the group
-tree matches the definition in the corresponding `Workload` object — will be tackled in the
-**Beta** release. While the high-level goals are established, the detailed design requires
-careful consideration to guarantee consistent decisions and prevent race conditions.
+In Alpha, we initially envisioned watching `Workload` objects in `kube-scheduler`
+to verify that the runtime group hierarchy matches the template tree defined in
+the `Workload` specification, executed via a dedicated background loop in the
+scheduling queue. That loop would periodically scan stalled/incomplete structures
+in the queue (such as `workloadForest` and `incompletePodGroupPods`), validate
+hierarchies retained there for an extended period, and update group statuses to
+report misconfigurations.
 
-The initial outline and key challenges to address for the Beta design include:
+However, upon deeper evaluation for Beta, we decided against watching `Workload`
+objects in the scheduler and against running a background validation loop in the
+scheduling queue:
 
-*   **Watching `Workload` objects:** To validate whether the runtime group tree matches the
-    actual `Workload`-defined tree, the scheduler will potentially need to list and watch
-    `Workload` objects. Their total number is strictly bounded by the number of active pods
-    (and is typically much lower). Furthermore, because `Workload` objects are generally static,
-    their update churn is extremely low. Introducing this watch is therefore expected to have a
-    negligible impact on the scheduler's scalability.
-*   **Validation Loop in the Scheduling Queue:** Validating group hierarchies against
-    `Workload` definitions can be computationally heavier than simple single-pod validations.
-    To ensure this does not affect the scheduler's main loop performance, this validation will
-    happen in the scheduling queue as a separate loop. It will target stalled or long-standing
-    hierarchies (e.g., those residing in the queue for too long and failing to become
-    schedulable) that have spent excessive time in the unschedulable cache.
-*   **Race Conditions & Atomic Transitions:** A central challenge is the thread-safe
-    transition of group hierarchies. We must ensure that moving hierarchies between the
-    queue's "unschedulable hierarchies" (represented in memory by `pendingPodGroups`)
-    and the active queue (`activeQ`) is done atomically under a single lock to prevent race
-    conditions during concurrent updates and scheduling attempts.
+* **Unnecessary `Workload` watch overhead:** Watching `Workload` objects in
+  kube-scheduler solely to compare runtime group trees against `Workload`
+  templates adds cache overhead and cross-resource synchronization races without
+  being necessary for safe scheduling. Enforcing self-contained structural and
+  semantic invariants on the group hierarchy itself is sufficient.
+* **Unclear performance implications:** A background queue scan would need to
+  hold the scheduling queue lock while traversing hierarchies, potentially for a
+  longer period of time, negatively impacting the scheduling throughput.
+* **Increased complexity of the queue:** Making the scheduling queue execute API
+  status updates would require non-trivial synchronization to prevent races with
+  the scheduling cycle, as well as arbitrary tuning of scan intervals and
+  retention thresholds in `incompletePodGroupPods`.
+* **Validation in the scheduling cycle is necessary regardless:** Because group
+  and pod objects are created and updated asynchronously, a hierarchy can be or
+  become invalid at any point while residing in the scheduling queue. Even if
+  the queue attempted to validate hierarchies, the scheduling cycle would still
+  need to re-validate every popped hierarchy before scheduling it, rendering
+  queue-level validation redundant.
+
+Consequently, we do not enforce queued hierarchies to be valid in the scheduling
+queue. An invalid hierarchy can be queued and popped normally; instead, runtime
+hierarchy validation in Beta is performed exclusively at the beginning of the
+scheduling cycle each time a hierarchy is popped. Concretely, we extend the
+`validatePodGroup` method to verify the structural and semantic conditions
+listed in the previous section. If any check fails, the scheduling cycle aborts
+early and updates the statuses of all groups and pods within the hierarchy to
+mark them as invalid.
+
+Note that group hierarchies containing parent reference cycles cannot resolve a
+root group. While queue insertion and `PreEnqueue` traversal must guard against
+cycles to prevent infinite loops in the scheduling queue, cyclical hierarchies
+will remain in `workloadForest` and `incompletePodGroupPods` without ever
+entering the scheduling cycle. As a result, `validatePodGroup` will not execute
+for cycles and the scheduler will not update their status conditions. Because
+creating cyclical references requires a severe bug in a workload controller,
+this edge case is unlikely in practice; if operational experience proves
+otherwise, we can revisit adding out-of-band cycle reporting in the future.
 
 ### Changes in kube-scheduler
 
@@ -1082,16 +1116,20 @@ points:
    generalized polymorphically to wrap either a standalone Pod, a standalone
    `PodGroupInfo`, or a nested parent `CompositePodGroup` hierarchy, allowing
    the queue to sort and pop them uniformly. To preserve this root-only
-   queue property in the presence of unsynchronized object arrivals:
-   * Unobserved groups are tracked in a dedicated `pendingPodGroups`
-     structure and only moved into the active scheduling queue when the root of
-     their hierarchy (having no parent reference) is successfully observed and
-     cached.
-   * Member pods belonging to any nested child groups inside an unobserved
-     hierarchy are placed and held inside the queue's `pendingPodGroupMembers`
-     cache. These pods are blocked from active scheduling passes and only
-     promoted when the root of their hierarchy (a PG or CPG without a parent
-     reference) is successfully observed and enqueued.
+   queue property in the presence of asynchronous, potentially out-of-order
+   object arrivals:
+   * Observed groups are stored in a dedicated `workloadForest` structure. When
+     a child group is added, it proactively registers itself in a `children` map
+     under its parent key even if the parent has not yet been observed, avoiding
+     retroactive scans. A group with any ancestor missing cannot resolve a root
+     and stays in `workloadForest` without entering the active, backoff or
+     unschedulable queue.
+   * Member pods whose root group cannot be resolved are held in the
+     `incompletePodGroupPods` structure. These pods are bypassed during
+     scheduling passes while remaining receptive to informer updates and
+     deletions. Once the root group arrives and the hierarchy is complete, leaf
+     pods are drained from `incompletePodGroupPods` and dispatched to join the
+     queued root entity (or grafted into an already-queued root subtree).
 3. **`PreEnqueue` Extension Point:** Currently, this extension point is
    defined strictly at the individual `Pod` level. Under KEP-6012, this
    prerequisite remains unchanged: `PreEnqueue` will operate strictly at the
@@ -1101,10 +1139,10 @@ points:
    *(Note: Alternatively, one could introduce a group-level PreEnqueue
    extension point. However, this would require adding support for group-level
    queuing hints in the scheduler queue backend to react only to relevant
-   events. This adds substantial complexity, making it too risky to deliver in
-   the v1.37 milestone. We therefore select the Pod-level PreEnqueue as the
-   preferred choice for Alpha, and will explore group-level abstractions in
-   Beta).*
+   events. Due to high complexity of this approach, we stick to the Pod-level
+   PreEnqueue given it was deemed sufficient in Alpha. At the same time, this
+   design choice can be revisited in the future independently of the KEP if
+   needed).*
 4. **`PlacementFeasible` Extension Point:** Currently, this extension point exists
    at the `PodGroup` level (introduced in
    [PR #138643](https://github.com/kubernetes/kubernetes/pull/138643)).
@@ -1145,20 +1183,6 @@ points:
 
    For the exact algorithm determining how these statuses are returned and evaluated
    during recursive scheduling, see [GangScheduling Plugin Changes](#gangscheduling-plugin-changes).
-5. **`Permit` Extension Point:** Currently, the `Permit` extension point is defined
-   strictly at the `Pod` level. Under KEP-6012, this remains unchanged for Alpha: we
-   do not introduce any group-level Permit extension points at the framework level.
-   Instead, we reuse the existing Pod-level `Permit` extension point to implement
-   hierarchical checks within the `GangScheduling` plugin.
-   We recognize that this Pod-level approach is suboptimal for nested hierarchies
-   since it requires recursively validating the entire parent CPG tree structure
-   for every individual member pod. Furthermore, following the introduction of
-   the `PlacementFeasible` check, it is no longer clear whether a `Permit`-stage
-   verification is strictly necessary at all. During the Beta phase, we will
-   re-evaluate this requirement; if a `Permit`-stage check remains necessary, we
-   will explore introducing a dedicated, framework-level group/hierarchy
-   `Permit` extension point (operating at the `PodGroup` or `CompositePodGroup`
-   level) to optimize and deduplicate these validations.
 
 ##### GangScheduling Plugin Changes
 
@@ -1222,39 +1246,18 @@ points:
      and their status is checked recursively using the returned `PlacementFeasible`
      values.
 
-3. **`Permit`:**
-   Executed at the Permit stage of the scheduling cycle strictly at the
-   individual `Pod` level. We extend the implementation of the existing
-   `Permit` plugin to climb the parent group references and traverse the tree
-   structure to verify constraints before releasing member pods for final
-   binding:
-   * **If the Pod belongs to a standalone group (not part of a hierarchy):**
-     We do not introduce any changes. The plugin relies on the pre-existing
-     behavior to hold member pods in a waiting state and release them once
-     the group's `minCount` member pods are successfully scheduled.
-   * **If the Pod belongs to a group hierarchy tree (nested under a parent
-     CPG):**
-     We override the flat group-level checks. When a member pod is evaluated,
-     the plugin climbs parent references up to the root CPG ancestor. It
-     traverses the entire hierarchy tree structure in the permit cache
-     (ensuring all nested child groups satisfy parent `minGroupCount` and
-     child `minCount` thresholds) starting at this root level, releasing the
-     waiting member pods for final binding only when the entire tree's
-     constraints are satisfied.
-
-4. **`EventsToRegister`:**
+3. **`EventsToRegister`:**
    Currently, the flat `GangScheduling` plugin's `EventsToRegister` method
    registers a subscription for `PodGroup` ADD events to promote blocked units.
    To support multi-level hierarchies, we extend this method to additionally
    subscribe to `CompositePodGroup` ADD events.
 
-   Even though the scheduling specs (such as `minGroupCount`) are immutable under
-   Alpha to limit design complexity, subscribing to `CompositePodGroup` Add
-   events remains strictly required: as a controller dynamically creates and adds
-   new nested child `CompositePodGroup` objects to the API server, their arrival
-   modifies the runtime hierarchy tree structure, satisfying the parent CPG's
-   `minGroupCount` threshold and promoting blocked root CPGs from the
-   unschedulable queue.
+   In Beta, we are going to support elastic multi-level workloads by making the
+   `minGroupCount` field mutable. In case of a group hierarchy held in the
+   unschedulable queue, decreasing the value of `minGroupCount` for one of its
+   groups might make the whole group admissible to the active queue. Because of
+   that, the `GangScheduling` plugin will also subscribe to the
+   `CompositePodGroup` UPDATE events.
 
 ##### Recursive Scheduling Cycle Execution
 In `schedule_one_podgroup.go`, the scheduler processes a popped root unit (a root
@@ -1297,17 +1300,16 @@ before final binding:
 > simulated sequentially in their pre-sorted order without backtracking. If a
 > child group placement (e.g. `PG-1`) consumes resources in a way that
 > subsequently blocks its sibling (e.g. `PG-2`) from meeting its `minCount`
-> minimum requirement, which in turn prevents the parent CPG from satisfying
-> its `minGroupCount` threshold, the scheduler does not retroactively
-> evaluate alternative placements for the earlier child group.
+> requirement, which in turn prevents the parent CPG from satisfying its
+> `minGroupCount` threshold, the scheduler does not retroactively evaluate
+> alternative placements or orderings for the earlier child group.
 >
-> Enforcing a greedy recursive choice without backtracking prevents exponential
-> scheduling complexity at the cost of sub-optimal decisions that may trigger
-> preemption. While sufficient for the **Alpha** phase, these greedy
-> scheduling algorithm trade-offs will be re-evaluated for the **Beta**
-> release to explore bounded backtracking heuristics (such as restricted
-> search depth or bounded branches) that optimize overall scheduling success
-> rates.
+> While we considered bounded backtracking heuristics for **Beta**, we decided
+> against implementing it in the scope of this KEP. Because search heuristics
+> can be introduced in a backward-compatible manner, this decision can be
+> revisited in future releases if production demand arises. See
+> [Backtracking in the scheduling algorithm](#backtracking-in-the-scheduling-algorithm)
+> for further details.
 
 ###### In-memory simulation state revert across the recursion stack
 
@@ -1326,15 +1328,13 @@ To resolve this, the recursive algorithm does not defer execution of the
 revert closures locally. Instead, as each child group runs its in-memory
 simulation, the registered `revertFn` closures are returned and accumulated
 (`[]revertFn`) up the recursion stack to the root CPG. Upon exit from the
-root-level `groupRecursiveSchedulingDefaultAlgorithm` execution pass, the
-accumulated revert closures are always executed all-at-once, cleanly
-restoring the shared `nodeInfoSnapshot` to its pre-execution state before the
-separate, asynchronous binding cycle triggers. To preserve the cache's
-transactional integrity, these accumulated reverts must be executed in the
-exact reverse order of their registration (matching how native deferred
-execution operates), ensuring the last registered revert is called first to
-cleanly roll back node allocations.
-
+top-level `runRootSchedulingAlgorithm` execution pass, the accumulated revert
+closures are always executed all-at-once, cleanly restoring the shared
+`nodeInfoSnapshot` to its pre-execution state before the separate, asynchronous
+binding cycle triggers. To preserve the cache's transactional integrity, these
+accumulated reverts must be executed in the exact reverse order of their
+registration (matching how native deferred execution operates), ensuring the
+last registered revert is called first to cleanly roll back node allocations.
 
 ##### Scheduling sequence for PodGroups
 
@@ -1343,9 +1343,9 @@ To ensure a deterministic processing sequence, child groups under a
 group objects are added to queue memory. During the scheduling cycle, the
 scheduler evaluates descendant child groups in this pre-sorted order.
 
-For the **Alpha** release, we can start with something simple, like e.g. sorting
-`PodGroups` / `CompositePodGroups` by their creation timestamp, and changing that
-that logic in beta if necessary.
+Since Alpha, the order of evaluation of child groups is induced by their
+creation timestamps which is consistent with the order in which Pods in leaf
+`PodGroups` are evaluated in the scheduling algorithm.
 
 ###### Preemption triggering rules
 Preemption is strictly evaluated and executed only at the root level of the
@@ -1379,18 +1379,49 @@ statuses:
 * **During subsequent cycles:** In subsequent scheduling cycles, when the root CPG
   with pending extra or newly scaled member pods pops from the queue, the
   standard recursive scheduling algorithm is executed for the root CPG
-  hierarchy. If the recursive algorithm fails to place any (for gang policy)
-  or all (for basic policy) of the pending member pods, the scheduler triggers
-  the preemption engine at the root CPG level to release capacity for the remaining
-  unschedulable pods, even if some other pending pods were successfully placed in
-  the current cycle.
+  hierarchy. If at least one pending member pod is placed, the scheduler commits
+  the bindings for the newly placed pods without triggering preemption, and any
+  remaining unscheduled pods are returned to the queue for the next cycle. If the
+  recursive algorithm fails to place even a single pending member pod, the
+  scheduler triggers the preemption engine at the root CPG level to release
+  capacity for the unschedulable pods.
 
 In summary, workload preemption is triggered at the root level if and only if:
 the root-level `PlacementFeasible` returns `Unschedulable` (i.e., the scheduling
 policy is not satisfied but is resolvable via preemption), OR the scheduling
 policy is satisfied, the hierarchy was already scheduled in a previous cycle,
-and the scheduler failed to place some (for gang policy) or all (for basic policy)
-pending member pods in the current cycle.
+and the scheduler failed to place any of the pending member pods in the current
+cycle.
+
+For Beta, we considered adjustments to the logic responsible for deciding
+whether to trigger preemption during subsequent scheduling attempts if not all
+pending pods are successfully placed. We brainstormed an approach that extends
+the notion of "partially scheduled" groups originally proposed in the gang
+scheduling [KEP-4671](https://github.com/kubernetes/enhancements/pull/6194) to
+CPGs and implemented a proof-of-concept in
+[PR #142314](https://github.com/kubernetes/kubernetes/pull/142314). However,
+after closer inspection of the POC, we noticed various problems with this
+approach:
+- Properly determining whether the cycle handles an initial or subsequent
+  scheduling attempt for a root CPG would require leaking the business logic of
+  the `GangScheduling` plugin to policy-agnostic layers of the scheduler.
+- Reasoning about when a root CPG with basic policy is partially scheduled
+  becomes difficult when the group hierarchy consists of a combination of basic
+  and gang groups.
+- The control flow around `PlacementFeasible` and `PodGroupPostFilter` becomes
+  much more complex in the scheduling cycle, additionally making these two
+  interfaces more difficult for out-of-tree plugins to implement.
+- It is unclear which candidate placements to prefer in TAS, as it might make
+  more sense to select a lower-scoring fully scheduled placement over a
+  higher-scoring partially scheduled one in order to reduce the chance of
+  invoking preemption unnecessarily.
+
+The issues above significantly raise the complexity of a prospective adjustment
+to the current rules governing the preemption decision inside the scheduling
+cycle for subsequent scheduling attempts. Because of this, we decided to retain
+the current logic implemented in the Alpha phase, favoring its simplicity. This
+decision can be revisited as a new follow-up feature if we gather more feedback
+from users that the current behavior does not satisfy their needs.
 
 ###### Inadmissible child groups
 A root `CompositePodGroup` might successfully pass the `PreEnqueue` queue filter,
@@ -1422,73 +1453,43 @@ already handled correctly in these scenarios: the status evaluation will natural
 resolve to `UnschedulableAndUnresolvable` once it determines that the minimum
 threshold cannot be satisfied, preventing futile preemption loops entirely.
 
-However, as a performance optimization, we can skip evaluating the simulation
-of inadmissible branches entirely:
-* **Alpha:** Pre-simulation feasibility is not executed in the Alpha phase.
-  The scheduler performs the sequential child group simulations, relying on the
-  post-evaluation `PlacementFeasible` check to trigger early aborts.
-* **Beta:** We will implement an optimized pre-simulation check. The scheduler
-  will invoke the `PlacementFeasible` checker *before* starting the recursive
-  in-memory simulation of child groups. If the pre-simulation check determines
-  that a subtree is inadmissible (e.g., a nested child group is missing too many
-  member pods to ever satisfy its `minCount`), it immediately returns
-  `UnschedulableAndUnresolvable` early, bypassing all child pod placements
-  entirely and saving costly CPU cycles.
+In addition, as a performance optimization, we can skip evaluating the simulation
+of inadmissible branches entirely. In v1.37, we implemented an optimized
+pre-simulation check which invokes the `PlacementFeasible` checker *before*
+starting the recursive in-memory simulation of child groups. If the
+pre-simulation check determines that a subtree is inadmissible (e.g., a nested
+child group is missing too many member pods to ever satisfy its `minCount`), it
+immediately returns `UnschedulableAndUnresolvable` early, bypassing all child
+pod placements entirely and saving costly CPU cycles.
 
 ###### Resource stealing under greedy evaluation
-When a CPG is evaluated, child groups are processed sequentially in their
-pre-sorted order. Under the greedy evaluation, child groups try to
-schedule as many member pods as possible (potentially exceeding their `minCount`
-requirements).
+
+When a `CompositePodGroup` is evaluated, child groups are processed sequentially
+in their pre-sorted order. Under greedy evaluation, child groups attempt to
+schedule as many member pods as possible, potentially exceeding their `minCount`
+requirements.
 
 This can lead to **resource stealing** in capacity-constrained clusters: an
 early, greedy child group consumes all available slots, preventing a sibling
 child group from reaching its `minCount` and causing the entire root CPG gang
 to fail scheduling.
 
-For the **Alpha** phase, we do not optimize or solve this resource stealing
-challenge for complex, constrained layouts. Instead, we focus on ensuring that
-the most common and typical use-cases work out-of-the-box: scenarios
-where the minimum constraints equal the actual size (`minCount = actualCount`
-and `minGroupCount` equals the total child group count). Under this standard
-baseline, this problem doesn't exist.
+To mitigate this problem, we initially planned to introduce a non-greedy mode to
+the scheduling algorithm in Beta. After exploring this direction more deeply, we
+decided to retain the greedy evaluation for the time being and to defer the
+prospect of adjusting the evaluation logic in the algorithm to the future
+releases.
 
-For the **Beta** release, we will evaluate two distinct alternatives to solve
-resource stealing for arbitrary, multi-level layouts:
+The primary rationale is that we prioritize the most common distributed workload
+use cases, where `minCount` equals the total pod count and `minGroupCount`
+equals the total child group count. In this common model, all pods and groups
+are strictly required, so resource stealing between siblings cannot occur.
+Retaining greedy evaluation allows us to deliver the core `CompositePodGroup`
+API and framework as soon as possible without introducing premature complexity.
 
-* **Double-run in a single cycle:** The scheduler runs the recursive algorithm
-  twice within a single scheduling cycle: a non-greedy pass first to place the
-  minimal gang, followed by a greedy pass for extra pods. This approach is highly
-  responsive; if active member pods are deleted and cause a scheduled CPG to
-  fall below its minimum thresholds, a single active cycle can immediately
-  recover the gang via a non-greedy pass. In terms of complexity, running two
-  passes in a single cycle does not significantly degrade latency, since the CPU
-  cost is strictly dominated by individual pod schedulings (each pod is
-  still evaluated exactly once end-to-end in both models).
-* **Distinct scheduling cycles:** The scheduler runs a single non-greedy pass in the
-  active cycle, commits the minimal gang, and lets extra pending member pods
-  trigger separate, subsequent scheduling cycles (running in greedy mode) to
-  place the remaining pods. This approach reduces scheduling latency under single
-  passes and mitigates Head-of-Line (HoL) queue blocking by allowing
-  higher-priority workloads to interleave and schedule in between the separate
-  greedy passes. A potential drawback is that cycle mode is not a one-off
-  transition from non-greedy to greedy. If active member pods are deleted (e.g. due to
-  node failures) and cause the CPG tree to drop below its
-  `minGroupCount` threshold, the scheduling policy is no longer satisfied. The
-  scheduler must then dynamically oscillate the cycle mode back to non-greedy
-  to re-secure the minimal gang. Coordinating this behavior
-  across separate, decoupled scheduling passes in the queue introduces
-  complexity in the code.
-
-Under topology-aware scheduling, a multi-pass approach also introduces 
-a key trade-off: a non-greedy first pass may select and lock in an optimal 
-topology placement for the minimal gang that subsequently prevents the second 
-greedy pass from placing optional pods (whereas a single pass could identify
-a globally feasible topology for all pods). This trade-off is unavoidable and
-would occur even in single-pass models when optional pods are added later,
-representing a fundamental trade-off between securing placements for the
-minimal gang and finding the globally optimal topology configuration. We will
-evaluate these topological trade-offs in detail during the Beta phase.
+For a detailed analysis of the possible solutions, their trade-offs, and more
+detailed rationale for deferral, see
+[this section](#mitigations-for-resource-stealing) in the alternatives.
 
 ###### Handling new pods for scheduled hierarchies
 If a controller scales up a scheduled `CompositePodGroup` hierarchy by
@@ -1516,18 +1517,77 @@ essentially a heuristic that relaxes the requirement for global optimum in
 exchange for drastically reduced computational complexity.
 
 In particular, this implies that `kube-scheduler` might fail to find a placement
-for a multi-level gang even despite the sufficiency of resources in the cluster.
-This can be a side effect of suboptimal placement decisions that were made for
-individual Pods, e.g. due to the sequence in which placement for individual Pods
-of a gang was established. This problem already exists in case of scheduling a
-heterogeneous `PodGroup` gang but it might manifest itself to a larger degree.
+for a multi-level gang even when sufficient resources exist in the cluster.
+This can be a side effect of suboptimal placement decisions made for individual
+Pods or child groups—for example, when evaluating heterogeneous sibling child
+groups in a fixed, pre-sorted sequence without exploring alternative orderings.
+While this issue already exists when scheduling a heterogeneous flat `PodGroup`
+gang, it can manifest more acutely in multi-level hierarchies where early child
+group placements consume resources needed by later siblings.
 
-For Beta, we will decide whether or not we need additional heuristics to
-increase the chance of getting a group hierarchy scheduled. That said,
-regardless of what we eventually do, we will not overcome the problem's
-NP-hardness with heuristics. Regardless of the ultimate path taken, we will
-comprehensively document these scheduling limitations to ensure users are fully
-aware of potential sub-optimal placement scenarios.
+That said, we decided not to implement any search heuristics like backtracking
+in the scope of this KEP. Any backtracking mechanism would incur a non-trivial
+overhead to the scheduling latency and substantially complicate the logic of the
+scheduling algorithm. In addition, a potential return on investment seems
+unclear at the moment.
+
+Further rationale for this decision, together with an analysis of trade-offs, is
+covered in the [alternatives section](#backtracking-in-the-scheduling-algorithm)
+about backtracking.
+
+###### Diagnostics and workload recommendations
+
+Because `kube-scheduler` evaluates sibling child groups sequentially in a
+greedy, single-pass manner without backtracking, any hierarchy containing
+heterogeneous groups or pods that compete for the same nodes or shared topology
+domains can experience order-dependent placement failures.
+
+To alleviate this limitation in Beta without introducing backtracking in the
+scheduling algorithm, we combine hierarchical status diagnostics in the
+scheduler with user-facing workload design guidance in the Kubernetes
+documentation:
+
+1. **Hierarchical Failure Diagnostics (Status Propagation):**
+   When an ancestor `CompositePodGroup` fails to satisfy its scheduling policy
+   or constraints, any descendant child groups and member Pods that succeeded
+   during their own isolated in-memory simulation (or were skipped due to an
+   early abort) cannot proceed to binding. To prevent silent or misleading
+   states where a leaf group appears schedulable or unevaluated while its pods
+   remain pending, the scheduler propagates the nearest failed ancestor's status
+   down the hierarchy. Specifically, relevant conditions on affected descendant
+   groups and pods are updated with the `Unschedulable` reason and a message
+   identifying the failed ancestor `CompositePodGroup` and the underlying
+   failure cause.
+
+2. **Workload Design Recommendations:**
+   While scheduling success cannot be guaranteed when heterogeneous groups
+   compete for shared capacity, users and workload controllers can optimize the
+   chance of finding a successful placement by following three structural best
+   practices:
+   * **Keep individual `PodGroups` homogeneous:** Group pods with identical
+     resource requests, node selectors, and scheduling constraints into the same
+     leaf `PodGroup`. When all pods within a `PodGroup` (or all replicated child
+     groups within a `CompositePodGroup`) are homogeneous, greedy placement is
+     mathematically invariant to evaluation order. Distinct pod roles (e.g.,
+     driver vs. workers) should be split into separate homogeneous `PodGroups`
+     under a parent `CompositePodGroup`.
+   * **Segregate non-competing heterogeneous groups onto disjoint node pools:**
+     When heterogeneous child groups do not require the same physical node
+     hardware (for example, CPU-only coordinator/driver pods vs. GPU/TPU worker
+     pods), use `nodeSelector`, node affinity, or taints and tolerations to
+     prevent flexible pods from landing on specialized nodes required by
+     stricter sibling groups. When sibling groups target disjoint sets of
+     candidate nodes, evaluation order between them cannot cause resource
+     stealing or order-induced deadlocks.
+   * **Scope topology constraints to the minimal required subtree:** Attach
+     topological constraints (`SchedulingConstraints.Topology`) only to the
+     specific `CompositePodGroup` or `PodGroup` subtrees that strictly require
+     high-bandwidth physical co-location, rather than placing them on the root
+     `CompositePodGroup` by default. Using a root `CompositePodGroup` without
+     topology constraints provides coordinated gang scheduling and collective
+     preemption fate-sharing across the entire workload without forcing
+     non-topological components to compete for capacity inside constrained
+     topology domains.
 
 #### Integration with workload-aware preemption
 
@@ -1619,10 +1679,12 @@ the root CPG, the scheduler invokes the preemption algorithm strictly at the roo
 > for placing $C$ child groups, each with $D$ placement options, from
 > exponential ($\mathcal{O}(D^C)$) to linear ($\mathcal{O}(C \cdot D)$).
 >
-> While this greedy search trade-off helps prevent severe scheduling latency
-> degradation in the **Alpha** phase, it increases placement failure rates in
-> capacity-constrained environments. Bounded backtracking heuristics and their
-> latency trade-offs will be thoroughly evaluated for **Beta**.
+> While avoiding backtracking can increase placement failures in the
+> capacity-constrained clusters, we decided not to implement backtracking in
+> the TAS algorithm in scope of this KEP. Adding multi-level topology rollback
+> logic and evaluating domain permutations would cripple scheduler throughput
+> for uncertain gains. Backtracking search heuristics can be introduced in a
+> backward-compatible manner in the future if usage patterns warrant them.
 
 ###### Example
 Consider a workload consisting of a root `CompositePodGroup` (`CPG-root`)
@@ -1723,9 +1785,6 @@ The scheduling algorithm resolves this hierarchy recursively:
    * The scheduler commits the resolved layout and proceeds to bind the pods of
      `PG-1` and `PG-2` to their physical target nodes inside `block-B`.
 
-
-
-
 ##### Preemption in topology-aware scheduling
 
 Workload preemption under topology constraints is the domain of [KEP-5710]
@@ -1786,9 +1845,8 @@ suite in `test/integration/scheduler/`) to cover the hierarchical and multi-leve
 the CPG API and the recursive scheduling resolutions:
 
 - **CPG Queueing and Requeueing:**
-  - Verify that CPG hierarchies with unobserved parents are buffered inside
-    `pendingPodGroups` and not promoted to the active scheduling queue until
-    the root CPG object is observed.
+  - Verify that CPG hierarchies with unobserved parents are not promoted to the
+    active scheduling queue until the root CPG object is observed.
   - Verify that the arrival of cluster events successfully triggers queueing
     hints to move blocked CPG hierarchies from the unschedulable queue back
     to the active queue (`activeQ`) or backoff queue (`backoffQ`).
@@ -1854,42 +1912,36 @@ More tests will be added for beta release.
 
 - `CompositePodGroup` object is protected against deletion if any group refers
   to it.
-- At least one true workload controller (e.g. `JobSet`) is integrated with the
-  `CompositePodGroup` API.
+- At least one true workload controller (e.g. `JobSet`) has designed the
+  integration with the `CompositePodGroup` API.
 - Scheduler detects invalid runtime group hierarchies (i.e. hierarchies which
   are too deep, have a cycle, refer to two or more Workloads, or have an
   invalid combination of scheduling policies or disruption modes at different
   levels of the hierarchy).
-- The recursive greedy scheduling search trade-offs are re-evaluated, and a
-  decision on incorporating advanced backtracking heuristics (such as
-  restricted search depth or bounded branches) is made to optimize scheduling
-  success rates for multi-level gangs.
+- Trade-offs related to the introduction of backtracking heuristics in the
+  scheduling algorithm are analyzed, supporting the decision to not introduce
+  backtracking.
 - Scheduler bypasses futile scheduling cycles for inadmissible nested child
   groups during recursion by extending `PlacementFeasible` to execute checks
   prior to in-memory scheduling (to protect performance and avoid redundant
   preemption passes).
-- A non-greedy `CompositePodGroup` scheduling cycle mode is introduced and
-  re-evaluated to mitigate resource stealing and gang deadlock occurrences
-  among sibling child groups in capacity-constrained environments.
-- Support for differing group-level priorities across a single hierarchy tree
-  under basic scheduling policies and separating queueing priority from
-  preemption priority is re-evaluated.
+- Resource stealing-related trade-offs are analyzed, supporting the decision to
+  not make adjustments to the greedy scheduling cycle algorithm.
 - The `minGroupCount` field of the `CompositePodGroup` objects becomes
   mutable at runtime (aligning with the pre-existing mutable `minCount` field
   in `PodGroup` objects).
 - Scheduler diagnostics and recommendations with regards to the scheduling order
-  are re-evaluated to improve troubleshooting and scheduling success rates.
-- GangScheduling's `PlacementFeasible` extension point is changed to propagate
-  pod-level `UnschedulableAndUnresolvable`, making the logic identical across all levels.
-- The logic for triggering preemption for subsequent scheduling is re-evaluated in case
-  the scheduling policy is not initially satisfied (e.g., PG has been disrupted or `minCount`
-  has changed).
+  are analyzed and documented to improve troubleshooting and scheduling success
+  rates.
+- Trade-offs related to adjusting the preemption triggering rules for subsequent
+  scheduling attempts are analyzed, supporting the decision to retain the
+  preemption triggering logic implemented in Alpha.
 
 #### GA
 
 - All e2e tests for the `CompositePodGroup` API are added and graduated to
   conformance tests.
-- TBD in for Beta release
+- All issues identified during Beta are resolved.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1937,20 +1989,33 @@ the feature is in use) behaves as follows:
   scheduling member pods strictly at the flat, individual or standalone `PodGroup`
   level.
 - While the old scheduler will continue to run safely and will not crash, it will
-  not satisfy the multi-level topology, gang, or preemption constraints. For
-  topology constraints specifically, this will likely lead to invalid, flat
-  placement decisions (e.g., placing member pods across different racks instead of
-  satisfying CPG-level topology constraints). Crucially, these invalid topology
-  placements are irreversible by the scheduler itself; once pods are bound to
-  nodes, the scheduler cannot reschedule them on its own, even after a new
-  scheduler leader is upgraded to the new version. Only newly scheduled pods (or
-  pods recreated after eviction) will be correctly resolved (if possible) under the
-  hierarchical constraints once the upgrade is complete.
-  Note that this is identical to the pre-existing version skew behavior for flat
-  `PodGroup` features (e.g., flat topology-aware scheduling) during control plane
-  rolling upgrades. Therefore, the standard recommendation applies:
-  users should not use the new APIs/fields until the rolling upgrade of
-  `kube-scheduler` is fully completed.
+  not satisfy the multi-level topology, gang, or preemption constraints. In
+  particular, the placement it chooses when considering each `PodGroup` as a flat,
+  independent group may not satisfy the constraints of its ancestor
+  `CompositePodGroups` (e.g., member pods of a `CompositePodGroup` constrained to a
+  single rack may be spread across different racks). These placements are
+  irreversible by the scheduler itself; once pods are bound to nodes, the
+  scheduler cannot reschedule them on its own, even after a new scheduler leader
+  is upgraded to the new version.
+- Crucially, once a `kube-scheduler` instance supporting `CompositePodGroups`
+  takes over, it may not be possible to schedule any other pod of such a group
+  hierarchy. The scheduler takes the already bound pods of the hierarchy into
+  account - candidate placements for a `CompositePodGroup` are restricted to
+  those that include all the nodes where the already scheduled pods from its
+  subtree are running (consistent with how [KEP-5732] handles partially
+  scheduled `PodGroups`). If these pods violate the `CompositePodGroup`'s
+  topology constraint (i.e., they span multiple topology domains), no such
+  placement exists. As a result, the pending pods of the hierarchy (e.g., pods
+  that were still pending during the upgrade, pods added by a scale-up, or pods
+  recreated after a failure or eviction) may remain `Pending` indefinitely.
+  Other workloads are not affected. In such case, the operator is expected to
+  manually delete the faulty pods to unblock further scheduling.
+
+Note that this is analogous to the pre-existing version skew behavior for flat
+`PodGroup` features (e.g., flat topology-aware scheduling in [KEP-5732]) during
+control plane rolling upgrades. Therefore, the standard recommendation applies:
+users should not use the new APIs/fields until the rolling upgrade of
+`kube-scheduler` is fully completed.
 
 ## Production Readiness Review Questionnaire
 
@@ -1976,7 +2041,6 @@ This section must be completed when targeting alpha to a release.
     - This dependency is programmatically verified during component initialization (the
       components will log a configuration error and disable `CompositePodGroup` processing
       if any required dependency gate is missing).
-    - We will re-evaluate this simplified feature gate dependency model in Beta if needed.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1999,13 +2063,32 @@ CompositePodGroup objects would be preserved in storage as well.
 
 The feature starts working again.
 
+However, while the feature was disabled in kube-scheduler, pods belonging to
+existing group hierarchies might have been scheduled as members of flat,
+independent `PodGroups`, and their placement may not satisfy the constraints of
+their ancestor `CompositePodGroups` (e.g., pods of a `CompositePodGroup`
+constrained to a single rack might have been spread across multiple racks).
+This is the same failure mode as described in the
+[Version Skew Strategy](#version-skew-strategy) section: after the feature is
+reenabled, it may not be possible to schedule any other pod belonging to such a
+group hierarchy, since no candidate placement of the affected
+`CompositePodGroup` can include all the nodes where its already scheduled pods
+are running.
+
+In such case, the operator is expected to delete the faulty pods manually to
+unblock further scheduling, i.e. the pods of the affected `CompositePodGroup`
+subtree whose placement violates its constraints (in the simplest case, all of
+its bound pods). Once recreated (typically by the workload controller), these
+pods can be scheduled together with the remaining pods of the hierarchy in a way
+that satisfies the multi-level constraints.
+
 ###### Are there any tests for feature enablement/disablement?
 
 The scheduler algorithm changes are purely in-memory and don't require any dedicated
 enablement/disablement tests - the logic will be covered by regular feature tests.
 
 For the newly introduced API fields, dedicated enablement/disablement tests at the
-kube-apiserver registry layer will be added in Alpha.
+kube-apiserver registry layer will be added in Beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -2015,22 +2098,37 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Workloads that do not use the `Workload` and `PodGroup` APIs should not be
+impacted, since the functionality remains unchanged for them. During a rolling
+upgrade, if the active scheduler instance has the feature disabled, it will
+schedule Pods using the single level non-recursive `PodGroup` scheduling
+algorithm (or the standard pod-by-pod method for standalone Pods). This results
+in a fallback to the status quo behavior, meaning that Pods and `PodGroups` will
+be still scheduled, but `CompositePodGroup`-level scheduling constraints won't
+be applied.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+If the feature is subsequently enabled, already running pods of the affected
+group hierarchies continue to run, but the scheduler may be unable to place any
+subsequent pods belonging to these hierarchies due to the newly enforced CPG-level
+constraints (see [Version Skew Strategy](#version-skew-strategy) for details and
+the mitigation).
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+- `scheduler_schedule_attempts_total{result="error"}`: A sudden spike indicates internal errors or
+  panics within the scheduling loop, possibly caused by the new logic.
+- `process_start_time_seconds`: Frequent resets of this metric indicate that the scheduler process
+  is crashing and restarting (crash loop).
+- `scheduler_pod_scheduling_sli_duration_seconds`: A significant regression in P99 latency for
+  standalone Pods (without `spec.schedulingGroup` specified) would indicate that the overhead of the
+  new logic is unacceptable.
+- `scheduler_podgroup_scheduling_algorithm_duration_seconds{type="podgroup"}`: A significant
+  regression in P99 latency for standalone PodGroups would indicate that the overhead of the new
+  logic is unacceptable.
+- `scheduler_podgroup_schedule_attempts_total`: Consistently high failure rates for valid
+  `CompositePodGroups` compared to successful attempts.
+- `scheduler_queued_entities{type="compositepodgroup"}`: Unexpectedly high value may indicate issues
+  with the queueing algorithm.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -2040,11 +2138,47 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+We'll perform manual testing of the upgrade -> downgrade -> upgrade path using the following sequence:
+
+1. Start a local Kubernetes v1.38 cluster with `CompositePodGroup` feature gate disabled
+   and both `GenericWorkload` and `TopologyAwareWorkloadScheduling` enabled.
+2. Attempt to create a PodGroup object with `spec.parentCompositePodGroupName` set.
+3. The API server rejects the request (using the `spec.parentCompositePodGroupName` field is rejected by the
+   API server's validation when the gate is disabled).
+4. Restart API Server, Scheduler and Controller Manager with `CompositePodGroup` feature gate enabled.
+5. Create a Workload object `wl1` defining a template hierarchy with one CompositePodGroup template that has
+   two child PodGroup templates.
+   Create a CompositePodGroup object `cpg1` referencing `wl1` with `minGroupCount=2`.
+6. Create a PodGroup object `pg1` referencing `wl1`, with `spec.parentCompositePodGroupName` set to `cpg1` and `minCount=2`.
+7. Create two Pods, each with a `spec.schedulingGroup` set to `pg1`.
+8. The Pods stay in `Pending` state (waiting for the multi-level gang to assemble). Verify that
+   `scheduler_queued_entities{type="compositepodgroup"}` metric is incremented.
+9. Create a PodGroup object `pg2` referencing `wl1`, with `spec.parentCompositePodGroupName` set to `cpg1` and `minCount=2`.
+10. Create a Pod with a `spec.schedulingGroup` set to `pg2`.
+11. The 3 Pods continue to stay in `Pending` state (waiting for the multi-level gang to assemble).
+12. Create another Pod with a `spec.schedulingGroup` set to `pg2`.
+13. All 4 Pods are scheduled successfully in the same cycle (Gang Scheduling works).
+14. Create a Workload object `wl2` defining a template hierarchy with one CompositePodGroup template that has
+    three child PodGroup templates.
+    Create a CompositePodGroup object `cpg2` referencing `wl2` with `minGroupCount=3`.
+15. Create a PodGroup object `pg3` referencing `wl2`, with `spec.parentCompositePodGroupName` set to `cpg2` and `minCount=2`.
+16. Create two Pods with `spec.schedulingGroup` set to `pg3`.
+17. Verify that the Pods stay in `Pending` state (waiting for the multi-level gang to assemble).
+18. Update the API Server, Scheduler and Controller Manager with `CompositePodGroup` feature gate being disabled again.
+19. Verify that the Pods created in step 16 are now scheduled successfully. With `CompositePodGroup` disabled,
+    the scheduler ignores `spec.parentCompositePodGroupName` and evaluates `pg3` as a flat PodGroup,
+    where its `minCount=2` requirement is fully satisfied.
+20. Update the API Server, Scheduler and Controller Manager with `CompositePodGroup` feature gate being enabled again.
+21. Create a PodGroup object `pg4` referencing `wl2`, with `spec.parentCompositePodGroupName` set to `cpg2` and `minCount=2`.
+22. Create two Pods with `spec.schedulingGroup` set to `pg4`.
+23. Verify that the Pods stay in `Pending` state (waiting for the multi-level gang to assemble).
+24. Create a PodGroup object `pg5` referencing `wl2`, with `spec.parentCompositePodGroupName` set to `cpg2` and `minCount=2`.
+25. Create two Pods with `spec.schedulingGroup` set to `pg5`.
+26. Verify that all 6 Pods belonging to the group hierarchy with `cpg2` as a root group are now scheduled successfully.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -2057,47 +2191,39 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Operators can check the `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup"}`
+metric. A value greater than zero indicates that the scheduler is processing `CompositePodGroups`
+in the PodGroup scheduling cycle.
+
+Alternatively, checking for the existence of `CompositePodGroups` via
+`kubectl get compositepodgroups` confirms that users are actively using the
+feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] API .status
+  - Object: CompositePodGroup
+  - Condition Name: `CompositePodGroupInitiallyScheduled`
+- [X] Metrics
+  - Metric name: `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup"}`
+  - Value is greater than 0.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+Since there are no formal SLOs for the kube-scheduler apart from scalability SLOs, we define the objectives for this
+feature primarily in terms of non-regression to ensure that multi-level recursive scheduling does not degrade the
+performance of the standard pod scheduling loop or flat pod group scheduling:
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+- Scheduling Latency for Standalone Pods: There should be no significant regression in scheduling latency
+  (`scheduler_pod_scheduling_sli_duration_seconds`) for standalone Pods (pods without `spec.schedulingGroup`)
+  compared to the baseline with the `CompositePodGroup` feature gate disabled.
+- Scheduling Latency for Flat PodGroups: The algorithm duration for flat, single-level `PodGroups`
+  (`scheduler_podgroup_scheduling_algorithm_duration_seconds{type="podgroup"}`) should not significantly regress
+  compared to the baseline before enabling the `CompositePodGroup` feature gate.
+- System-wide Scheduling Throughput: There should be no significant regression in overall cluster scheduling
+  throughput (pods/s) when scheduling pods attached to a `CompositePodGroup` hierarchy compared to scheduling an
+  equivalent number of pods under flat `PodGroups`. This can be observed via the rate of Pod binding calls arriving
+  at the API server (`apiserver_request_total{resource="pods", subresource="binding"}`).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -2105,19 +2231,35 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup"}`
+    - `scheduler_podgroup_scheduling_attempt_duration_seconds{type="compositepodgroup"}`
+    - `scheduler_podgroup_scheduling_algorithm_duration_seconds{type="compositepodgroup"}`
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+Several `PodGroup`-specific metrics were added in scope of the Workload-Aware
+Scheduling KEPs. To maintain parity, the beta version of this feature adjusts
+these metrics by either adding a new label or extending the set of metric labels
+to have a way to distinguish `CompositePodGroups` from other entities like
+`PodGroups` or `Pods`:
+
+- Scheduling queue:
+  - `scheduler_queue_incoming_entities_total`
+  - `scheduler_queued_entities`
+- PodGroup scheduling cycle:
+  - `scheduler_podgroup_schedule_attempts_total`
+  - `scheduler_podgroup_scheduling_algorithm_duration_seconds`
+  - `scheduler_podgroup_scheduling_attempt_duration_seconds`
+- Workload-Aware Preemption:
+  - `scheduler_workload_preemption_attempts_total`
+  - `scheduler_workload_preemption_victims`
+- Topology-Aware Scheduling:
+  - `scheduler_generated_placements_total`
+  - `scheduler_placement_evaluation_duration_seconds`
+  - `scheduler_placement_evaluations_total`
 
 ### Dependencies
 
@@ -2127,20 +2269,8 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No dependencies other than the components where the feature is implemented
+(kube-apiserver, kube-scheduler and kube-controller-manager).
 
 ### Scalability
 
@@ -2164,15 +2294,15 @@ Watching for CompositePodGroups:
   - originating component: kube-scheduler, kube-controller-manager (GC
     controller, PodGroup protection controller)
 
-Status updates (potentially not in Alpha):
+Status updates:
   - API call type: PUT/PATCH CompositePodGroups status
-  - estimated throughput < XX/s
+  - estimated throughput: < XX/s
   - originating component: kube-scheduler
 
-Watching for Workloads for validation (Beta):
+Watching for Workloads:
   - API call type: LIST+WATCH Workloads
-  - estimated throughput < XX/s
-  - originating component: kube-scheduler
+  - estimated throughput: < XX/s
+  - originating component: kube-controller-manager (GC controller)
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -2237,6 +2367,11 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The behavior is consistent with the status quo. Since the scheduler cannot bind
+pods or update statuses without the API server, any in-flight CompositePodGroup
+scheduling will eventually fail at the binding/update stage. These attempts will
+be retried with standard exponential backoff once connectivity is restored.
+
 ###### What are other known failure modes?
 
 <!--
@@ -2251,6 +2386,62 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+
+- Pods Pending Indefinitely - Waiting for Multi-level Gang Assembly (PreEnqueue)
+  - Detection:
+    - Check metric indicating the number of gated CompositePodGroups:
+      `scheduler_queued_entities{type="compositepodgroup", queue="gated"}`.
+      If the metric is non-zero and there are no CompositePodGroups gated for
+      other reasons (e.g., waiting for preemption victim removal), then there
+      are pods waiting for multi-level gang assembly.
+    - Check group statuses:
+      - The number of pending/running pods in one or more leaf `PodGroups` is less
+        than their configured `minCount`, OR
+      - The number of admissible child groups in a `CompositePodGroup` subtree is
+        less than its configured `minGroupCount`.
+  - Mitigations:
+    - Ensure the workload controller (e.g., JobSet, LeaderWorkerSet) created all
+      required `CompositePodGroup`, `PodGroup`, and `Pod` instances.
+    - In Beta, decrease `minGroupCount` on the `CompositePodGroup` (or `minCount`
+      on child `PodGroups`) in-place to match the available capacity/groups.
+    - If gang scheduling is no longer desired, delete the `CompositePodGroup` and
+      `PodGroup` objects and recreate the pods without `spec.schedulingGroup`
+      to fall back to standard best-effort scheduling.
+  - Diagnostics:
+    - Inspect `kubectl describe compositepodgroup <cpg-name>` and
+      `kubectl describe podgroup <pg-name>`.
+    - Verify that the number of child groups matches or exceeds `minGroupCount`,
+      and that pods created for each child `PodGroup` match or exceed `minCount`.
+    - Check scheduler logs at `V=4` searching for `"compositepodgroup"` to trace
+      the `PreEnqueue` admissibility checks across the hierarchy.
+  - Testing:
+    - Covered by integration tests submitting incomplete hierarchies (e.g., fewer
+      child groups than `minGroupCount`, or fewer member pods than `minCount`).
+
+- Pods Pending Indefinitely - Multi-level Gang cannot fit (Resource or Topology Constraints)
+  - Detection:
+    - Check `CompositePodGroup.status.conditions`: condition
+      `CompositePodGroupInitiallyScheduled` is `False` with `reason: Unschedulable`.
+      The condition `message` details why the tree could not be placed (e.g., insufficient
+      node resources or topology constraint violations across the required child groups).
+    - Metric: `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup", result="unschedulable"}`
+      is incremented.
+    - Pod status: member pods remain in `Pending` state with pod condition
+      `PodScheduled: False`.
+  - Mitigations:
+    - Scale up cluster capacity (add nodes matching the required topology/accelerator constraints)
+      or terminate other lower-priority workloads.
+    - If preemption was expected, verify that the hierarchy's `priorityClassName` / `priority`
+      is strictly higher than prospective victims in the target topology domain.
+    - In Beta, mutate `minGroupCount` (or leaf `minCount`) to allow a smaller sub-gang to schedule.
+    - If acceptable, delete the hierarchy objects and recreate pods without `spec.schedulingGroup`.
+  - Diagnostics:
+    - Check `kubectl describe compositepodgroup <cpg-name>` for the failure reason and message.
+    - Scheduler logs at `V=4` searching for `"compositepodgroup"` to inspect the recursive
+      simulation pass and determine which child groups or topology domains failed placement.
+  - Testing:
+    - Covered by integration tests submitting multi-level CPGs that exceed available cluster
+      capacity or request unsatisfiable multi-level topology constraints.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -2268,6 +2459,8 @@ Major milestones might include:
 -->
 
 - 2026-04: Initial KEP-6012 proposal.
+- 2026-06: KEP-6012 created for the CompositePodGroup API alpha release.
+- 2026-09: KEP updated to promote to beta in v1.38.
 
 ## Drawbacks
 
@@ -2382,13 +2575,120 @@ removed in the early stage of the 1.37 release cycle[^9] because of the
 performance-related concerns and the fact that cross-object admission
 enforcement is always best effort.
 
+### Mitigations for resource stealing
+
+To mitigate the issue of resource stealing in greedy child groups evaluation in
+the recursive scheduling algorithm, we considered two distinct approaches that
+were already described in the initial version of the proposal.
+
+#### Double-pass evaluation within a single scheduling cycle
+
+We prototyped this model in [PR #141472](https://github.com/kubernetes/kubernetes/pull/141472).
+The idea is to run the recursive simulation twice within a single scheduling cycle:
+
+1. **Non-greedy first pass:** Evaluates child groups strictly up to their
+   `minCount` and `minGroupCount` thresholds, ensuring the minimal viable gang
+   can fit without starving any sibling groups.
+2. **Greedy second pass:** If the first pass succeeds, a second pass evaluates
+   any remaining optional pods against the remaining cluster capacity.
+
+While the POC verified that this approach works for initial placement, there are
+a couple of drawbacks that make it undesirable for the scheduler's core loop:
+
+- **High complexity of implementation:** Coordinating speculative simulation
+  state across two sequential passes in a single cycle substantially complicates
+  the scheduling logic. Managing partial rollbacks, resetting plugin state, and
+  keeping the cache synchronized across multiple recursive levels increases
+  maintenance overhead and introduces fragile failure paths.
+- **No support for scale-up:** If a controller creates new member pods or child
+  groups for an already scheduled hierarchy, those pods are handled in separate,
+  subsequent scheduling cycles. Because running pods cannot be displaced without
+  preemption, the double-pass algorithm provides no mechanism to rebalance
+  capacity among groups after initial binding.
+- **Topology reservation conflicts:** Under topology-aware scheduling, the
+  initial non-greedy pass locks in a topological placement for the minimal gang.
+  This placement can inadvertently fragment the remaining topology domain such
+  that optional pods cannot fit—even in scenarios where a unified single-pass
+  greedy evaluation could have found a valid topology for all pods.
+
+#### Decoupled passes across distinct scheduling cycles
+
+An alternative design runs a single non-greedy pass during the active cycle to
+bind the minimal gang, leaving any surplus pods in the scheduling queue. These
+remaining pods then trigger subsequent, separate scheduling cycles running in
+greedy mode. While this approach reduces the scheduling latency by avoiding
+running two passes within a single scheduling cycle, it would introduce
+significant challenges:
+
+- **Mode oscillation:** The transition from non-greedy to greedy cannot be a
+  one-time switch. If running pods are deleted (due to node failure or eviction)
+  and the hierarchy drops below its `minCount` or `minGroupCount`, the scheduler
+  must detect this condition and dynamically revert the group back to non-greedy
+  mode in future cycles to guarantee recovery of the minimal gang. Managing this
+  mode switching across decoupled queue passes introduces complex race
+  conditions.
+- **Interleaving and unpredictability:** Because subsequent passes are
+  decoupled, other workloads in the queue can interleave and consume remaining
+  capacity between passes, leading to non-deterministic, partial scheduling of
+  optional pods.
+- **Topology reservation conflicts:** Same as in the first approach, the
+  non-greedy pass might lock in a topological placement that is suboptimal for
+  the set of all pods in the hierarchy, possibly resulting in failing to
+  schedule optional pods even in the presence of sufficient capacity.
+
+### Backtracking in the scheduling algorithm
+
+Both the standard recursive scheduling algorithm and the multi-level
+topology-aware scheduling algorithm iterate over sibling child groups in a
+pre-sorted order and do not perform backtracking. If an early child group
+placement consumes resources or locks in topology domains in a manner that
+subsequently blocks a sibling from meeting its `minCount`, the scheduler
+terminates the group simulation instead of exploring alternative placements or
+evaluating different sibling orderings.
+
+This can result in failing to find a placement for heterogeneous multi-level
+groups even when the cluster possesses enough aggregate capacity to host the
+entire workload. The scheduler fails to find a placement because it evaluates
+siblings in a single, pre-determined order, disregarding other possible
+permutations rather than facing a fundamental lack of capacity.
+
+During the Alpha phase, this behavior was documented as an intended initial
+simplification, with plans to evaluate bounded backtracking heuristics (such as
+restricted search depth or bounded branches) during Beta phase. However, we
+decided **not to implement backtracking in the scheduling algorithm** in scope
+of this proposal.
+
+This decision is based on several architectural and operational factors:
+
+- **Increased scheduling latency:** Exploring alternative sibling orderings
+  or candidate placements shifts the algorithmic complexity from linear to
+  combinatorial. Even with bounded search heuristics, backtracking inside the
+  scheduling cycle would increase the number of simulated pod placements and
+  plugin executions at the cost of spikes in the scheduling latency and
+  head-of-line blocking in high-throughput clusters.
+- **High implementation complexity:** Implementing transactional rollback across
+  arbitrary depths of a recursive hierarchy is exceptionally complex. The
+  scheduler would need to track and revert not only pod-to-node assignments in
+  the `nodeInfoSnapshot`, but also plugin cycle states, topology domain
+  assumptions, and preemption estimations across multiple backtrack points. The
+  architectural overhead and maintenance burden of this machinery would be
+  substantially higher than introducing a non-greedy evaluation mode.
+- **Unclear return on investment:** Real-world composite workloads (such as
+  distributed training jobs composed of parameter servers and workers, or
+  disaggregated serving pipelines) are predominantly scheduled in provisioned
+  environments where inter-sibling contention within the same gang is rare.
+  Placement failures caused strictly by the absence of sibling backtracking
+  represent a narrow edge case, making the massive code complexity difficult to
+  justify.
+
+In addition, any future search heuristics or backtracking strategies can be
+introduced in the scheduling algorithm in a fully backward-compatible manner.
+Because of this, this decision can be safely revisited in future releases if
+production use cases and concrete workload patterns warrant it.
+
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+N/A
 
 [^1]: `JobSet` API documentation: https://jobset.sigs.k8s.io/docs/overview/.
 
