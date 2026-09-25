@@ -247,7 +247,7 @@ When the `CSIControllerGetNodeInfo` feature gate is enabled and the CSI node plu
 1. Call `NodeGetInfo` with `controller_get_node_info = true`
 2. Store the `node_id` in `CSINode.Spec.DriverRegistrations` (see [CSINode Driver Registrations](#csinode-driver-registrations)). Verify that the API response contains the input; if the API server dropped the field, fail registration
 3. Do NOT populate topology or allocatable from the response, even if present; external-attacher handles this via `ControllerGetNodeInfo`
-4. Skip the KEP-4876 `NodeGetInfo` calls (periodic and after `RESOURCE_EXHAUSTED`) for this driver, as external-attacher takes over
+4. Skip the KEP-4876 `NodeGetInfo` calls (periodic and after `RESOURCE_EXHAUSTED`) for this driver, as external-attacher takes over. kubelet retains the existing KEP-4876 Pod failure behavior for `RESOURCE_EXHAUSTED`.
 5. If `NodeGetInfo` fails or returns an empty `node_id`, fail registration
 6. If `NODE_INFO_FROM_CONTROLLER` is not advertised, use the existing `NodeGetInfo` flow unchanged
 
@@ -278,16 +278,19 @@ When the driver unregisters, kubelet removes both its `DriverRegistrations` entr
 When the `CSIControllerGetNodeInfo` feature gate is enabled, `CSINode.Spec.DriverRegistrations` has an entry for the driver, and the CSI controller plugin advertises `GET_NODE_INFO`:
 
 1. Call `ControllerGetNodeInfo` when the driver has a `DriverRegistrations` entry but no `CSINode.Spec.Drivers` entry (initial registration)
-2. Call `ControllerGetNodeInfo` after `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED` (capacity correction, building on KEP-4876)
+2. Call `ControllerGetNodeInfo` after `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED` if `CSIDriver.Spec.NodeAllocatableUpdatePeriodSeconds` is set (capacity correction, building on KEP-4876)
 3. Call `ControllerGetNodeInfo` periodically if `CSIDriver.Spec.NodeAllocatableUpdatePeriodSeconds` is set (periodic refresh, building on KEP-4876)
 4. Calculate effective `max_volumes_per_node` by comparing `published_volume_ids` from SP response against `VolumeAttachment` objects
-5. Write the topology values as Node labels, preserve the existing kubelet topology collision checks (Needs new RBAC permission)
-6. Create or update the `CSINode.Spec.Drivers` entry with the topology keys and calculated capacity. (Needs new RBAC permission)
+5. For initial registration, write the topology values as Node labels, preserving the existing kubelet topology collision checks (Needs new RBAC permission)
+6. Create the `CSINode.Spec.Drivers` entry with the topology keys and calculated capacity, or update existing entry's capacity (Needs new RBAC permission)
 
 The CSINode update uses the `resourceVersion` from the snapshot passed to `ControllerGetNodeInfo`.
 On a CSINode update conflict, discard the RPC result and wait for next CSINode update event from informer.
 Reconciliation starts again from the latest CSINode and calls `ControllerGetNodeInfo` again if still needed.
 This prevents in-flight results from restoring an unregistered driver or overwriting a switch to the traditional flow. Node and CSINode writes are not atomic: a successful label patch can remain after a failed CSINode update.
+
+If this driver has no completed entry in `spec.drivers`, retry non-conflict errors with exponential backoff.
+Otherwise, retain the previously published information and retry on the next periodic or reactive trigger.
 
 The registration input remains present after completion and supplies `node_id` for subsequent `ControllerGetNodeInfo` calls. `ControllerPublishVolume` continues to use the completed `Spec.Drivers` entry.
 
@@ -295,34 +298,41 @@ Adding a registration input or restarting external-attacher does not force a loo
 
 ```go
 type nodeInfoProcessor struct {
-    pendingNodes sync.Map // nodeName -> Set[string] (all volume IDs related to the node during processing)
+    //...
 }
 
-func (p *nodeInfoProcessor) processNode(csiNode *CSINode) {
+func (p *nodeInfoProcessor) processNode(csiNode *CSINode, forceRefresh bool) {
     reg, ok := findRegistration(csiNode.Spec.DriverRegistrations, driverName)
     if !ok {
         return
     }
     nodeID := reg.NodeID
-    if driverInSpec(csiNode) && !periodicUpdateDue() {
+    if driverInSpec(csiNode) && !periodicUpdateDue() && !forceRefresh {
         return
     }
+
+    publishing, stop := p.startRecording(nodeName)
     csiPublished := listVolumeAttachments(nodeName)
-
-    p.pendingNodes.Store(nodeName, csiPublished)
-    defer h.pendingNodes.Delete(nodeName)
-
     info := ControllerGetNodeInfo(nodeID)
+    stop()
 
-    // Calculate effective limit:
-    // SP already accounted for ENIs etc. in maxVolumesPerNode.
-    // CO subtracts non-CSI volumes (attached but not in VolumeAttachment).
-    nonCsi := info.publishedVolumeIDs.Difference(csiPublished)
-    effectiveLimit := info.maxVolumesPerNode - len(nonCsi)
+    var effectiveLimit *int32
+    if info.maxVolumesPerNode != 0 {
+        // Calculate effective limit:
+        // SP already accounted for ENIs etc. in maxVolumesPerNode.
+        // CO subtracts non-CSI volumes (attached but not in VolumeAttachment).
+        csiPublished := csiPublished.Union(publishing)
+        nonCsi := info.publishedVolumeIDs.Difference(csiPublished)
+        effectiveLimit = new(max(0, info.maxVolumesPerNode - len(nonCsi)))
+    }
 
-    // Node labels first, then CSINode.Spec.Drivers with csiNode's resourceVersion.
-    updateNodeLabels(nodeName, info.accessibleTopology)
-    updateCSINode(csiNode, nodeID, info.accessibleTopology, effectiveLimit)
+    if driverInSpec(csiNode) {
+        updateAllocatable(csiNode, effectiveLimit)
+    } else {
+        // Node labels first, then CSINode.Spec.Drivers with csiNode's resourceVersion.
+        updateNodeLabels(nodeName, info.accessibleTopology)
+        updateCSINode(csiNode, nodeID, info.accessibleTopology, effectiveLimit)
+    }
 }
 ```
 
@@ -333,11 +343,14 @@ func (p *nodeInfoProcessor) processNode(csiNode *CSINode) {
 | Periodic updates | `NodeGetInfo` at `NodeAllocatableUpdatePeriodSeconds` interval | `ControllerGetNodeInfo` at same interval |
 | RESOURCE_EXHAUSTED handling | kubelet detects error, calls `NodeGetInfo` | external-attacher detects error, calls `ControllerGetNodeInfo` |
 
+When `NodeAllocatableUpdatePeriodSeconds` is set, external-attacher attempts to refresh the node’s allocatable count before reporting `RESOURCE_EXHAUSTED` through the VolumeAttachment error code. This reactive refresh bypasses the periodic-update check (`forceRefresh = true`). Refresh failure does not suppress the attach error, preserving existing best-effort recovery behavior.
+
 The key advantage: external-attacher has accurate `VolumeAttachment` context, enabling precise non-CSI volume classification and accurate capacity calculation.
 
-**Periodic update scalability**: External-attacher uses a rate-limited work queue with jitter (±20% of the configured period) rather than per-node timers. This prevents thundering herd on restart and provides natural rate limiting for cloud API calls.
-
-**Idempotency**: All CSI RPCs are idempotent. Repeated `ControllerGetNodeInfo` calls with the same parameters return the same result, making retries and duplicate processing safe.
+**Periodic update scalability**: External-attacher uses a rate-limited work queue with jitter (±20% of the configured period) rather than per-node timers.
+On external-attacher startup, pending registrations are enqueued immediately.
+For completed registrations with periodic updates enabled, the first periodic refresh is scheduled at a uniformly random offset within the configured period.
+This prevents thundering herd on restart and provides natural rate limiting for cloud API calls.
 
 #### Race Condition Mitigation
 
@@ -346,21 +359,13 @@ A race exists between `ControllerGetNodeInfo` and concurrent attach/detach: if a
 **Mitigation**: The CO records all volume IDs processed during the `ControllerGetNodeInfo` call and considers them CSI-managed:
 
 ```go
-func (p *nodeInfoProcessor) recordPublish(va *VolumeAttachment) {
-    volumeIDs, ok := p.pendingNodes.Load(va.Spec.NodeName)
-    if !ok {
-        return // Node not being processed, no need to record
-    }
-    volumeIDs.Add(va.Spec.VolumeHandle)
-}
-
 func (h *csiHandler) syncAttach(va) {
     h.nodeInfoProcessor.recordPublish(va)
     // ... normal attach logic ...
 }
 ```
 
-The `recordPublish` call adds the volume ID to `pendingNodes`. When classifying volumes, the CO considers any volume ID in `pendingNodes` as CSI-managed.
+When classifying volumes, the CO considers any volume ID processed during the `ControllerGetNodeInfo` call as CSI-managed.
 
 This approach handles all edge cases:
 - volumes that have `VolumeAttachment` before the call, including those with uncertain status (in-progress or failed attaches)
@@ -414,6 +419,9 @@ sequenceDiagram
     attacher->>+csi-ctrl: ControllerGetNodeInfo(node_id)
     csi-ctrl-->>-attacher: Updated max_volumes_per_node, published_volume_ids
     attacher->>apiserver: Update CSINode Allocatable
+    attacher->>apiserver: Update VA.status.attachError.errorCode
+    apiserver-->>kubelet:
+    kubelet->>apiserver: fail relevant pods
 ```
 
 ### API Changes
@@ -544,6 +552,8 @@ We should not put an incomplete entry into `spec.drivers` and add a new `ready: 
 
 Directly downgrade from a feature-enabled deployment to a version that does not understand the new field is not supported.
 Disable the feature-gate first, then downgrade.
+
+If CSI driver is re-configured after using this feature (e.g. credential removed from node), that should be reverted before downgrading.
 
 ### Version Skew Strategy
 
@@ -689,11 +699,11 @@ When external-attacher recovers:
 1. It processes pending `DriverRegistrations` entries and calls `ControllerGetNodeInfo` to populate `Allocatable.Count`
 2. It processes pending VolumeAttachments, calls `ControllerPublishVolume`
 3. If the node's actual capacity is exhausted (due to pods scheduled during the degraded period), `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED`
-4. The pod is rejected and rescheduled to other nodes with available capacity
+4. If `NodeAllocatableUpdatePeriodSeconds` is set, kubelet marks the Pod failed; its workload controller may create a replacement, which the scheduler places subject to available capacity.
 
 This self-correcting mechanism ensures the cluster eventually reaches a consistent state.
 
-[KEP-5030](https://kep.k8s.io/5030): This KEP proposes to close the gap in the scheduler's `NodeVolumeLimits` plugin, so that scheduler will not place pods on nodes which aren't reporting CSI driver information. When implemented, the degraded state will be more graceful -— pods will simply not schedule until topology/allocatable is populated.
+[KEP-5030](https://kep.k8s.io/5030): This KEP proposes to close the gap in the scheduler's `NodeVolumeLimits` plugin, so that scheduler will not place pods on nodes which aren't reporting CSI driver information. When enabled, the degraded state will be more graceful -— pods will simply not schedule until topology/allocatable is populated.
 
 ###### What are other known failure modes?
 
