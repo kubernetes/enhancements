@@ -345,22 +345,24 @@ interval is long enough to matter in practice.
 
 When `DefaultPreemption` selects a winning candidate for a preemptor pod, it invokes
 `NominationExtensions.AddNominatedPod` on registered plugins. Because `CycleState` only exists for a
-single scheduling cycle, `dynamicresources` records a *claim nomination* in a cross-cycle store in
-`draManager` (analogous to `PodNominator` in the scheduler cache), consisting of:
+single scheduling cycle, `dynamicresources` records two pieces of cross-cycle state in `draManager`
+(analogous to `PodNominator` in the scheduler cache):
 
-* the nominated node;
-* the simulated `AllocationResult` for each of the preemptor's ResourceClaims on that node;
-* the UIDs of the victim ResourceClaims that the simulation released in order to make the placement
-  feasible.
+* **Per preemptor pod (claim nomination):** the nominated node and the simulated `AllocationResult`
+  for each of the preemptor's `ResourceClaim`s on that node;
+* **Per node (`nodeName`):** the UIDs of the victim `ResourceClaim`s on that node that the
+  simulation released and that are waiting for deallocation (`Status.Allocation != nil`).
 
-During `Filter` in the preemption simulation, `dynamicresources` caches the computed
-`AllocationResult`s per candidate node in its own `CycleState` entry. When `AddNominatedPod` is
-called at the end of `PostFilter` with that scheduling cycle's `CycleState`, the winning `nodeName`,
-and `victims`, `dynamicresources` copies the cached `AllocationResult`s for `nodeName` from
-`CycleState` into `draManager` and derives the released victim claims from `victims` (including only
-claims whose every reserving pod is in `victims`, not shared claims still held by a non-preempted
-pod). In subsequent scheduling cycles, `PreFilterExtensions.AddPod` looks up the nominated pod's
-`AllocationResult`s from `draManager` and simulates allocating them in the current cycle's
+When `DefaultPreemption` actuates the winning preemption candidate in `PostFilter`, it invokes
+`NominationExtensions.AddNominatedPod` with the scheduling cycle's `CycleState`, the winning
+`nodeName`, and `victims`. In `AddNominatedPod`, `dynamicresources` derives the released victim
+`ResourceClaim` UIDs from `victims` (including only claims whose every reserving pod is in `victims`
+or already terminating, not shared claims still held by a non-preempted pod) and records them for
+`nodeName` in `draManager`. It then constructs the allocated device state with `victims` removed
+(and any higher/equal-priority nominated pods on `nodeName` applied) and runs the deterministic DRA
+allocator for `nodeName` to compute and store the preemptor's simulated `AllocationResult`s in
+`draManager`. In subsequent scheduling cycles, `PreFilterExtensions.AddPod` looks up the nominated
+pod's `AllocationResult`s from `draManager` and simulates allocating them in the current cycle's
 `CycleState`.
 
 A nomination's lifetime is bound 1-to-1 to the pod's `nominatedNodeName` in the scheduler's
@@ -371,7 +373,10 @@ A nomination's lifetime is bound 1-to-1 to the pod's `nominatedNodeName` in the 
 * the preemptor is deleted;
 * the preemptor's `nominatedNodeName` is cleared or replaced by a subsequent preemption.
 
-No separate time-based expiry is needed. Once all victim claims have been deallocated at t3, if the
+Once victim pod deletion has been actuated, the victim `ResourceClaim` UIDs recorded for `nodeName`
+remain tracked on `nodeName` in `draManager` until their `Status.Allocation` is cleared at t3, even
+if the original preemptor's nomination is later removed or replaced. No separate time-based expiry is
+needed. Once all victim claims on `nodeName` have been deallocated at t3, if the
 preemptor is retried and still cannot be scheduled on the nominated node (for example because a
 higher-priority pod took the freed device, or the node became unschedulable), `PodEligibleToPreempt`
 returns `true` and `DefaultPreemption` immediately re-evaluates the pod—either replacing the
@@ -386,24 +391,27 @@ other nodes while the controller is down.
 
 Because a nomination is held only in memory, removing it when a preemptor is deleted or its
 `nominatedNodeName` is cleared or changed does not produce a `ResourceClaim` event in the API server.
-Instead, `dynamicresources` registers a `QueueingHint` for nominated-pod removal/update events and
-checks the nomination's victim `ResourceClaim`s in its local informer cache: if the victim claims
-already have `Status.Allocation == nil` (i.e. t3 has already passed, so no future `ResourceClaim`
-deallocation event will arrive), the `QueueingHint` returns `Queue` to wake unschedulable pods that
-were blocked by the held capacity; if the victim claims still have `Status.Allocation != nil` (before
-t3), it returns `QueueSkip` so those pods remain in the unschedulable queue until the `ResourceClaim`
-deallocation event at t3 wakes them.
+Just as the scheduler emits a synthetic `EventAssignedPodDelete` when a pod nomination is removed to
+mimic an assigned pod deletion, `RemoveNominatedPod` emits a synthetic `ResourceClaim` update event
+(mimicking deallocation of the nominated `AllocationResult`s) to the scheduling queue when the node's
+tracked victim claims already have `Status.Allocation == nil` (after t3), allowing `dynamicresources`'s
+existing `ResourceClaim` `QueueingHint` (`isSchedulableAfterClaimChange`) to wake unschedulable pods
+that were blocked by the held capacity. Before t3, while the victim claims still have
+`Status.Allocation != nil`, no synthetic event is needed because the real `ResourceClaim`
+deallocation event at t3 will wake those pods.
 
 Nominations are held in memory in the `dynamicresources` plugin and are keyed by the preemptor's pod
 UID. They are not persisted; see [Risks and Mitigations](#risks-and-mitigations).
 
 A claim nomination is distinct from, but paired with, the pod's `nominatedNodeName`. The latter is an
 API field recording which node the scheduler intends to place the pod on; the former is scheduler-local
-state recording which DRA capacity on that node is being held for it and which victim claims it is
-waiting on. A claim nomination never exists without a corresponding `nominatedNodeName`.
+state recording which DRA capacity on that node is being held for the preemptor (alongside the
+per-node record of victim claims being deallocated on that node). A claim nomination never exists
+without a corresponding `nominatedNodeName`.
 
-A nomination serves two purposes: it holds the promised capacity for the preemptor, and it defers
-any further preemption by that pod while its victim claims are still being reclaimed. The subsections
+Together, the preemptor's claim nomination and the node's tracked victim claims serve two purposes:
+they hold the promised capacity for the preemptor, and they defer any further preemption by a pod
+nominated on that node while its victim claims are still being reclaimed. The subsections
 below cover the first, then how it composes with the preemption simulation, then the second.
 
 #### Holding capacity for the preemptor
@@ -465,7 +473,7 @@ while an earlier preemption on behalf of `P1` is settling:
 
 * **Sharing a terminating victim (t0 to t1):** Suppose victim `V` on Node `N` holds a claim
   `Claim-V` with two devices (`GPU-0` and `GPU-1`), and `P1` (needing one device) preempts `V` and
-  records a nomination for `GPU-0` and victim claim `Claim-V`. While `V` is still terminating in
+  records a nomination for `GPU-0` (with victim claim `Claim-V` tracked on Node `N`). While `V` is still terminating in
   `NodeInfo.Pods` (t0 to t1), an equal-priority pod `P2` (also needing one device) runs a preemption
   simulation on Node `N`:
   1. `DefaultPreemption` calls `RemovePod(V)`, removing `Claim-V` (`GPU-0` and `GPU-1`) from the
@@ -475,8 +483,8 @@ while an earlier preemption on behalf of `P1` is settling:
      simulated allocation of `GPU-1` for `P2`.
   3. Pass 2 (without nominated pods) also succeeds because `RemovePod(V)` removed `Claim-V` from the
      simulated state.
-  Both `P1` (`GPU-0`) and `P2` (`GPU-1`) therefore select `V` as a victim, record `Claim-V` in their
-  nominations, and schedule once `Claim-V` is deallocated at t3. (If `P2` instead arrives between t1
+  Both `P1` (`GPU-0`) and `P2` (`GPU-1`) therefore select `V` as a victim, with `Claim-V` tracked on
+  Node `N`, and schedule once `Claim-V` is deallocated at t3. (If `P2` instead arrives between t1
   and t3 after `V` has already been deleted from `NodeInfo.Pods`, `DefaultPreemption` sees no victim
   pod `V` on Node `N` to evict; `P2` simply waits until `Claim-V` is deallocated at t3, when the
   `ResourceClaim` informer event wakes `P2` and schedules it onto `GPU-1` in normal `Filter`.)
@@ -494,12 +502,13 @@ while an earlier preemption on behalf of `P1` is settling:
 
 #### Deferring further preemption
 
-While a nomination is live and any of its victim ResourceClaims still has `Status.Allocation != nil`
-in the informer cache, the preemptor must not start a new preemption. Together with the existing
-terminating-pod check, which covers t0 to t1, this covers the settling window up to t3. Once all
-victim claims in the nomination have been deallocated (`Status.Allocation == nil`), the preemptor
-becomes eligible to preempt again; if its placement no longer works at that point (for example
-because a higher-priority pod took the freed device), preempting again is the correct behavior.
+While a nomination is live on a node and any tracked victim `ResourceClaim` on that node still has
+`Status.Allocation != nil` in the informer cache, the preemptor must not start a new preemption.
+Together with the existing terminating-pod check, which covers t0 to t1, this covers the settling
+window up to t3. Once all tracked victim claims on the nominated node have been deallocated
+(`Status.Allocation == nil`), the preemptor becomes eligible to preempt again; if its placement no
+longer works at that point (for example because a higher-priority pod took the freed device),
+preempting again is the correct behavior.
 
 `PodEligibleToPreemptOthers` and `prepareCandidate` belong to the `DefaultPreemption` plugin, and we
 do not want to make that plugin aware of DRA. We therefore propose a small and generic addition to
@@ -536,7 +545,7 @@ The framework invokes registered plugins implementing `NominationExtensions`:
   the returned reason in the pod's scheduling condition.
 
 In Alpha, the `dynamicresources` plugin implements `PodEligibleToPreempt` by checking whether
-any live nomination on `nodeName` still has a victim `ResourceClaim` waiting for deallocation
+`nodeName` still has any victim `ResourceClaim` waiting for deallocation
 (`Status.Allocation != nil`)—matching `DefaultPreemption`'s existing node-scoped check for
 terminating pods on `nominatedNodeName`—while a full cross-preemptor "assumed victim" simulation
 mechanism for both pods and `ResourceClaim`s (aligned with Workload-Aware Preemption) is deferred
@@ -545,16 +554,16 @@ to Beta.
 When the `resourceclaim` controller clears `Status.Allocation` on a victim claim at t3, the
 scheduler's `ResourceClaim` informer event handler invokes `SchedulingQueue.MoveAllToActiveOrBackoffQueue`,
 which calls `dynamicresources`'s `QueueingHint` (`isSchedulableAfterClaimChange`). As a secondary
-optimization, the `QueueingHint` withholds a wake-up (`QueueSkip`) for the preemptor while any of
-its other nominated victim claims still has `Status.Allocation != nil`, and returns `Queue` as soon
-as the last victim claim is deallocated. This avoids pointless scheduling attempts while some victim
-claims are still settling.
+optimization, the `QueueingHint` withholds a wake-up (`QueueSkip`) for the preemptor while any other
+tracked victim claim on its nominated node still has `Status.Allocation != nil`, and returns `Queue`
+as soon as the last victim claim on that node is deallocated. This avoids pointless scheduling
+attempts while some victim claims are still settling.
 
 #### Why simulated allocations and victim claims rather than devices
 
-A claim nomination records both the **preemptor's simulated `AllocationResult`s** (to hold capacity
-via `AddPod`) and the **victim `ResourceClaim` UIDs** (to track ongoing deallocation between t0
-and t3), rather than nominating raw device names:
+On preemption, `draManager` records both the **preemptor's simulated `AllocationResult`s** (per
+preemptor, to hold capacity via `AddPod`) and the **victim `ResourceClaim` UIDs** (per node, to
+track ongoing deallocation between t0 and t3), rather than nominating raw device names:
 
 * **Why simulated `AllocationResult`s rather than device names:** With **consumable capacity** and
   **partitionable devices**, a bare device name does not express a capacity share or the counter
