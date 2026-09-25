@@ -893,18 +893,16 @@ groups configured with either the `Single` or `All` disruption modes.
 Runtime structure validation and more complex configurations will be considered for Beta and
 future releases once concrete production use-cases and community feedback are established.
 
-
-
 The `Priority` and the `PriorityClassName` fields are resolved in the exact same
 way as they already are for Pods and `PodGroups` - specifically, the `Priority`
 admission controller gets extended to additionally support the
 `CompositePodGroup` API.
 
 We enforce a strict single-priority constraint: all member groups and pods
-within a single group hierarchy tree **must share the exact same priority and
-PriorityClassName**. Support for differing group-level priorities under basic
-scheduling policies it will be explored independently of KEP-6012 in a dedicated
-KEP when we prioritize the relevant usecases.
+within a single group hierarchy tree **must share the exact same priority**.
+Support for differing group-level priorities under basic scheduling policies it
+will be explored independently of KEP-6012 in a dedicated KEP when we prioritize
+the relevant usecases.
 
 The value of the `Priority` field is being used in the following two contexts:
 
