@@ -1989,20 +1989,33 @@ the feature is in use) behaves as follows:
   scheduling member pods strictly at the flat, individual or standalone `PodGroup`
   level.
 - While the old scheduler will continue to run safely and will not crash, it will
-  not satisfy the multi-level topology, gang, or preemption constraints. For
-  topology constraints specifically, this will likely lead to invalid, flat
-  placement decisions (e.g., placing member pods across different racks instead of
-  satisfying CPG-level topology constraints). Crucially, these invalid topology
-  placements are irreversible by the scheduler itself; once pods are bound to
-  nodes, the scheduler cannot reschedule them on its own, even after a new
-  scheduler leader is upgraded to the new version. Only newly scheduled pods (or
-  pods recreated after eviction) will be correctly resolved (if possible) under the
-  hierarchical constraints once the upgrade is complete.
-  Note that this is identical to the pre-existing version skew behavior for flat
-  `PodGroup` features (e.g., flat topology-aware scheduling) during control plane
-  rolling upgrades. Therefore, the standard recommendation applies:
-  users should not use the new APIs/fields until the rolling upgrade of
-  `kube-scheduler` is fully completed.
+  not satisfy the multi-level topology, gang, or preemption constraints. In
+  particular, the placement it chooses when considering each `PodGroup` as a flat,
+  independent group may not satisfy the constraints of its ancestor
+  `CompositePodGroups` (e.g., member pods of a `CompositePodGroup` constrained to a
+  single rack may be spread across different racks). These placements are
+  irreversible by the scheduler itself; once pods are bound to nodes, the
+  scheduler cannot reschedule them on its own, even after a new scheduler leader
+  is upgraded to the new version.
+- Crucially, once a `kube-scheduler` instance supporting `CompositePodGroups`
+  takes over, it may not be possible to schedule any other pod of such a group
+  hierarchy. The scheduler takes the already bound pods of the hierarchy into
+  account - candidate placements for a `CompositePodGroup` are restricted to
+  those that include all the nodes where the already scheduled pods from its
+  subtree are running (consistent with how [KEP-5732] handles partially
+  scheduled `PodGroups`). If these pods violate the `CompositePodGroup`'s
+  topology constraint (i.e., they span multiple topology domains), no such
+  placement exists. As a result, the pending pods of the hierarchy (e.g., pods
+  that were still pending during the upgrade, pods added by a scale-up, or pods
+  recreated after a failure or eviction) may remain `Pending` indefinitely.
+  Other workloads are not affected. In such case, the operator is expected to
+  manually delete the faulty pods to unblock further scheduling.
+
+Note that this is analogous to the pre-existing version skew behavior for flat
+`PodGroup` features (e.g., flat topology-aware scheduling in [KEP-5732]) during
+control plane rolling upgrades. Therefore, the standard recommendation applies:
+users should not use the new APIs/fields until the rolling upgrade of
+`kube-scheduler` is fully completed.
 
 ## Production Readiness Review Questionnaire
 
@@ -2050,6 +2063,25 @@ CompositePodGroup objects would be preserved in storage as well.
 
 The feature starts working again.
 
+However, while the feature was disabled in kube-scheduler, pods belonging to
+existing group hierarchies might have been scheduled as members of flat,
+independent `PodGroups`, and their placement may not satisfy the constraints of
+their ancestor `CompositePodGroups` (e.g., pods of a `CompositePodGroup`
+constrained to a single rack might have been spread across multiple racks).
+This is the same failure mode as described in the
+[Version Skew Strategy](#version-skew-strategy) section: after the feature is
+reenabled, it may not be possible to schedule any other pod belonging to such a
+group hierarchy, since no candidate placement of the affected
+`CompositePodGroup` can include all the nodes where its already scheduled pods
+are running.
+
+In such case, the operator is expected to delete the faulty pods manually to
+unblock further scheduling, i.e. the pods of the affected `CompositePodGroup`
+subtree whose placement violates its constraints (in the simplest case, all of
+its bound pods). Once recreated (typically by the workload controller), these
+pods can be scheduled together with the remaining pods of the hierarchy in a way
+that satisfies the multi-level constraints.
+
 ###### Are there any tests for feature enablement/disablement?
 
 The scheduler algorithm changes are purely in-memory and don't require any dedicated
@@ -2074,6 +2106,12 @@ algorithm (or the standard pod-by-pod method for standalone Pods). This results
 in a fallback to the status quo behavior, meaning that Pods and `PodGroups` will
 be still scheduled, but `CompositePodGroup`-level scheduling constraints won't
 be applied.
+
+If the feature is subsequently enabled, already running pods of the affected
+group hierarchies continue to run, but the scheduler may be unable to place any
+subsequent pods belonging to these hierarchies due to the newly enforced CPG-level
+constraints (see [Version Skew Strategy](#version-skew-strategy) for details and
+the mitigation).
 
 ###### What specific metrics should inform a rollback?
 
