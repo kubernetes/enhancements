@@ -1,4 +1,4 @@
-# KEP-NNNN: DRA Shared Consumable Capacities Across Related Devices
+# KEP-5941: DRA Shared Consumable Capacities Across Related Devices
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -8,13 +8,14 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Story 1: SR-IOV bandwidth as a shared parent resource](#story-1-sr-iov-bandwidth-as-a-shared-parent-resource)
+    - [Story 1: Virtual network interface bandwidth as a shared parent resource](#story-1-virtual-network-interface-bandwidth-as-a-shared-parent-resource)
     - [Story 2: CPU/Memory resource alignment via PCIE root grouping](#story-2-cpumemory-resource-alignment-via-pcie-root-grouping)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API additions](#api-additions)
   - [Allocation behavior](#allocation-behavior)
+  - [Allocation status snapshot](#allocation-status-snapshot)
   - [Feature gate](#feature-gate)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -107,22 +108,22 @@ Extend the existing `sharedCounters` in `ResourceSlice` with `requestPolicy` sup
 
 At a high level:
 
-1. A driver publishes `sharedCounters` with counters that include `requestPolicy` (default, valid range, step).
-2. Each allocatable device references the shared counter set(s) it draws from via `consumesCounters`, using `valueFrom` to map capacity request keys to counters.
+1. A driver publishes `sharedCounters` with `SharedCounter` entries that may include `requestPolicy` (default, valid range, `validValues`).
+2. Each allocatable device references the shared counter set(s) it draws from via `consumesCounters`, using `valueFrom.capacityName` to map capacity request keys to counters.
 3. A claim requests capacity using existing `capacity.requests` fields.
-4. During allocation, the scheduler resolves the `valueFrom` mappings, checks and consumes the requested amount from all relevant counter sets (device-specific and/or shared), rejecting candidates that would exceed any counter limit.
+4. During allocation, the scheduler resolves the `valueFrom` mappings, checks and consumes the requested amount from all relevant counter sets (device-specific static `value` and/or shared `valueFrom`), rejecting candidates that would exceed any counter limit, and persists the resolved amounts in `consumedCounters` on the claim allocation result.
 
 ### User Stories
 
-#### Story 1: SR-IOV bandwidth as a shared parent resource
+#### Story 1: Virtual network interface bandwidth as a shared parent resource
 
-As a cluster user, I request one or more VFs and a bandwidth amount per request.
-As an operator, I want scheduler admission to ensure that total bandwidth promised across VFs on the same PF does not exceed PF capacity.
+As a cluster user, I request one or more virtual network interfaces (e.g. SR-IOV VFs) and a bandwidth amount per request.
+As an operator, I want scheduler admission to ensure that total bandwidth promised across virtual interfaces on the same physical function does not exceed its capacity.
 
 This allows:
 
-- keeping VF as the allocatable unit, and
-- preventing over-allocation of PF bandwidth without static pre-partitioning.
+- keeping the virtual interface as the allocatable unit, and
+- preventing over-allocation of physical link bandwidth without static pre-partitioning.
 
 #### Story 2: CPU/Memory resource alignment via PCIE root grouping
 
@@ -141,7 +142,7 @@ Example from real hardware (dual XEON Gold 6320R):
 "root"="pci0000:d7" "localCPUs"="1,3,5,...,103" "NUMANode"=1
 ```
 
-A CPU/memory DRA driver can publish one shared capacity set per NUMA node (the parent budget of available CPUs and memory) and map each PCIE root device to the appropriate set. Scheduler accounting then prevents aggregate over-allocation of CPUs or memory across PCIE roots that share the same NUMA zone.
+A CPU/memory DRA driver can publish one shared capacity set per physical CPU package (the parent budget of available CPUs and memory) and map each PCIE root device to the appropriate set. Scheduler accounting then prevents aggregate over-allocation of CPUs or memory across PCIE roots within the same physical package.
 
 See also: [kubernetes/enhancements#5491](https://github.com/kubernetes/enhancements/issues/5491) for related work on PCIE-root-based resource alignment.
 
@@ -166,17 +167,17 @@ See also: [kubernetes/enhancements#5491](https://github.com/kubernetes/enhanceme
 
 ### API additions
 
-This KEP proposes extending existing DRA API types by adding **optional fields** to the existing `Counter` struct. No existing types are removed, renamed, or split. All existing `ResourceSlice` objects remain valid without modification.
+This KEP extends existing DRA types. `sharedCounters` and `consumesCounters` are already beta (`+k8s:beta(since: "1.37")`) behind `DRAPartitionableDevices`. The previous shared `Counter` type is split so definition and consumption no longer share one struct:
 
-Both `sharedCounters` and `consumesCounters` (and the `Counter` type they use) are alpha APIs (`+k8s:alpha(since: "1.36")`), gated behind the `DRAPartitionableDevices` feature gate. Alpha APIs carry no backward compatibility guarantees, but this proposal is designed to be purely additive regardless.
+1. **`SharedCounter`** (used in `CounterSet.counters` / `sharedCounters`): keeps required `value` and gains an optional `requestPolicy`. `requestPolicy` reuses the existing `CapacityRequestPolicy` type from consumable capacity (default, `validRange`, `validValues`). If `requestPolicy` is unset, a `valueFrom` mapping consumes the requested amount as-is, or the full counter `value` when the claim omits that capacity key.
 
-The changes to the `Counter` struct are:
+2. **`ConsumeCounter`** (used in `DeviceCounterConsumption.counters` / `consumesCounters`): `value` becomes optional. Exactly one of `value` (static consumption, existing behavior) or `valueFrom` (request-driven consumption) must be set. Existing objects that set `value` continue to work unchanged.
 
-1. **Add an optional `requestPolicy` field** to `Counter`. When a counter is defined in a `CounterSet` (inside `sharedCounters`), this field specifies default values, valid ranges, and step sizes for request-driven consumption. In other contexts this field is ignored.
+3. **`CounterValueFrom`**: `valueFrom.capacityName` is the device capacity name that users set in `capacity.requests`. If `capacityName` has no domain prefix, the ResourceSlice `driver` name is used as the domain when matching claim requests.
 
-2. **Add an optional `valueFrom` field** to `Counter`. When a counter is referenced in `DeviceCounterConsumption` (inside `consumesCounters`), this field maps an inbound `capacity.requests` key to the counter, making consumption request-driven rather than static.
+4. **`DeviceRequestAllocationResult.consumedCounters`**: a persisted snapshot of the resolved consumption per counter set (`CounterSetConsumption`: `counterSet` plus `counters` quantity map). Maximum two counter sets, matching the existing per-device `consumesCounters` limit. Gated by `DRASharedConsumableCapacity`.
 
-3. **Relax the `value` field** from required to conditionally required: in `consumesCounters`, either `value` (static consumption, existing behavior) or `valueFrom` (request-driven consumption, new behavior) must be specified. Existing objects that set `value` continue to work unchanged.
+The JSON/YAML field names on ResourceSlice objects stay compatible: existing `value`-only `consumesCounters` entries remain valid. The Go type rename (`Counter` → `SharedCounter` / `ConsumeCounter`) is an API-package change, not a wire-format break.
 
 Example `ResourceSlice` with shared counter request policy:
 
@@ -225,14 +226,14 @@ spec:
       counters:
         bandwidth:
           valueFrom:
-            capacityKey: "resource-driver.example.com/bandwidth"
+            capacityName: "resource-driver.example.com/bandwidth"
   - name: vf-1
     consumesCounters:
     - counterSet: pf-0-counter-set
       counters:
         bandwidth:
           valueFrom:
-            capacityKey: "resource-driver.example.com/bandwidth"
+            capacityName: "resource-driver.example.com/bandwidth"
 ```
 
 Example `ResourceClaim` requesting bandwidth from one of the VFs above:
@@ -253,41 +254,74 @@ spec:
             resource-driver.example.com/bandwidth: "10G"
 ```
 
-The `capacity.requests` key `resource-driver.example.com/bandwidth` matches the `capacityKey` declared in the device's `consumesCounters[].counters[].valueFrom`. When the scheduler allocates `vf-0` or `vf-1` for this claim, it resolves that mapping and subtracts 10G from the shared `pf-0-counter-set` bandwidth counter (100G total), subject to the `requestPolicy` defined on the counter set.
+Example allocation result snapshot after that claim is bound:
+
+```yaml
+status:
+  allocation:
+    devices:
+      results:
+      - request: vf-request
+        driver: resource-driver.example.com
+        pool: my-pool
+        device: vf-0
+        consumedCounters:
+        - counterSet: pf-0-counter-set
+          counters:
+            bandwidth: "10G"
+```
+
+The `capacity.requests` key `resource-driver.example.com/bandwidth` matches the `capacityName` declared in the device's `consumesCounters[].counters[].valueFrom`. When the scheduler allocates `vf-0` or `vf-1` for this claim, it resolves that mapping and subtracts 10G from the shared `pf-0-counter-set` bandwidth counter (100G total), subject to the `requestPolicy` defined on the counter set. The resolved 10G is written to `status.allocation.devices.results[].consumedCounters`.
 
 Key points:
 
-- **No breaking changes.** No existing types are removed, renamed, or split. Only optional fields are added to the existing `Counter` struct. All existing `ResourceSlice` objects remain valid.
-- `requestPolicy` on a shared counter defines how request values are validated and defaulted.
-- `valueFrom` on a device counter consumption maps a `capacity.requests` key to the counter, making consumption request-driven rather than static.
+- ResourceSlice objects that already use static `value` in `consumesCounters` remain valid.
+- `requestPolicy` on a `SharedCounter` defines how request values are validated and defaulted. It is optional.
+- `valueFrom.capacityName` on a `ConsumeCounter` maps a `capacity.requests` key to the counter, making consumption request-driven rather than static.
 - Making `valueFrom` a struct allows future extensions (e.g. multipliers or transformations) without further API changes.
 - Claims continue to use existing `capacity.requests` fields.
+- Mixed static and request-driven consumption is supported across devices that share a counter set (one device may use `value`, another `valueFrom` on the same counter). A single `ConsumeCounter` entry cannot set both.
 
 ### Allocation behavior
 
-For each capacity request in a candidate device allocation:
+For each candidate device allocation:
 
-1. Resolve all `valueFrom` mappings on the candidate device's `consumesCounters` to determine which capacity request keys feed into which shared counters.
-2. For each resolved counter, apply the counter's `requestPolicy` to compute the consumed amount (defaulting/rounding/range rules).
-3. Reject the candidate if any counter set would exceed available capacity.
-4. Tentatively account consumption during in-progress claim allocation to avoid internal over-commit.
-5. Persist resulting consumption for reconciliation/restart-safe accounting.
+1. Resolve all `valueFrom` mappings on the candidate device's `consumesCounters` to determine which capacity request keys feed into which shared counters (`capacityName` matching, including driver-domain defaulting).
+2. For each resolved counter, apply the counter's `requestPolicy` (if set) to compute the consumed amount (defaulting/rounding/range/`validValues` rules). If the claim omits the capacity key, use `requestPolicy.default` when present, otherwise the full shared counter `value`.
+3. Include static `value` consumption from the same device when checking remaining budget.
+4. Reject the candidate if any counter set would exceed available capacity, or if `requestPolicy` is violated.
+5. Tentatively account consumption during in-progress claim allocation to avoid internal over-commit.
+6. Persist the resolved amounts on `DeviceRequestAllocationResult.consumedCounters`.
 
-This behavior allows one request to satisfy both:
+This behavior allows one shared counter set to mix:
 
-- device-specific static counter consumption (existing `value` path), and
-- parent aggregate limits via shared counter sets (new `valueFrom` path).
+- device-specific static counter consumption (existing `value` path on some devices), and
+- parent aggregate limits via request-driven `valueFrom` on other devices.
+
+### Allocation status snapshot
+
+When `DRASharedConsumableCapacity` is enabled, the scheduler does **not** recompute already-allocated consumption from live ResourceSlice `consumesCounters` / `requestPolicy` definitions. It subtracts `status.allocation.devices.results[].consumedCounters` for allocated claims in the same pool.
+
+That makes accounting independent of later driver updates to `valueFrom`, `requestPolicy`, or counter-set membership. Without the snapshot, a ResourceSlice republish could change how much an already-running allocation is charged, causing false exhaustion or over-commit after a scheduler restart.
+
+The DynamicResources plugin therefore includes allocated ResourceClaims (not only allocated device IDs) in the allocated-state gather path when the gate is on.
 
 ### Feature gate
 
-Proposed feature gate name:
+Feature gate name:
 
 - `DRASharedConsumableCapacity`
 
+Dependencies (must also be enabled):
+
+- `DynamicResourceAllocation`
+- `DRAPartitionableDevices`
+- `DRAConsumableCapacity`
+
 Components:
 
-- kube-apiserver (field enablement/validation)
-- kube-scheduler (allocator accounting logic)
+- kube-apiserver (field enablement/validation for `requestPolicy`, `valueFrom`, and `consumedCounters`)
+- kube-scheduler (allocator accounting and snapshot gather)
 
 ### Test Plan
 
@@ -300,35 +334,31 @@ Components:
 #### Unit tests
 
 - API validation:
-  - valid/invalid `requestPolicy` on shared counter definitions
-  - valid/invalid `valueFrom` references in device counter consumption
-  - feature-gate transition behavior for new fields
+  - valid/invalid `requestPolicy` on `SharedCounter` definitions
+  - valid/invalid `valueFrom` references in `ConsumeCounter` (exactly one of `value` or `valueFrom`; required `capacityName`)
+  - feature-gate drop of `requestPolicy`, `valueFrom`, and `consumedCounters` when the gate is off
 - Scheduler allocator:
-  - aggregate accounting across multiple claims
-  - candidate rejection when shared counter set would be exceeded
-  - `requestPolicy` handling (default/range/step/values)
-  - mixed accounting when same counter has both static `value` and `valueFrom`-driven consumption
+  - aggregate accounting across multiple claims using `consumedCounters` snapshots
+  - candidate rejection when a shared counter set would be exceeded
+  - `requestPolicy` handling (default/range/step/`validValues`)
+  - mixed accounting when some devices use static `value` and others use `valueFrom` on the same counter set
 
-- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `<TBD date>` - `<TBD coverage>`
-- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `<TBD date>` - `<TBD coverage>`
-- `k8s.io/kubernetes/pkg/apis/resource/validation`: `<TBD date>` - `<TBD coverage>`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `<TBD date>` - `<TBD coverage>`
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `<TBD date>` - `<TBD coverage>`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: 2026-07-21 - allocator tests for `valueFrom` resolution, snapshot accounting, mixed static/request-driven consumption
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: 2026-07-21 - ResourceSlice and ResourceClaim validation for `requestPolicy`, `valueFrom`, and `consumedCounters`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: 2026-07-21 - strategy tests for gated field drop
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 2026-07-21 - plugin tests with `DRASharedConsumableCapacity` enabled
 
 #### Integration tests
 
-- Add integration tests for scheduler allocation with `requestPolicy` and `valueFrom` under feature gate on/off.
-- Validate deterministic rejection/success outcomes with multiple competing claims.
+- `test/integration/dra/shared_consumable_capacity.go`: scheduler allocation with `requestPolicy` and `valueFrom` under feature gate on/off.
+- Gate off: `valueFrom` is dropped and devices remain allocatable (treated as zero static consumption).
+- Gate on: two claims that fit a shared budget of 2 succeed; a third remains pending; releasing the first claim allows the third to schedule.
 
 #### e2e tests
 
-- Add DRA e2e coverage with a test driver that publishes:
-  - multiple child devices with `valueFrom` mapped to one shared counter set
-  - at least one scenario where aggregate requests exceed shared counter capacity
-- Confirm:
-  - scheduling succeeds while capacity remains,
-  - claims/pods remain pending after exhaustion,
-  - release of allocations restores schedulability.
+- `test/e2e/dra/dra.go` (`sharedConsumableCapacityTests`), with `DRAConsumableCapacity`, `DRAPartitionableDevices`, and `DRASharedConsumableCapacity` enabled:
+  - two child devices map `valueFrom` to one shared counter set; aggregate requests that exceed the set stay pending; release restores schedulability
+  - mixed static `value` and request-driven `valueFrom` devices sharing one counter set
 
 ### Graduation Criteria
 
@@ -366,17 +396,17 @@ The recommended enablement / upgrade sequence:
 2. **Update the DRA driver** to publish `requestPolicy` on shared counters and `valueFrom` in `consumesCounters`.
    From this point on, the scheduler enforces shared counter accounting for devices using `valueFrom`.
 
-**Why this order**: when the gate is OFF on the apiserver, `requestPolicy` and `valueFrom` are stripped from incoming ResourceSlice writes (standard alpha-field handling). A driver that publishes these fields before the gate is enabled will see them silently dropped; enabling the gate later does not retroactively restore them, and the driver must republish.
+**Why this order**: when the gate is OFF on the apiserver, `requestPolicy`, `valueFrom`, and `consumedCounters` are stripped from writes (standard gated-field handling). A driver that publishes `requestPolicy`/`valueFrom` before the gate is enabled will see them silently dropped; enabling the gate later does not retroactively restore them, and the driver must republish. Allocations created while the gate was off have no `consumedCounters` snapshot; after enablement those allocations do not charge shared counters until they are recreated.
 
 **Recommended downgrade / disablement order**: reverse of upgrade — update the DRA driver first (remove the new fields), then disable the gate on scheduler and apiserver.
 
 ### Version Skew Strategy
 
-- **kube-apiserver**: Must be upgraded first to accept the new `requestPolicy` and `valueFrom` fields on `Counter`.
+- **kube-apiserver**: Must be upgraded first to accept `requestPolicy` on `SharedCounter`, `valueFrom` on `ConsumeCounter`, and `consumedCounters` on allocation results.
 - **kube-scheduler**:
-  - A scheduler that understands this feature resolves `valueFrom` mappings and enforces `requestPolicy` during shared counter accounting.
-  - An older scheduler ignores `requestPolicy` and `valueFrom`. Devices with `valueFrom` (no static `value`) in `consumesCounters` are treated as consuming zero from the shared counter set, so placement may be overly permissive until the scheduler is upgraded.
-- **kubelet**: No changes required; kubelet does not interpret `requestPolicy` or `valueFrom`.
+  - A scheduler that understands this feature resolves `valueFrom` mappings, enforces `requestPolicy`, writes `consumedCounters`, and uses those snapshots for later accounting.
+  - An older scheduler ignores `requestPolicy`, `valueFrom`, and `consumedCounters`. Devices with `valueFrom` (no static `value`) are treated as consuming zero from the shared counter set, so placement may be overly permissive until the scheduler is upgraded.
+- **kubelet**: No changes required; kubelet does not interpret `requestPolicy`, `valueFrom`, or `consumedCounters`.
 - **DRA driver**:
   - Drivers publish ResourceSlices with `requestPolicy` on shared counters and `valueFrom` in `consumesCounters`.
   - A driver that publishes the new fields before the apiserver gate is enabled will see them silently dropped at write time.
@@ -392,6 +422,7 @@ During version skew, the main risk is overly permissive scheduling by an older s
 - [x] Feature gate
   - Feature gate name: `DRASharedConsumableCapacity`
   - Components depending on the feature gate: kube-apiserver, kube-scheduler
+  - Also requires: `DynamicResourceAllocation`, `DRAPartitionableDevices`, `DRAConsumableCapacity`
 - [ ] Other
 
 ###### Does enabling the feature change any default behavior?
@@ -400,7 +431,7 @@ Only for workloads and resources that use the new fields and request patterns. E
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, by disabling the gate and restarting affected components. Backward handling of already persisted gated fields follows API conventions and final implementation details.
+Yes, by disabling the gate and restarting kube-apiserver and kube-scheduler. Gated fields (`requestPolicy`, `valueFrom`, `consumedCounters`) are dropped on subsequent writes. Already running pods keep their devices; new allocations stop using request-driven shared-counter accounting and fall back to static `value` consumption from ResourceSlices.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -408,11 +439,7 @@ Existing compatible objects become active for shared-capacity accounting again o
 
 ###### Are there any tests for feature enablement/disablement?
 
-Planned:
-
-- API field and validation behavior with gate on/off
-- allocator behavior with gate on/off
-- compatibility tests for objects written while gate was enabled
+Yes. Integration tests cover scheduler allocation with the gate on and off (`test/integration/dra/shared_consumable_capacity.go`). Unit tests cover validation and strategy drop of gated fields, plus allocator snapshot accounting.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -423,9 +450,9 @@ Planned:
 
 ###### What specific metrics should inform a rollback?
 
-- Increased allocation failure rate attributable to shared counter checks
-- Unexpected pending claims for requests that should fit
-- Scheduler allocation latency regression
+- `scheduler_unschedulable_pods{plugin="DynamicResources"}` — increased allocation failure rate attributable to shared counter checks
+- `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` — scheduler allocation latency regression
+- Unexpected pending claims for requests that should fit (observable via `apiserver_request{resource="resourceclaims"}`)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -440,12 +467,12 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 - API inspection of `ResourceSlice` objects containing `sharedCounters` with `requestPolicy` and devices with `valueFrom` in `consumesCounters`.
-- API inspection of `ResourceClaim` allocations consuming named capacities.
+- API inspection of `ResourceClaim.status.allocation.devices.results[].consumedCounters` for resolved shared-counter consumption.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] API .status
-  - Other field: `ResourceClaim.Status.Allocation` reflects resolved `valueFrom` consumption against shared counter sets
+  - Other field: `ResourceClaim.status.allocation.devices.results[].consumedCounters` records the resolved shared-counter consumption snapshot used for later accounting
 - [ ] Events
   - Event Reason:
 - [ ] Other
@@ -484,7 +511,7 @@ No fundamentally new call types are expected. It may increase processing per all
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No new top-level API types are expected; this proposal extends fields on existing DRA API objects (`Counter`, `DeviceCounterConsumption`).
+No new top-level API types are expected. This proposal splits the previous `Counter` type into `SharedCounter` and `ConsumeCounter`, adds `CounterValueFrom`, and adds `CounterSetConsumption` on allocation results.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -492,7 +519,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes, `ResourceSlice` size may increase slightly due to `requestPolicy` on shared counters and `valueFrom` on device counter consumption entries.
+Yes. `ResourceSlice` size may increase slightly due to `requestPolicy` on shared counters and `valueFrom` on device counter consumption entries. `ResourceClaim` status size increases by `consumedCounters` on each allocated device result (at most two counter sets per result).
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -518,10 +545,10 @@ Like other scheduler features, new allocations cannot be completed while require
   - Detection: allocation failures with clear reason, validation errors where possible
   - Mitigations: fix driver publication; reject invalid objects early
   - Diagnostics: scheduler and apiserver logs/events
-  - Testing: unit/integration coverage planned
+  - Testing: unit/integration coverage
 
 - **`requestPolicy` mismatch causing unexpected rounding/default behavior**
-  - Detection: discrepancy between requested and consumed values in allocation outputs
+  - Detection: discrepancy between requested amount and `consumedCounters` snapshot
   - Mitigations: adjust `requestPolicy` definitions and documentation
   - Diagnostics: allocation result inspection, scheduler logs/events
   - Testing: unit tests for policy resolution and arithmetic
@@ -535,12 +562,14 @@ Like other scheduler features, new allocations cannot be completed while require
 ## Implementation History
 
 - 2026-03-03: Initial draft created in local design docs, generalized from SR-IOV-specific proposal.
+- 2026-07-21: Alpha implementation: split `Counter` into `SharedCounter`/`ConsumeCounter`, persist `consumedCounters` on ResourceClaim allocation status, add unit/integration/e2e coverage.
+- 2026-09-22: Retarget alpha to Kubernetes v1.38.
 
 ## Drawbacks
 
-- Adds scheduler complexity for `valueFrom` resolution and `requestPolicy` enforcement.
-- Adds optional fields to the existing `Counter` struct, which introduces context-dependent semantics (`requestPolicy` only meaningful in `sharedCounters`, `valueFrom` only meaningful in `consumesCounters`).
-- Requires careful `requestPolicy` semantics to avoid ambiguity when both static and request-driven consumption apply.
+- Adds scheduler complexity for `valueFrom` resolution, `requestPolicy` enforcement, and snapshot-based accounting.
+- Splits the previous `Counter` type into `SharedCounter` and `ConsumeCounter` so `requestPolicy` and `valueFrom` are not mixed on one struct.
+- Requires careful `requestPolicy` semantics when devices using static `value` and devices using `valueFrom` share one counter set.
 
 ## Alternatives
 
