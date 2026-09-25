@@ -1,0 +1,40 @@
+title: Integrate Workload APIs with Deployment Controller
+kep-number: 6276
+authors:
+  - "@PannagaRao"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-scheduling
+status: implementable
+creation-date: 2026-08-21
+reviewers:
+  - "@kannon92"
+  - "@helayoty"
+approvers:
+  - "@soltysh"
+  - "@janetkuo"
+
+see-also:
+  - "/keps/sig-apps/5547-integrate-workload-with-job"
+  - "/keps/sig-scheduling/6089-was-controller-apis"
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5832-decouple-podgroup-api"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: WorkloadWithDeployment
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  -
