@@ -1,0 +1,36 @@
+title: "API Server Write Throughput: Reducing Allocations"
+kep-number: 6404
+authors:
+  - "@serathius"
+  - "@jpbetz"
+  - "@Jefftree"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-scalability
+status: implementable
+creation-date: 2026-09-21
+reviewers:
+  - "@wojtek-t"
+  - "@liggitt"
+  - "@deads2k"
+  - "@sttts"
+approvers:
+  - "@wojtek-t"
+  - "@liggitt"
+  - "@deads2k"
+
+see-also:
+  - "/keps/sig-api-machinery/2340-Consistent-reads-from-cache"
+  - "/keps/sig-api-machinery/4988-snapshottable-api-server-cache"
+replaces: []
+
+stage: alpha
+latest-milestone: "v1.38"
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: ConsistentGetFromCache
+    components:
+      - kube-apiserver
+disable-supported: true
