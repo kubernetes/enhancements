@@ -13,7 +13,8 @@
   - [User Personas](#user-personas)
 - [Design details](#design-details)
   - [Important changes between versions](#important-changes-between-versions)
-    - [v1alpha1 to v1alpha2](#v1alpha1-to-v1alpha2)
+    - [v1alpha1 to v1alpha2 Changes](#v1alpha1-to-v1alpha2-changes)
+    - [v1alpha2 to v1beta1 Changes](#v1alpha2-to-v1beta1-changes)
   - [COSI Architecture](#cosi-architecture)
   - [COSI API Overview](#cosi-api-overview)
   - [COSI Object Lifecycle](#cosi-object-lifecycle)
@@ -58,6 +59,8 @@
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [v1alpha1 to v1alpha2 Upgrade/Downgrade](#v1alpha1-to-v1alpha2-upgradedowngrade)
+    - [v1alpha2 to v1beta1 Upgrade/Downgrade](#v1alpha2-to-v1beta1-upgradedowngrade)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Alternatives Considered](#alternatives-considered)
   - [Automatically mount buckets to Pods](#automatically-mount-buckets-to-pods)
@@ -77,6 +80,7 @@
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -167,7 +171,7 @@ We define 3 kinds of stakeholders:
 
 ### Important changes between versions
 
-#### v1alpha1 to v1alpha2
+#### v1alpha1 to v1alpha2 Changes
 
 - DeletionPolicy is now a required field on all API objects. The user must explicitly specify it, leaving no room for confusion.
 
@@ -206,6 +210,13 @@ We define 3 kinds of stakeholders:
 - A BucketAccess can now specify the desired Read/Write access mode for each referenced BucketClaim. This is another highly requested feature for COSI after v1alpha1. Permissions are separated into 3 categories: object data, object metadata, bucket metadata.
 
 - Resource statuses will use Conditions to report `Provisioned` status instead of `ReadyToUse` boolean. Conditions will also report driver RPC errors and resource spec/status errors to help with user debugging.
+
+#### v1alpha2 to v1beta1 Changes
+
+- No user-facing or driver-developer-facing API changes.
+
+- Metrics design is updated.
+  COSI Controller and Sidecar workflows for BucketClaim and BucketAccess are slightly modified to facilitate metric tracking internally.
 
 ### COSI Architecture
 
@@ -367,13 +378,13 @@ For example, a rogue HA controller instance could end up racing and making multi
    4. COSI persists the returned bucket ID in Bucket status
    5. Sidecar calls the COSI driver via gRPC to provision the OSP bucket, by prior bucket ID
    6. If OSP returns provision fail, COSI sidecar reports error to Bucket status and retries w/ backoff
-4. When OSP returns provision success, COSI sidecar updates Bucket status `ReadyToUse` to true
-5. Controller detects that the Bucket is provisioned successfully (`ReadyToUse`==true)
+4. When OSP returns provision success, COSI sidecar updates Bucket status `Provisioned` to true
+5. Controller detects that the Bucket is provisioned successfully (`Provisioned`==true)
    1. Controller finishes BucketClaim reconciliation processing
    2. Controller validates BucketClaim and Bucket fields to ensure provisioning success
    3. Controller copies Bucket status items to BucketClaim status as needed. Importantly:
       1. Supported protocols
-      2. `ReadyToUse`
+      2. `Provisioned`
 
 #### Accessing an Existing OSP Bucket
 
@@ -395,7 +406,7 @@ To resolve this, only the Admin is expected to allow access to existing OSP buck
    2. Sidecar applies `objectstorage.k8s.io/protection` finalizer to Bucket
    3. Sidecar calls the COSI driver via gRPC call to check that the existing OSP bucket exists
    4. Sidecar exits with retry backoff if existing bucket is nonexistent
-   5. When Bucket prep is successful, COSI sidecar updates Bucket status `ReadyToUse` to true
+   5. When Bucket prep is successful, COSI sidecar updates Bucket status `Provisioned` to true
       (otherwise retry each time Bucket is updated)
 3. User (or Admin) creates BucketClaim referencing Bucket above
 4. COSI controller observes BucketClaim
@@ -405,11 +416,11 @@ To resolve this, only the Admin is expected to allow access to existing OSP buck
    4. Controller applies `objectstorage.k8s.io/protection` finalizer to BucketClaim
    5. If BucketClaim reference set by admin on Bucket doesn't match, error without retry
    6. Apply Full BucketClaim reference info (with UID) to Bucket spec (Bucket is now bound to claim)
-   7. If Bucket status `ReadyToUse` is not true, wait for Bucket to be updated
+   7. If Bucket status `Provisioned` is not true, wait for Bucket to be updated
    8. Controller validates BucketClaim and Bucket fields to ensure provisioning success
    9. Controller copies Bucket status items to BucketClaim status as needed. Importantly:
       1. Supported protocols
-      2. `ReadyToUse`
+      2. `Provisioned`
 
 #### Deleting a Bucket
 
@@ -481,8 +492,10 @@ If a BucketClaim is in deleting state, no new BucketAccesses can be created for 
       1. Bucket does not have to be provisioned, but Bucket must be known
    7. If any BucketClaims are being deleted, return an error
    8. Once everything looks good on Bucket+Claim(s):
-      1. Set corresponding Bucket references on BucketAccess status
-      2. Copy BucketAccessClass specs and parameters to BucketAccess status
+      1. Start the metric timer for this BucketAccess create operation.
+      2. Set corresponding Bucket references on BucketAccess status.
+      3. Copy BucketAccessClass specs and parameters to BucketAccess status.
+      4. This hands off BucketAccess provisioning management to the Sidecar.
 4. COSI Sidecar detects the BucketAccess resource update
    1. BucketAccess status now shows corresponding Bucket(s) BucketAccessClass info, so sidecar can provision
    2. If the BucketAccess's driver matches the sidecar's driver, continue
@@ -497,7 +510,13 @@ If a BucketClaim is in deleting state, no new BucketAccesses can be created for 
    10. When OSP returns provision success, COSI sidecar:
       1. Applies `objectstorage.k8s.io/protection` finalizer to all Secrets
       2. Updates all BucketAccess Secrets with all info needed to access each OSP bucket
-      3. Updates BucketAccess status `ReadyToUse` to true
+      3. Updates BucketAccess status `Provisioned` to true (or false if it cannot be provisioned)
+5. COSI Controller sees the BucketAccess transition to `Provisioned=True` or `Provisioned=False`
+   1. Stop the metric timer for this BucketAccess create operation, and emit the metric as Succeeded/Failed appropriately.
+   2. The Controller does not own provisioning management here, so it must not modify the BucketAccess in any way.
+
+Managing metrics for BucketAccess operations is challenging due to Controller-Sidecar handoff.
+Thus, metrics events are noted here where they are elided elsewhere.
 
 #### Deleting a BucketAccess
 
@@ -507,18 +526,33 @@ COSI does not set up or manage mounting BucketAccess information to Pods consumi
 As such, COSI will delete a BucketAccess and its associated Secret without checking if the Secret is mounted to any Pods.
 
 1. User deletes BucketAccess object
-2. COSI Controller detects BucketAccess resource's deletion timestamp
-   1. Initially, Controller does nothing, waiting for Sidecar to set `objectstorage.k8s.io/sidecar-cleanup-finished` annotation
-3. COSI Sidecar detects BucketAccess resource's deletion timestamp
-   1. Sidecar removes `objectstorage.k8s.io/protection` finalizer from the BucketAccess Secret
-   2. Sidecar deletes the BucketAccess Secret (should happen before OSP access is removed via gRPC)
-   3. Sidecar calls the COSI driver via gRPC to revoke the associated access credentials
-   4. If OSP returns de-provision fail, COSI sidecar reports error to BucketAccess status and retries gRPC call
-   5. When OSP returns de-provision success, COSI sidecar:
+2. COSI Sidecar detects BucketAccess resource's deletion timestamp
+   1. Initially, Sidecar does nothing, waiting for Controller to set `objectstorage.k8s.io/bucketaccess-being-deleted`
+3. COSI Controller detects BucketAccess resource's deletion timestamp
+   1. If present, stop the metric timer for this BucketAccess create operation, and emit the metric as `Canceled`.
+   2. Start the metric timer for this BucketAccess delete operation.
+   3. Set the `objectstorage.k8s.io/bucketaccess-being-deleted` annotation.
+   4. Wait for `objectstorage.k8s.io/sidecar-cleanup-finished` annotation.
+   5. This hands off BucketAccess deletion management to the Sidecar.
+4. COSI Sidecar detects BucketAccess resource's deletion timestamp
+   1. If `objectstorage.k8s.io/bucketaccess-being-deleted` is present, continue.
+   2. Sidecar removes `objectstorage.k8s.io/protection` finalizer from the BucketAccess Secret(s)
+   3. Sidecar deletes the BucketAccess Secret(s) (should happen before OSP access is removed via gRPC)
+   4. Sidecar calls the COSI driver via gRPC to revoke the associated access credentials
+   5. If OSP returns de-provision fail, COSI sidecar reports error to BucketAccess status and retries gRPC call
+   6. When OSP returns de-provision success, COSI sidecar:
       1. Sets `objectstorage.k8s.io/sidecar-cleanup-finished` annotation on BucketAccess
-4. Controller detects BucketAccess resource update, with deletion timestamp
-   1. Controller removes `objectstorage.k8s.io/has-bucketaccess-references` from BucketClaim if this is the last BucketAccess against the BucketClaim (this allows BucketClaim to start deletion, if applicable)
-   2. Controller removes `objectstorage.k8s.io/protection` from BucketAccess
+      2. This hands back BucketAccess Deletion management to the Controller.
+5. Controller detects BucketAccess resource update, with deletion timestamp
+   1. If `objectstorage.k8s.io/sidecar-cleanup-finished` annotation is present, continue.
+   2. Stop the metric timer for this BucketAccess delete operation and emit the metric as `Succeeded`
+      (`Failed` is not detectable for deletion).
+   3. Controller removes `objectstorage.k8s.io/has-bucketaccess-references` from BucketClaim(s) if this is the last BucketAccess against the BucketClaim(s)
+      (this allows BucketClaim(s) to start deletion, if applicable).
+   4. Controller removes `objectstorage.k8s.io/protection` from BucketAccess
+
+Managing metrics for BucketAccess operations is challenging due to Controller-Sidecar handoff.
+Thus, metrics events are noted here where they are elided elsewhere.
 
 #### Attaching Bucket Information to Pods
 
@@ -540,6 +574,7 @@ However, each application has different requirements, and some may require envir
 
 Annotations:
 - `objectstorage.k8s.io/bucketclaim-being-deleted`: applied to a Bucket when the Controller detects that the Bucket's bound BucketClaim is being deleted
+- `objectstorage.k8s.io/bucketaccess-being-deleted`: applied to a BucketAccess when the Controller detects that the BucketAccess is being deleted
 - `objectstorage.k8s.io/has-bucketaccess-references`: applied to a BucketClaim when the Controller detects that one or more BucketAccesses reference the claim
 - `objectstorage.k8s.io/sidecar-cleanup-finished`: applied to a BucketAccess when the Sidecar has finished cleaning up, allowing the Controller to begin its final cleanup operations
 - `objectstorage.k8s.io/bucketaccess-reference`: applied to BucketAccess Secrets with the value `<namespace>/<name>` of the BucketAccess the Secret references. This is not functional and exists simply to assist users with cross-referencing when inspecting a Secret.
@@ -1456,8 +1491,8 @@ Important driver return codes:
 
 - Implement all COSI components to support agreed design.
 - Basic unit and e2e tests as outlined in the test plan.
-- Metrics for bucket create and delete, and granting and revoking bucket access.
-- Metrics in provisioner for bucket create and delete, and granting and revoking bucket access.
+- Metrics in Controller (CRD-centric) for bucket create/delete, and grant/revoke access.
+- Metrics in Sidecar (RPC-centric) for bucket create/delete, and grant/revoke bucket access.
 
 #### GA
 
@@ -1470,6 +1505,8 @@ Important driver return codes:
 
 No Kubernetes changes are required on upgrade to maintain previous behavior.
 
+#### v1alpha1 to v1alpha2 Upgrade/Downgrade
+
 The COSI resource APIs have breaking changes from v1alpha1 to v1alpha2.
 Migrations between versions are not supported via automation.
 
@@ -1478,11 +1515,27 @@ COSI v1alpha1 and v1alpha2 Controllers cannot be running at the same time.
 
 To upgrade, first uninstall the v1alpha1 COSI Controller as well as any v1alpha1 Drivers.
 Then, deploy the v1alpha2 COSI Controller and desired v1alpha2 Drivers.
-
 Any COSI resources created using a v1alpha1 system will be incompatible as well.
 The COSI project will document the static provisioning workflow.
 Backend buckets previously created using a COSI v1alpha1 system be made accessible using this workflow.
 The COSI project will document how to manually migrate from v1alpha1 to v1alpha2.
+
+#### v1alpha2 to v1beta1 Upgrade/Downgrade
+
+If possible COSI would like to allow COSI v1beta1 Sidecar and Controller to be backwards compatible with v1alpha2 Driver and resources.
+This is not a requirement for a beta API, but version migration will be necessary for beta to GA transition, so we may as well practice early.
+Forward compatibility is not a goal for v1beta1.
+
+COSI can use a [conversion webhook](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definition-versioning/#webhook-conversion) to support v1alpha2 resources via v1beta1 Controller/Sidecar.
+As long as a v1beta1 COSI Controller is running, a v1alpha2 Sidecar should be able to function normally.
+Downgrading the COSI Controller back to v1alpha2 should still work with v1alpha2 resources, but any v1beta1 resources would no longer be reconciled.
+
+Additionally, we will strive to only make backward-compatible gRPC API changes.
+This would allow a v1alpha2 Driver to function with a v1beta1 Sidecar.
+
+Since none of this work is strictly required for alpha to beta API migration, this will be done as a best effort.
+If there are technical issues that limit our abilities, we may choose to abandon this plan.
+If we do plan to commit, we will ensure e2e tests validate backwards compatibility.
 
 ### Version Skew Strategy
 
@@ -1730,6 +1783,8 @@ This section must be completed when targeting beta to a release.
 
 Resources are deployed via Kubernetes Deployments with already-existing rollout/rollback systems.
 
+[Upgrade/Downgrade Strategy](#upgrade--downgrade-strategy) has more details.
+
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -1754,6 +1809,21 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+Kubernetes upgrade/downgrade will not affect COSI because it is out of tree.
+
+Within COSI, v1beta1 does not target rollback support.
+Administrators relying on COSI v1alpha2 in production are advised to test upgrade in a canary environment first.
+
+When upgrading in production, we advise caution, focusing first on ensuring existing resources work.
+Update the COSI Controller first, then restart Driver(s).
+If there are any COSI resource errors, debug and revert to the prior Controller version if needed.
+After the Controller and Sidecar(s) quiesce, if there are no errors, proceed.
+Next, update Drivers and/or Sidecars, and check for errors as before.
+
+Afterwards, test COSI's ability to handle new v1alpha2 and new v1beta1 resources using test resources.
+If the new resources are able to be provisioned, no rollback is needed.
+If rollback is needed at this point, and only test resources are lost.
+
 ###### Were upgrade and rollback tested? Was the upgrade-\>downgrade-\>upgrade path tested?
 
 <!--
@@ -1762,13 +1832,20 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Kubernetes upgrade/downgrade will not affect COSI because it is out of tree.
+
+Within COSI, v1beta1 targets upgrade from v1alpha2 and backwards compatibility only.
+Future betas and/or GA releases will target downgrade as well, as required.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-No
+No Kubernetes APIs are deprecated because COSI is out of tree.
+
+Within COSI, no deprecations/removals are planned for v1alpha2 -\> v1beta1.
 
 ### Monitoring Requirements
 
@@ -1784,7 +1861,25 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-The operator can query Bucket* objects to find if their workloads are associated with them.
+COSI BucketAccess resources are most directly consumed by workloads.
+In some sense, a BucketAccess is a good proxy for indicating when a bucket (Bucket/BucketClaim) is in use.
+It would be more correct to say that a BucketAccess represents an **intent** to use a bucket.
+
+A BucketAccess consumes one or more BucketClaims.
+Each BucketAccess spec defines a list of `bucketClaims` also references an `accessSecret` for each claim.
+When any Kubernetes Secret named as an `accessSecret` is mounted by a Pod, the feature is definitely in-use.
+
+An administrator also might want to know how to determine which BucketAccess is relevant when inspecting another resource.
+
+For BucketClaims:
+BucketAccesses can be correlated to specific BucketClaims by inspecting BucketAccess `accessedBuckets` status items.
+BucketClaims have an annotation that, when present, marks them as being referenced by any BucketAccesses: `objectstorage.k8s.io/has-bucketaccess-references`.
+If the annotation is absent, it is not in use.
+Specific referencing BucketAccesses are not mentioned but will be in the same namespace and so can be listed easily.
+
+For Buckets:
+Buckets are tied 1-to-1 to BucketClaims.
+Each Bucket has a reference to a specific BucketClaim and vice versa.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1802,35 +1897,39 @@ Recall that end users cannot usually observe component logs or access metrics.
     - FailedCreateBucket - Report when COSI fails to create a bucket, with error message
     - FailedDeleteBucket - Report when COSI fails to delete a bucket, with error message
   - [ ] API .status
-    - [x] ReadyToUse bool
-    - [ ] ErrorMessage string - last error message; cleared when provisioning is successful
     - [x] BucketID string
+    - [ ] .status.conditions
+      - [ ] ResourcesValidated
+      - [ ] ProvisionFailed
+      - [ ] Provisioned
 - BucketClaim
   - [ ] Events
     - FailedCreateBucket - Report when COSI fails to create bucket for BC, with error message
     - FailedDeleteBucket - Report when COSI fails to delete bucket for BC, with error message
   - [ ] API .status
-    - [x] ReadyToUse bool
-    - [ ] ErrorMessage string - last error message; cleared when provisioning is successful
-    - [x] BucketName string
+    - [ ] .status.conditions
+      - [ ] ResourcesValidated
+      - [ ] ProvisionFailed
+      - [ ] Provisioned
 - BucketAccess
   - [ ] Events
     - WaitingForBucket - Report when COSI cannot grant access because bucket does not yet exist
     - FailedGrantAccess - Report when COSI fails to grant access to a bucket, with error message
     - FailedRevokeAccess - Report when COSI fails to revoke access to a bucket, with error message
   - [ ] API .status
-    - [x] ReadyToUse bool
-    - [ ] ErrorMessage string - last error message; cleared when provisioning is successful
-    - [x] AccountID string
+    - [ ] .status.conditions
+      - [ ] ResourcesValidated
+      - [ ] ProvisionFailed
+      - [ ] Provisioned
 - BucketClass
   - Does not have events or status
 - BucketAccessClass
   - Does not have events or status
 - COSI Controller
-  - Does not have events or status; it will add events and status to CRs
+  - Does not have its own events or status; it will add events and status to CRs
   - Logs will be sufficient for deeper info
 - COSI Provisioner Sidecar
-  - Does not have events or status; it will add events and status to CRs
+  - Does not have its own events or status; it will add events and status to CRs
   - Logs will be sufficient for deeper info
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -1850,6 +1949,19 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Quality of service for COSI is impossible to define clearly because of the reliance on 3rd party Drivers.
+Any SLO that relies on Driver behavior is likely not a good target for COSI itself.
+However, COSI administrators and Driver developers are likely to want SLIs that can help them meet their own SLOs.
+To this end, COSI will provide SLIs that can be used to determine driver provisioning times and error rates.
+
+Core SLOs that COSI administrators will want to target are things like:
+- The per-day percentage of gRPC calls finishing with an error. (Backend reliability.)
+- The per-day 99th percentile time taken to receive gRPC call responses. (Backend latency.)
+- The per-day 99th percentile time taken to provision long-running COSI resources end-to-end. (COSI plus backend latency.)
+  (Long-running resources are BucketClaim and BucketAccess, which refer to other resources and spend
+  a significant portion of their initial lifecycle waiting.)
+- The per-day maximum and median number of long-running operations in flight. (COSI plus backend throughput.)
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -1859,46 +1971,35 @@ Pick one more of these and delete the rest.
 - [ ] `cosi_operation_total_seconds`
   - Type: Histogram
     - Histogram Buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600, '+Inf'
-  - Reported by: COSI Controller
+  - Reported by: COSI Controller for BucketClaim and BucketAccess.
   - Definition: COSI operation end-to-end duration in number of seconds. For example, the duration
-    from when a BucketClaim resource is created until BucketClaim has `Status.ReadyToUse=true`.
+    from when a BucketClaim resource processed until it has status condition Provisioned==True (or False).
   - Labels:
     - `driver_name` - name of COSI driver the operation runs against
-    - `resource_kind` - Bucket, BucketClaim, BucketAccess
+    - `resource_kind` - BucketClaim, BucketAccess
     - `operation` - Create, Delete
-  - Calculation note:
-    - Create:
-      - Time delta between the resource's meta.creationTimestamp and when Status.XReady=true is successfully applied
-    - Delete:
-      - Time delta between the resource's meta.deletionTimestamp and when the resource's finalizer is successfully removed
-- [ ] `cosi_operation_count`
-  - Type: Counter
-  - Reported by: COSI Controller
-  - Definition: Total number of end-to-end reconciliations conducted by the COSI controller.
+    - `deletion_policy` - Delete, Retain (Delete for all BucketAccesses)
+    - `provisioning_type` - Dynamic, Static (Dynamic for all BucketAccesses)
+    - `status` - Unknown, Succeeded, Failed, Canceled
+- [ ] `cosi_operations_in_flight`
+  - Type: Gauge
+  - Reported by: COSI Controller for BucketClaim and BucketAccess.
+  - Definition: Total number of end-to-end reconciliations in progress.
   - Labels:
     - `driver_name` - name of COSI driver the operation runs against
-    - `resource_kind` - Bucket, BucketClaim, BucketAccess
+    - `resource_kind` - BucketClaim, BucketAccess
     - `operation` - Create, Delete
-    - `status` - Unknown, Succeeded, Canceled
-- [ ] `cosi_sidecar_operation_duration_seconds`
+    - `deletion_policy` - Delete, Retain
+    - `provisioning_type` - Dynamic, Static
+- [ ] `cosi_sidecar_operation_total_seconds`
   - Type: Histogram
     - Histogram buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600, '+Inf'
-  - Reported by: COSI provisioner sidecar
-  - Definition: Total number of seconds spent by the controller on a gRPC operation from end to end
+  - Reported by: COSI Sidecar
+  - Definition: Total number of seconds spent by the controller on a gRPC operation from end to end.
   - Labels:
     - `driver_name` - name of the COSI driver the operation runs against
     - `method_name` - gRPC operation name (e.g., `DriverCreateBucket`, `DriverGetInfo`)
-    - `grpc_status_code` (e.g., "OK", "InvalidArgument")
-- [ ] `cosi_sidecar_operation_errors_total`
-  - Type: Counter
-  - Definition: Total number of errors returned from a gPRC operation
-  - Reported by: COSI provisioner sidecar
-  - Labels:
-    - `driver_name` - name of the COSI driver the operation runs against
-    - `method_name` - gRPC operation name (e.g., `DriverCreateBucket`, `DriverGetInfo`)
-
-- [ ] Other (treat as last resort)
-  - Details:
+    - `status_code` - gRPC status code (e.g., 0=OK, 3=InvalidArgument, etc.)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1907,11 +2008,16 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+It would be great to be able to determine the total time COSI takes in provisioning while excepting the gRPC call times.
+However, this is fairly intractable to compute reasonably.
+
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+
+Nothing except the Kube API server.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -1930,7 +2036,9 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-No
+- Kube API server
+- COSI Controller
+- A compatible 3rd party COSI driver (with COSI Sidecar)
 
 ### Scalability
 
@@ -1974,15 +2082,20 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-Yes, the following cluster scoped resources
+Not from the Kube API server.
 
-- Bucket
-- BucketClass
-- BucketAccessClass
+From COSI internally, yes.
 
-and the following namespaced scoped resources
+The following cluster scoped resources:
 
-- BucketAccess
+- Bucket (no max)
+- BucketClass (no max)
+- BucketAccessClass (no max)
+
+The following namespaced scoped resources:
+
+- BucketClaim (no max)
+- BucketAccess (no max)
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -2003,7 +2116,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -2016,8 +2129,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-Yes. Containers requesting Buckets will not start until Buckets have been provisioned.
-This is similar to dynamic volume provisioning
+Yes. Pods that attach BucketAccess Secrets will not start until Buckets and BucketAccess(es) have been provisioned.
+This is similar to dynamic volume provisioning.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -2031,7 +2144,147 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-Not likely to increase resource consumption in a significant manner
+Not likely to increase resource consumption in a significant manner.
+Scale could affect Kube API consumption, but Kube API should throttle COSI's requests when needed.
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+This feature is built using Kubernetes operator principles and thus relies on the Kube API to function.
+If the Kube API is unavailable, COSI will not be able to make progress on resource reconciliation.
+Errors related to Kube API returns will be logged as errors in Controller/Sidecar.
+Without the Kube API functioning, resource statuses cannot be updated, and events cannot be emitted to make the errors more visible.
+
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+COSI deployment issues:
+- The COSI Controller is a Deployment and may have scheduling issues as with any other Kube Deployment.
+  Kubernetes Deployment tools should be used to diagnose and resolve deployment issues.
+- Each COSI Driver is defined by a 3rd party Developer.
+  Drivers should provide troubleshooting docs for COSI users/admins.
+- COSI admins should reach out to Driver developers for further assistance with Driver deployments.
+
+A COSI Bucket, BucketClaim, or BucketAccess resource reports a `ProvisionFailed=True` condition.
+- This condition represents an error reported to COSI via the Driver's gRPC interface.
+- COSI relies on 3rd party Drivers to assist users with driver-related errors:
+  - Firstly, Drivers should return clear error messages that help users and administrators diagnose and resolve issues.
+  - Secondly, Drivers should provide Driver-specific documentation to assist with nontrivial issues.
+- This condition may be reported after the resource is successfully provisioned (`Provisioned=True`).
+  A best-case reason for the error may be a temporary DNS outage preventing access to the backend system.
+  A worst-case reason may be that the backend resource is permanently lost.
+- COSI users should reach out to COSI admins for further assistance if a non-temporary issue is suspected.
+- COSI admins should reach out to Driver developers for further assistance as needed.
+- Propagation of Driver-reported errors is tested in unit tests.
+
+A COSI Bucket, BucketClaim, or BucketAccess resource reports a `ResourcesValidated=False` status condition.
+- COSI checks each resource and any referenced resources for misconfigurations via this condition.
+- COSI reports clear messages indicating why validation failed so that the user may take appropriate action.
+- For example, COSI reports when a BucketClaim requested by a BucketAccess has a provisioning error.
+  The user can follow up to check the BucketClaim for issues.
+- An invalid resource may commonly require the user to delete and recreate one or more resources.
+  For example, when a BucketClaim is incompatible with a requesting BucketAccess appropriate follow-up might be:
+  - The BucketAccess is recreated to make a request compatible with the BucketClaim.
+  - The BucketClaim is recreated to be compatible with the BucketAccess request.
+  - The requested BucketClass or BucketAccessClass may need to be modified to a Class that allows the scenario.
+    The user should reach out to the COSI admin in this case.
+- COSI will update its official documentation including more details for commonly-reported issues
+  for which COSI is unable to provide clear guidance via reasonable-length condition messages.
+- This condition may be reported after the resource is successfully provisioned (`Provisioned=True`).
+  Excepting ETCD corruption issues affecting the resource, this would indicate that a resource that is
+  referred to by the current resource has unexpectedly transitioned status or gone missing.
+  - The backend resource might (or might not) still be usable, but COSI will no longer be able to manage it normally.
+  - Regardless of current usability, a COSI user should escalate to a COSI administrator to determine next steps.
+    A COSI resource in this state is not supportable, and the system must be corrected.
+    - A lost Bucket or BucketClaim with an existent backend resource can have a static pair made as a replacement.
+    - A BucketAccess affected by such an issue will need to be recreated to regain access.
+  - COSI will still attempt to call the Driver to validate the resource so that immediate usability
+    can be determined. The Driver's return (or an inability to call the Driver) will report via `ProvisionFailed`.
+- Tested in unit tests.
+
+A COSI Bucket, BucketClaim, or BucketAccess resource reports a `ResourcesValidated=Unknown` status condition for a long time.
+- `Unknown` state indicates COSI is attempting to validate the resource and its referents.
+- A message will be present indicating which resources are still being waited on.
+  The user can follow-up to ensure the resources exist and/or check for provisioning issues on referents.
+- No message indicates that COSI is struggling with the Kube API. Check appropriate Controller/Sidecar logs to diagnose.
+- Waiting on referents is tested in unit and e2e tests.
+
+A COSI Bucket, BucketClaim, or BucketAccess resource reports a `Provisioned=False` status condition.
+- COSI reports this condition state when the resource definitively cannot be provisioned.
+- This will report a clear reason for the result.
+- Most frequently, this will be informed by `ResourcesValidated` and/or `ProvisionFailed` conditions,
+  which may have more explicit guidance.
+- Tested in unit tests.
+
+A COSI Bucket, BucketClaim, or BucketAccess resource reports a `Provisioned=Unknown` status condition for a long time.
+- `Unknown` state indicates COSI has not yet successfully provisioned the resource.
+- A message will be set indicating COSI's current progress at major internal milestones.
+- Most frequently, this will be informed by `ResourcesValidated` and/or `ProvisionFailed` conditions,
+  which may have more explicit guidance.
+- No message indicates that COSI is either struggling with the Kube API or is not able to reach the first milestone.
+  Check appropriate Controller/Sidecar logs to diagnose.
+  Report non-API issues to the COSI GitHub project with debug logs enabled.
+- Tested in unit tests.
+
+A COSI Bucket, BucketClaim, or BucketAccess resource has no status conditions and/or no finalizer.
+Possible causes:
+- COSI may be struggling with the Kube API. Review Controller/Sidecar logs to diagnose.
+- The COSI Controller is not deployed. Deploy it.
+- The COSI Driver defined in the BucketClass or BucketAccessClass is not present.
+  Deploy it, or resolve typos in class resources.
+- Unit and e2e tests validate that COSI does not request drivers to reconcile resources that do not match the driver name.
+
+For all failure modes, COSI users should reach out to their COSI administrators for initial assistance.
+The COSI administrator should help users resolve issues when possible.
+The administrator should default to reach out to Driver developers for issues.
+If there is evidence to suggest that the issue is a COSI bug, a COSI administrator should report it to COSI's GitHub project.
+COSI Controller logs, Sidecar logs, and Driver logs, all at debug log level, are best to help with troubleshooting.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+First, admins should look to `cosi_sidecar_operation_total_seconds` to determine Driver-related statistics.
+COSI SLOs are overwhelmingly driven by Driver and backend behavior, making this metric the best starting point.
+
+If these Driver-related reports are not meeting the SLO, admins should follow Driver-specific documentation to help troubleshoot further.
+In the absence of clear Driver-related guidance, general guidance is to check backend stability.
+Almost any Driver's performance and stability is limited by the backend system; backend metrics are ideal if they are available.
+It may be necessary to manually create backend resources and run tests to prove backend issues.
+
+If backend issues and Driver issues are ruled out, COSI is the next reasonable suspect.
+First check COSI Controller and Sidecar logs for instances where the Kubernetes API server is causing COSI to delay.
+
+Issues of Kube API timeouts are best elevated to the relevant Kubernetes system's admins.
+
+Issues of Kube API throttling represent a scaling issue.
+This may need to be elevated to the relevant Kubernetes system's admins.
+Additionally, raise a COSI project issue as well, so COSI devs might help determine if there is a COSI architecture issue.
+Please include the total number of Kubernetes nodes; API servers; COSI Buckets, BucketClaims, and BucketAccesses, in addition to the usual logs.
+
+Other Kube API issues and/or issues that don't appear to be API-related should be raised with the COSI project as needed for further analysis.
 
 ## Implementation History
 
@@ -2049,7 +2302,8 @@ Major milestones might include:
 Major milestones:
 - KEP created 25 Nov. 2019
 - v1alpha1 approved alongside Kubernetes v1.25
-- v1alpha2 approval targeted alongside Kubernetes v1.36
+- v1alpha2 approved alongside Kubernetes v1.36
+- v1beta1 approval targeted alongside v1.38
 
 ## Infrastructure Needed (Optional)
 
