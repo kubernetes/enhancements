@@ -447,8 +447,6 @@ type StatefulSetConditionType string
 const (
     // Progress for a StatefulSet is considered when a new pod is created, deleted, or becomes ready.
     StatefulSetProgressing StatefulSetConditionType = "Progressing"
-
-    StatefulSetAvailable StatefulSetConditionType = "Available"
 )
 ```
 ### Implementation Changes
@@ -502,6 +500,8 @@ to implement this enhancement.
 
 ##### Integration tests
 
+- [TestRecreateStatefulSetUpdate](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/integration/statefulset/statefulset_test.go#L802-L928): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration-master&test=TestRecreateStatefulSetUpdate)
+
 We should cover below scenarios:
 
 - Without `type: Recreate`: Existing StatefulSets with `RollingUpdate` and `OnDelete` continue to work unchanged (backward compatibility)
@@ -515,17 +515,19 @@ We should cover below scenarios:
 - PVC preservation: PersistentVolumeClaims are not deleted during Recreate (only pods are deleted)
 - Stuck pod handling: Pods stuck in any state are forcibly deleted (ImagePullBackOff, Pending, CrashLoopBackOff, etc.)
 - Validation: API validation accepts `type: Recreate` on StatefulSet
-- For alpha, Add test to verify that we cannot switch strategies from Recreate to RollingUpdate or OnDelete. Later on beta, we will need to add a test to verify that we can switch strategies
+- For beta, we will add integration tests to verify that we can switch strategies to and from recreate strategy.
 
 ##### e2e tests
 
+- Test scenarios:
+  - [should recreate all pods when the update strategy is Recreate](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/e2e/apps/statefulset.go#L1271-L1329): [result](https://storage.googleapis.com/k8s-triage/index.html?test=should%20recreate%20all%20pods%20when%20the%20update%20strategy%20is%20Recreate)
+  - [should recreate stuck pods with ImagePullBackOff when the update strategy is Recreate](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/e2e/apps/statefulset.go#L1331-L1405): [result](https://storage.googleapis.com/k8s-triage/index.html?test=should%20recreate%20stuck%20pods%20with%20ImagePullBackOff%20when%20the%20update%20strategy%20is%20Recreate)
+  - [should preserve Parallel PodManagementPolicy when recreating pods with recreate strategy](https://github.com/kubernetes/kubernetes/blob/1999683eee27372c7bcca8bd15d01cff59e8cbcb/test/e2e/apps/statefulset.go#L1407-L1481): [result](https://storage.googleapis.com/k8s-triage/index.html?test=should%20preserve%20Parallel%20PodManagementPolicy%20when%20recreating%20pods%20with%20recreate%20strategy)
+
 The following e2e tests will be added to `test/e2e/apps/statefulset.go`:
 
-- StatefulSet with `type: Recreate` successfully deletes and recreates all pods during update
-- Recreate works with stuck pods (ImagePullBackOff scenario - pods are deleted and new ones created)
 - Recreate waits for full termination before creating new pods (no mixed old/new state)
 - Recreate preserves PersistentVolumeClaims (data persists across recreation)
-- Recreate respects `podManagementPolicy` during recreation
 - StatefulSets without `type: Recreate` maintain current RollingUpdate/OnDelete behavior (backward compatibility)
 - Controller restart during Recreate resumes correctly from last phase
 
@@ -535,12 +537,12 @@ The following e2e tests will be added to `test/e2e/apps/statefulset.go`:
 
 - Feature implemented behind a feature flag.
 - Unit and integration tests passed as designed in [TestPlan](#test-plan).
+- Users are able to switch strategies from and to Recreate strategy.
 
 #### Beta
 
 - Feature is enabled by default
 - Address reviews and bug reports from Alpha users
-- Users are able to switch strategies from Recreate to RollingUpdate or OnDelete
 - e2e tests:
   - Add links to testgrid results
   - Verify zero flakes over 2+ weeks
@@ -638,15 +640,37 @@ The feature only activates when users explicitly configure `spec.updateStrategy.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the feature can be disabled.
+Yes, the feature can be disabled by setting the `StatefulSetRecreateStrategy` feature gate to `false` on kube-apiserver and kube-controller-manager and restarting them.
+
+When the feature is disabled:
+
+- kube-apiserver:
+  - Rejects creating a new StatefulSet with `type: Recreate`, and rejects switching an existing StatefulSet from `RollingUpdate`/`OnDelete` to `Recreate`, with a validation error.
+  - StatefulSets that already have `type: Recreate` stored remain readable, and can still be updated. They can also be switched from `Recreate` to `RollingUpdate` or `OnDelete`.
+
+- kube-controller-manager:
+  - Stops reconciling StatefulSets that have `type: Recreate`. For each sync it emits a `Warning` event with reason `UnknownStrategy` and returns an error.
+  - StatefulSets using `RollingUpdate` or `OnDelete` are not affected.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The feature works normally again. StatefulSets with `type: Recreate` in their spec will immediately start using Recreate behavior for the next update.
+The feature works normally again, and new StatefulSets can use `type: Recreate`.
+
+- StatefulSets that still had `type: Recreate` while the feature was disabled are reconciled again, and any changes made while the feature was disabled are applied.
+- StatefulSets that were switched to `RollingUpdate`/`OnDelete` while the feature was disabled keep that strategy until users switch them back to `Recreate`.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, unit and integration tests will be added to cover feature gate enablement/disablement scenarios.
+Yes. Unit tests cover API validation with the feature gate enabled and disabled:
+
+- `pkg/registry/apps/statefulset/strategy_test.go`
+- `pkg/apis/apps/validation/validation_test.go`
+
+Controller behavior with the feature enabled is covered by unit tests, integration and e2e tests in:
+
+- `pkg/controller/statefulset/stateful_set_control_test.go`
+- `test/integration/statefulset/statefulset_test.go`
+- `test/e2e/apps/statefulset.go`
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -654,28 +678,33 @@ No, unit and integration tests will be added to cover feature gate enablement/di
 
 **Rollout Failures:**
 
-- If apiserver and controller-manager have different feature gate states, `type: Recreate` may be accepted but ignored (falls back to RollingUpdate)
-- API validation accepts `type: Recreate` as valid strategy type (no complex validation needed)
+- If the feature is enabled on kube-apiserver but not on kube-controller-manager, `type: Recreate` is accepted by the API, but the controller does not reconcile those StatefulSets until the feature is enabled on kube-controller-manager.
+- If the feature is enabled on kube-controller-manager but not on kube-apiserver, requests setting `type: Recreate` are rejected by validation.
 
 **Rollback Failures:**
 
-- If the strategy type was not changed back, StatefulSets with `type: Recreate` will fall back to RollingUpdate behavior and Recreate behavior will be ignored.
+- If the feature is disabled while StatefulSets still have `type: Recreate`, kube-controller-manager stops reconciling those StatefulSets. It emits `UnknownStrategy` warning events, and does not reconcile those StatefulSets until the feature is re-enabled or their strategy is changed to `RollingUpdate`/`OnDelete`.
 
 **Impact on Running Workloads:**
 
 - No impact on StatefulSets without `type: Recreate`
 - StatefulSets with `type: Recreate` will experience downtime during updates (i.e. all pods are deleted before new ones are created)
+- Running pods of StatefulSets with `type: Recreate` are not deleted or restarted when the feature is disabled. However, if the feature is disabled without changing their strategy, pods that fail or get deleted are not replaced, so availability can degrade.
 
 ###### What specific metrics should inform a rollback?
 
-- `statefulset_unavailable_replicas` shows how many Statefulset replicas are unavailable
+- `statefulset_unavailable_replicas` shows how many StatefulSet replicas are unavailable
 - `workqueue_depth{name="statefulset"}` shows the current depth of the StatefulSet controller queue
 - `workqueue_queue_duration_seconds{name="statefulset"}` shows how long items wait in queue before processing
 - `workqueue_retries_total{name="statefulset"}` shows retry counts which may indicate processing failures
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No, tests will be added to cover upgrade and rollback scenarios.
+Yes, the enable → disable → enable path was tested manually on a v1.37.0 kind cluster, by toggling the feature gate on kube-apiserver and kube-controller-manager:
+
+1. Enabled: a StatefulSet with `type: Recreate` was created and updated. All old pods were terminated before new pods were created, and PVCs were preserved.
+2. Disabled: creating or switching to `type: Recreate` was rejected. The existing Recreate StatefulSet kept running, but was not reconciled (updates, scaling and deleted pods were not acted on, with `UnknownStrategy` warning events). Switching a Recreate StatefulSet to `RollingUpdate` was allowed and restored reconciliation. StatefulSets using other strategies were not affected.
+3. Re-enabled: the Recreate StatefulSet was reconciled again and pending changes were applied using the Recreate strategy.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -817,7 +846,11 @@ No special handling is required as this feature only changes the update progress
 
 ###### What are other known failure modes?
 
-N/A
+- StatefulSets with `type: Recreate` are not reconciled when the feature is disabled on kube-controller-manager
+  - Detection: `Warning` events with reason `UnknownStrategy` on the StatefulSet.
+  - Mitigations: Enable the feature gate on kube-controller-manager, or change `spec.updateStrategy.type` of the StatefulSet to `RollingUpdate` or `OnDelete`.
+  - Diagnostics: kube-controller-manager logs the error `statefulset <namespace>/<name> uses Recreate strategy but feature gate StatefulSetRecreateStrategy is disabled`.
+  - Testing: Covered by the manual enable → disable → enable test described above.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
