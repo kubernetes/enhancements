@@ -143,10 +143,10 @@ Supporting In-place cpu resource resize for Guaranteed QoS pods is crucial becau
 
 For example in a [Data Plane Development Kit (DPDK)](https://www.dpdk.org/) based high-speed data packet networking application, at application startup:
  + DPDK libraries are initialized in the `main logical core (lcore 0)`. Please note that in DPDK, `lcore` refers to a logical execution unit of the processor, sometimes called a hardware thread.
- + `worker and I/O logical cores ( lcore > 0)` are also initialized, to handle packet processing and run on application's workload at RX and TX logical cores ( depending on the application ).
+ + `worker and I/O logical cores (lcore > 0)` are also initialized, to handle packet processing and run on application's workload at RX and TX logical cores (depending on the application).
  + Those initial `DPDK logical cores` must be maintained during applications lifecycle, by design of core DPDK Environment Abstraction Layer (EAL) to ensure no disrupton.
 
-Currently, in-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy ( issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262) ).
+Currently, in-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy (issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262)).
 
 This proposal aims to implement this capability, which was a planned (but out-of-scope) enhancement for the In-Place Resource Resize feature.
 
@@ -161,12 +161,12 @@ know that this has succeeded?
 * Ensure that the QoS class of the pod does not change during resize.
 * Ensure CPU request and limit equality is maintained when a Guaranteed QoS Pod alongside CPU Manager static policy is resized successfully.
 * Preserve the properties of the configured Topology Manager, CPU Manager during resize.
-* Support CPU limit increase without container restart keeping originally configured CPU values (during pod creation on the Node),
-  + maintains original NUMA affinity ( during pod creation of the Node ),
-  + expands upon the original NUMA affinity, if needed, respecting the constraints of the topology manager policy in use.
-* Support CPU limit decrease without container restart up to the originally configured CPU values (during pod creation on the Node),
-  + maintains original NUMA affinity,
-  + maintains parts or whole of previously expanded upon the original NUMA affinity ( from a previous CPU limit increase ), if needed, respecting the constraints of the topology manager policy in use.
+* Support CPU limit increase without container restart keeping "baseline CPUs" values (during pod creation on the Node),
+  + maintains "baseline CPUs" NUMA affinity (during pod creation of the Node),
+  + expands upon the "baseline CPUs" NUMA affinity, if needed, respecting the constraints of the topology manager policy in use.
+* Support CPU limit decrease without container restart up to "baseline CPUs" (during pod creation on the Node),
+  + maintains "baseline CPUs" NUMA affinity,
+  + maintains parts or whole of previously expanded upon the "baseline CPUs" NUMA affinity (from a previous CPU limit increase), if needed, respecting the constraints of the topology manager policy in use.
 
 
 ### Non-Goals
@@ -176,39 +176,40 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-* Support CPU limit decrease below the originally configured values (during pod creation on the Node).
+* Support CPU limit decrease below "baseline CPUs" (during pod creation on the Node).
 * Extend topology / cpu manager to do anything with CPU requests.
+* Pod Level Resources (PLR) integration is deferred to a followup KEP until enough experience from production workload is gathered.
 
 ## Background
 
-[KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager) introduced Topology Manager in `kubelet` for topology aligned resource allocation choices for a container. As of Kubernetes 1.35, the following policies are available:
+[KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager) introduced Topology Manager in `kubelet` for topology aligned resource allocation choices for a container. As of Kubernetes 1.37, the following policies are available:
 
-* `none` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
-* `best-effort` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
-* `restricted` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
-* `single-numa-mode` ( GA, visible by default ) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `none` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `best-effort` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `restricted` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
+* `single-numa-mode` (GA, visible by default) (1.18 or higher) [KEP-693](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager)
 
-`TopologyManagerPolicyOptions` feature gate ( it is enabled by default ), allows the selection of topology manager allocation policies. As of kubernetes 1.35, the following policy options are visible by default provided that `TopologyManagerPolicyOptions` feature gate is enabled:
+`TopologyManagerPolicyOptions` feature gate (it is enabled by default), allows the selection of topology manager allocation policies. As of kubernetes 1.37, the following policy options are visible by default provided that `TopologyManagerPolicyOptions` feature gate is enabled:
 
-* `prefer-closest-numa-modes` ( GA, visible by default ) (1.32 or higher) [KEP-3545](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3545-improved-multi-numa-alignment)
-* `max-allowable-numa-modes` ( GA, visible by default ) (1.31 or higher)  [KEP-4622](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4622-topologymanager-max-allowable-numa-nodes) 
+* `prefer-closest-numa-modes` (GA, visible by default) (1.32 or higher) [KEP-3545](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3545-improved-multi-numa-alignment)
+* `max-allowable-numa-modes` (GA, visible by default) (1.31 or higher)  [KEP-4622](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4622-topologymanager-max-allowable-numa-nodes) 
 
-[KEP-3570](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager) introduced the CPU Manager in `kubelet` for assigning pod containers to sets of CPUs on the local node. According to this KEP _“Kubernetes ships with two CPU Manager policies, only one policy is active at a time on a given node, chosen by the operator via Kubelet configuration. The policies are __none__ (default) and __static__ ( allows pods with certain resource characteristics to be granted increased CPU affinity and exclusivity on the node ).”_
+[KEP-3570](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager) introduced the CPU Manager in `kubelet` for assigning pod containers to sets of CPUs on the local node. According to this KEP _“Kubernetes ships with two CPU Manager policies, only one policy is active at a time on a given node, chosen by the operator via Kubelet configuration. The policies are __none__ (default) and __static__ (allows pods with certain resource characteristics to be granted increased CPU affinity and exclusivity on the node).”_
 
 ![alt text](./cpu_manager_policies_pod_types.png "CPU Manager Policies Pod types")
 
-`CPUManagerPolicyOptions` allow to fine-tune the behavior of the `static` policy. The details of each option are described in their own KEP. As of kubernetes 1.35, the following options are available:
+`CPUManagerPolicyOptions` allow to fine-tune the behavior of the `static` policy. The details of each option are described in their own KEP. As of kubernetes 1.37, the following options are available:
 
 * full-pcpus-only (GA, visible by default) (1.33 or higher) [KEP-2625](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2625-cpumanager-policies-thread-placement)
 * distribute-cpus-across-numa (beta, visible by default) (1.33 or higher) [KEP-2902](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2902-cpumanager-distribute-cpus-policy-option),
 * align-by-socket (alpha, hidden by default) (1.25 or higher) [KEP-3327](https://github.com/fromanirh/enhancements/blob/master/keps/sig-node/3327-align-by-socket/README.md)
 * distribute-cpus-across-cores (alpha, hidden by default) (1.31 or higher) [KEP-4176](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4176-cpumanager-spread-cpus-preferred-policy)
 * strict-cpu-reservation (GA, visible by default) (1.35 or higher) [KEP-4540](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/4540-strict-cpu-reservation/README.md)
-* prefer-align-cpus-by-uncorecache (beta, visible by default) (1.34 or higher) [KEP-4800](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4800-cpumanager-split-uncorecache) 
+* prefer-align-cpus-by-uncorecache (GA, visible by default) (1.36 or higher) [KEP-4800](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4800-cpumanager-split-uncorecache) 
 
 ### Feasible CPU Static Policy Options Combination matrix
 
-Fine tuning of CPU Manager allows to combine [static policy options](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#cpu-policy-static--options), 34 combinations as of Kubernetes 1.35 are feasible, given that there are two constraints:
+Fine tuning of CPU Manager allows to combine [static policy options](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#cpu-policy-static--options), 34 combinations in Kubernetes 1.37 are feasible, given that there are two constraints:
 
 * full-pcpus-only is mutually exclusive with distribute-cpus-across-cores
 * distribute-cpus-across-cores is mutually exclusive with distribute-cpus-across-numa.
@@ -219,82 +220,81 @@ The remaining options are independent and can be combined:
 * strict-cpu-reservation,
 * prefer-align-cpus-by-uncorecache
 
-The full combination matrix as of v1.35 , results to 34 feasible combinations. 64 logical combinations minus 30 combinations because they are not feasible ( 21-24, 29-32, 37-40, 45-48, 53-56, 61-64 ) as of v1.35. 
+The full combination matrix in v1.37 , results to 40 feasible combinations. 64 logical combinations minus 24 not feasible combinations (21-24, 29-32, 37-40, 45-48, 53-56, 61-64) in v1.37.
 
-From the remaining 34 feasible combinations:
-- Combination #35, is GA enabled by default
-- Combination #1, #3 and #5 are GA but not enabled by default
-- 5 combinations with at least one Beta Option
-- 25 combinations with at least one Alpha Option
+From the remaining 40 feasible combinations:
+- 8 combinations are GA visible by default
+- 8 combinations with at least one Beta Option visible by default
+- 24 combinations with at least one Alpha Option, hidden by default
 
 Please see following table for more details, please note in below table, 1 means feature is set, 0 means feature is not set.
 
-| index | full-pcpus-only GA (GA, visible by default) (1.33 or higher) | distribute-cpus-across-numa (alpha, hidden by default) | align-by-socket (alpha, hidden by default) (1.25 or higher) | distribute-cpus-across-cores (alpha, hidden by default) (1.31 or higher) | strict-cpu-reservation GA (GA, visible by default) (1.35 or higher) | prefer-align-cpus-by-uncorecache (beta, visible by default) (1.34 or higher)<br><br><br> | Comment                                                                                                                                                  |
-| ----- | ------------------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | GA but not enabled by default                                                                                                                            |
-| 2     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 3     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | GA but not enabled by default                                                                                                                            |
-| 4     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 5     | 0                                                            | 0                                                      | 0                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | GA but not enabled by default                                                                                                                            |
-| 6     | 0                                                            | 0                                                      | 0                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 7     | 0                                                            | 0                                                      | 0                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 8     | 0                                                            | 0                                                      | 0                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 9     | 0                                                            | 0                                                      | 1                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 10    | 0                                                            | 0                                                      | 1                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 11    | 0                                                            | 0                                                      | 1                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 12    | 0                                                            | 0                                                      | 1                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 13    | 0                                                            | 0                                                      | 1                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 14    | 0                                                            | 0                                                      | 1                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 15    | 0                                                            | 0                                                      | 1                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 16    | 0                                                            | 0                                                      | 1                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 17    | 0                                                            | 1                                                      | 0                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 18    | 0                                                            | 1                                                      | 0                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 19    | 0                                                            | 1                                                      | 0                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 20    | 0                                                            | 1                                                      | 0                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 21    | 0                                                            | 1                                                      | 0                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 22    | 0                                                            | 1                                                      | 0                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 23    | 0                                                            | 1                                                      | 0                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 24    | 0                                                            | 1                                                      | 0                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 25    | 0                                                            | 1                                                      | 1                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 26    | 0                                                            | 1                                                      | 1                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 27    | 0                                                            | 1                                                      | 1                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 28    | 0                                                            | 1                                                      | 1                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 29    | 0                                                            | 1                                                      | 1                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 30    | 0                                                            | 1                                                      | 1                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 31    | 0                                                            | 1                                                      | 1                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 32    | 0                                                            | 1                                                      | 1                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
-| 33    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | GA                                                                                                                                                       |
-| 34    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 35    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | GA Enabled by Default                                                                                                                                    |
-| 36    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 37    | 1                                                            | 0                                                      | 0                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 38    | 1                                                            | 0                                                      | 0                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 39    | 1                                                            | 0                                                      | 0                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 40    | 1                                                            | 0                                                      | 0                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 41    | 1                                                            | 0                                                      | 1                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 42    | 1                                                            | 0                                                      | 1                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 43    | 1                                                            | 0                                                      | 1                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 44    | 1                                                            | 0                                                      | 1                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                                                                                                                                                     |
-| 45    | 1                                                            | 0                                                      | 1                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 46    | 1                                                            | 0                                                      | 1                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 47    | 1                                                            | 0                                                      | 1                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 48    | 1                                                            | 0                                                      | 1                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
-| 49    | 1                                                            | 1                                                      | 0                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 50    | 1                                                            | 1                                                      | 0                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 51    | 1                                                            | 1                                                      | 0                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 52    | 1                                                            | 1                                                      | 0                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 53    | 1                                                            | 1                                                      | 0                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
-| 54    | 1                                                            | 1                                                      | 0                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
-| 55    | 1                                                            | 1                                                      | 0                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
-| 56    | 1                                                            | 1                                                      | 0                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
-| 57    | 1                                                            | 1                                                      | 1                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 58    | 1                                                            | 1                                                      | 1                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 59    | 1                                                            | 1                                                      | 1                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | Alpha                                                                                                                                                    |
-| 60    | 1                                                            | 1                                                      | 1                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Alpha                                                                                                                                                    |
-| 61    | 1                                                            | 1                                                      | 1                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
-| 62    | 1                                                            | 1                                                      | 1                                                           | 1                                                                        | 0                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
-| 63    | 1                                                            | 1                                                      | 1                                                           | 1                                                                        | 1                                                                   | 0                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
-| 64    | 1                                                            | 1                                                      | 1                                                           | 1                                                                        | 1                                                                   | 1                                                                                        | Cannot be used as of v1.35 because distribute-cpus-across-cores , full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
+| index | full-pcpus-only | distribute-cpus-across-numa | align-by-socket | distribute-cpus-across-cores | strict-cpu-reservation | prefer-align-cpus-by-uncorecache | Comment                                                                                                                                    |
+| ----- | --------------- | --------------------------- | --------------- | -----------------------------| -----------------------| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------|
+| 1     | 0               | 0                           | 0               | 0                            | 0                      | 0                                | GA, visible by default                                                                                                                     |
+| 2     | 0               | 0                           | 0               | 0                            | 0                      | 1                                | GA, visible by default                                                                                                                     |
+| 3     | 0               | 0                           | 0               | 0                            | 1                      | 0                                | GA, visible by default                                                                                                                     |
+| 4     | 0               | 0                           | 0               | 0                            | 1                      | 1                                | GA, visible by default                                                                                                                     |
+| 5     | 0               | 0                           | 0               | 1                            | 0                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 6     | 0               | 0                           | 0               | 1                            | 0                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 7     | 0               | 0                           | 0               | 1                            | 1                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 8     | 0               | 0                           | 0               | 1                            | 1                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 9     | 0               | 0                           | 1               | 0                            | 0                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 10    | 0               | 0                           | 1               | 0                            | 0                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 11    | 0               | 0                           | 1               | 0                            | 1                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 12    | 0               | 0                           | 1               | 0                            | 1                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 13    | 0               | 0                           | 1               | 1                            | 0                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 14    | 0               | 0                           | 1               | 1                            | 0                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 15    | 0               | 0                           | 1               | 1                            | 1                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 16    | 0               | 0                           | 1               | 1                            | 1                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 17    | 0               | 1                           | 0               | 0                            | 0                      | 0                                | beta, visible by default                                                                                                                   |
+| 18    | 0               | 1                           | 0               | 0                            | 0                      | 1                                | beta, visible by default                                                                                                                   |
+| 19    | 0               | 1                           | 0               | 0                            | 1                      | 0                                | beta, visible by default                                                                                                                   |
+| 20    | 0               | 1                           | 0               | 0                            | 1                      | 1                                | beta, visible by default                                                                                                                   |
+| 21    | 0               | 1                           | 0               | 1                            | 0                      | 0                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 22    | 0               | 1                           | 0               | 1                            | 0                      | 1                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 23    | 0               | 1                           | 0               | 1                            | 1                      | 0                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 24    | 0               | 1                           | 0               | 1                            | 1                      | 1                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 25    | 0               | 1                           | 1               | 0                            | 0                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 26    | 0               | 1                           | 1               | 0                            | 0                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 27    | 0               | 1                           | 1               | 0                            | 1                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 28    | 0               | 1                           | 1               | 0                            | 1                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 29    | 0               | 1                           | 1               | 1                            | 0                      | 0                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 30    | 0               | 1                           | 1               | 1                            | 0                      | 1                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 31    | 0               | 1                           | 1               | 1                            | 1                      | 0                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 32    | 0               | 1                           | 1               | 1                            | 1                      | 1                                | Not feasible because distribute-cpus-across-cores and distribute-cpus-across-numa combination is not allowed by kubelet.                   |
+| 33    | 1               | 0                           | 0               | 0                            | 0                      | 0                                | GA, visible by default                                                                                                                     |
+| 34    | 1               | 0                           | 0               | 0                            | 0                      | 1                                | GA, visible by default                                                                                                                     |
+| 35    | 1               | 0                           | 0               | 0                            | 1                      | 0                                | GA, visible by default                                                                                                                     |
+| 36    | 1               | 0                           | 0               | 0                            | 1                      | 1                                | GA, visible by default                                                                                                                     |
+| 37    | 1               | 0                           | 0               | 1                            | 0                      | 0                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 38    | 1               | 0                           | 0               | 1                            | 0                      | 1                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 39    | 1               | 0                           | 0               | 1                            | 1                      | 0                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 40    | 1               | 0                           | 0               | 1                            | 1                      | 1                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 41    | 1               | 0                           | 1               | 0                            | 0                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 42    | 1               | 0                           | 1               | 0                            | 0                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 43    | 1               | 0                           | 1               | 0                            | 1                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 44    | 1               | 0                           | 1               | 0                            | 1                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 45    | 1               | 0                           | 1               | 1                            | 0                      | 0                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 46    | 1               | 0                           | 1               | 1                            | 0                      | 1                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 47    | 1               | 0                           | 1               | 1                            | 1                      | 0                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 48    | 1               | 0                           | 1               | 1                            | 1                      | 1                                | Not feasible because distribute-cpus-across-cores and full-pcpus-only combination is not allowed by kubelet.                               |
+| 49    | 1               | 1                           | 0               | 0                            | 0                      | 0                                | beta, visible by default                                                                                                                   |
+| 50    | 1               | 1                           | 0               | 0                            | 0                      | 1                                | beta, visible by default                                                                                                                   |
+| 51    | 1               | 1                           | 0               | 0                            | 1                      | 0                                | beta, visible by default                                                                                                                   |
+| 52    | 1               | 1                           | 0               | 0                            | 1                      | 1                                | beta, visible by default                                                                                                                   |
+| 53    | 1               | 1                           | 0               | 1                            | 0                      | 0                                | Not feasible because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet.  |
+| 54    | 1               | 1                           | 0               | 1                            | 0                      | 1                                | Not feasible because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet.  |
+| 55    | 1               | 1                           | 0               | 1                            | 1                      | 0                                | Not feasible because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet.  |
+| 56    | 1               | 1                           | 0               | 1                            | 1                      | 1                                | Not feasible because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet.  |
+| 57    | 1               | 1                           | 1               | 0                            | 0                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 58    | 1               | 1                           | 1               | 0                            | 0                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 59    | 1               | 1                           | 1               | 0                            | 1                      | 0                                | alpha, hidden by default                                                                                                                   |
+| 60    | 1               | 1                           | 1               | 0                            | 1                      | 1                                | alpha, hidden by default                                                                                                                   |
+| 61    | 1               | 1                           | 1               | 1                            | 0                      | 0                                | Not feasible, because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
+| 62    | 1               | 1                           | 1               | 1                            | 0                      | 1                                | Not feasible, because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
+| 63    | 1               | 1                           | 1               | 1                            | 1                      | 0                                | Not feasible, because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
+| 64    | 1               | 1                           | 1               | 1                            | 1                      | 1                                | Not feasible, because distribute-cpus-across-cores, full-pcpus-only and distribute-cpus-across-numa combination is not allowed by kubelet. |
 
 ### Kubelet CPU reservation 
 
@@ -303,7 +303,7 @@ The Kubelet requires the total CPU reservation from `--kube-reserved` or `--syst
 
 ### Kubelet interaction with Topology Manager
 
-In the below two sections we present sequence diagrams during Pod Admission and current behavior upon an InPlacePodVertical Scaling attempt of a Guaranteed QoS Pod with static CPU Manager policy enabled ( Kubernetes v1.35 is used at the time of writing of this KEP )
+In the below two sections we present sequence diagrams during Pod Admission and current behavior upon an InPlacePodVertical Scaling attempt of a Guaranteed QoS Pod with static CPU Manager policy enabled (Kubernetes v1.37 is used at the time of writing of this KEP)
 
 ### Pod Admission Topology Manager interactions
 
@@ -315,13 +315,13 @@ Please note, the order of allocations and the order on which the resource manage
 
 ### Current behavior
 
-In-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy ( issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262) ). Any attempt of in-place resize for Guaranteed QoS pods with static CPU policy will fail and update status to `Infeasible`.
+In-place resource resizing is infeasible for Guaranteed QoS pods on nodes configured with a Static CPU Policy (issue [#127262](https://github.com/kubernetes/kubernetes/issues/127262)). Any attempt of in-place resize for Guaranteed QoS pods with static CPU policy will fail and update status to `Infeasible`.
 
 Kubernetes v1.32 [#128287](https://github.com/kubernetes/kubernetes/pull/128287) introduced `InPlacePodVerticalScalingExclusiveCPUs` feature gate to enable/disable in-place resize for guaranteedQOS pods with static CPU policy. 
 
 With this KEPs implementation, when `InPlacePodVerticalScalingExclusiveCPUs` is enabled, [Resize CPU and Memory Resources assigned to Containers Node Policies limitation](https://kubernetes.io/docs/tasks/configure-pod-container/resize-container-resources/#limitations) is resolved thus Pods managed by static CPU policies can be resized in-place.
 
-[Feature gate dependency functionality](https://github.com/kubernetes/kubernetes/pull/133697) will be leveraged to validate `InPlacePodVerticalScalingExclusiveCPUs` dependencies ( `InPlacePodVerticalScaling` and `CPUManager` ) at startup.
+[Feature gate dependency functionality](https://github.com/kubernetes/kubernetes/pull/133697) will be leveraged to validate `InPlacePodVerticalScalingExclusiveCPUs` dependencies (`InPlacePodVerticalScaling` and `CPUManager`) at startup.
 
 ## Proposal
 
@@ -339,22 +339,22 @@ nitty-gritty.
 As it was decided in [SIG Node meeting discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg) and from feedback provided during the KEP review process. CPU limit increase of a running container of a Guaranteed Pod managed by Static CPU Policy: 
 
 * Proposed to find a solution with local checkpoint without a `Last In First Out (LIFO) cpuset` or Node Resource Interface (NRI) solution.
-* Must keep "original CPUs" of a running container of a Guaranteed Pod CPUs managed by static CPU policies.
-  + “original CPUs” is the cpuset allocated when the container was admitted the first time, "original CPUs" is checkpointed in CPU Managers checkpoint file, please refer to [ContainerCPUs checkpoint](#containercpus-checkpoint) for more details of the proposed implementation using local storage.
-  + “resized CPUs” is the cpuset allocated after a successful resize, the "resized CPUs" is always a superset of "original CPUs" i.e. `originalCPUs < resizedCPUS_A_UpSize < resizedCPUS_B_UpSize ... < resizedCPUs_N_UpSize` in case of N successive up sizes. 
+* Must keep "baseline CPUs" of a running container of a Guaranteed Pod CPUs managed by static CPU policies.
+  + “baseline CPUs” is the cpuset allocated when the container was admitted the first time, "baseline CPUs" is checkpointed in CPU Managers checkpoint file, please refer to [ContainerCPUs checkpoint](#containercpus-checkpoint) for more details of the proposed implementation using local storage.
+  + “resized CPUs” is the cpuset allocated after a successful resize, the "resized CPUs" is always a superset of "baseline CPUs" i.e. `baselineCPUs < resizedCPUs_A_UpSize < resizedCPUs_B_UpSize ... < resizedCPUs_N_UpSize` in case of N successive up sizes.
 * Attempt of allocating additional CPUs should adhere to the combination of Topology/Memory/CPU/Device/kubelet reservation policies
 * Must work for all CPU sorting solutions within the socket scope
   + The two cpu sorting solutions today are NUMADistributed, NUMAPacked
 * Must ensure reserved CPUs from [Kubelet CPU reservation](#kubelet-cpu-reservation) are kept during resize
-* Must work for all [Supported CPU Static Policy Options Combination matrix](#supported-cpu-static-combination-matrix)
+* Must work for all [Supported CPU Static Policy Options Combination matrix](#supported-cpu-static-policy-options-combination-matrix)
 
-[CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) `CPUManagerCheckpoint` struct to store exclusive cpu/pod assignments, will be used by `InPlacePodVerticalScalingExclusiveCPUs`, to checkpoint per-container data embedded in `CPUManagerCheckpoint`. More specifically introduction of the inner map item `Originals` to checkpoint the corresponding _historical data_ of original CPUs exclusively allocated to a _running container_ ( `ContainerCPUs Checkpoint` for sort ), is meant to make internal upgrade and adaptation easier as we need to track the original CPU set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP. The corresponding _current_ set of CPUs exclusively allocated to a _running container_ will be checkpointed to `Entries` field embedded in `CheckpointData` section in `CPUManageCheckpoint` structure keeping the same structure used as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
+[CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) `CPUManagerCheckpoint` struct to store exclusive cpu/pod assignments, will be used by `InPlacePodVerticalScalingExclusiveCPUs`, to checkpoint per-container data embedded in `CPUManagerCheckpoint`. More specifically introduction of the inner map item `Baselines` to checkpoint the corresponding _historical data_ of "baseline CPUs" exclusively allocated to a _running container_ (`ContainerCPUs Checkpoint` for sort), is meant to make internal upgrade and adaptation easier as we need to track the "baseline CPUs" set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP. The corresponding _current_ set of CPUs exclusively allocated to a _running container_ will be checkpointed to `Entries` field embedded in `CheckpointData` section in `CPUManagerCheckpoint` structure keeping the same structure used as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
 
 When the CPU Manager, under a static policy, generates a NUMA Topology hint for a Guaranteed pod undergoing an in place CPU pod-resize, it follows these rules to determine the new affinity:
 
 * The pod's current NUMA Affinity (single or multiple NUMA nodes) can accommodate the resized CPU request. If yes, the current affinity is maintained.
 * If the current affinity is insufficient and expansion is needed the new NUMA affinity must always include all NUMA nodes from the current affinity.
-* On downsize the end result must be a superset of the "original CPUs" and a subset of the "resized CPUs".
+* On downsize the end result must be a superset of the "baseline CPUs" and a subset of the "resized CPUs".
 
 Please refer to [Alternatives](#alternatives) section in this KEP for more information on reasoning why alternatives where rejected.
 
@@ -362,13 +362,13 @@ Please refer to [Alternatives](#alternatives) section in this KEP for more infor
 
 As it was decided in [SIG Node meeting discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg), CPU limit decrease of a running container of a Guaranteed Pod managed of Static CPU Policy: 
 
-* Must not allow decrease of number of CPUs below the CPUs allocated upon creation of the Guaranteed Pod (“original CPUs”) for the running container in question, instead infeasible error should be returned.
-* Allow the decrease of number of CPUs up to the CPUs allocated upon creation of the Guaranteed Pod ( "original CPUS" ) of a running container of a Guaranteed Pod keeping original CPUS.
-* Same rules for NUMA Topology applicable for CPU Limit increase should apply for CPU Limit decrease ( Current behavior with Pod Admit )
-* Retained CPUs ( "resized CPUs" ) can be a subset of the previous "resized CPUs", and "original CPUs" must be kept i.e. `originalCPUs < resizedCPUS_A_UpSize, originalCPUs <= resizedCPUS_B_DownSize < resizedCPUS_A_UpSize`
-* Downsize does not need to be an upsize in reverse for example below is a valid flow
+* Must not allow decrease of number of CPUs below the CPUs allocated upon creation of the Guaranteed Pod (“baseline CPUs”) for the running container in question, instead infeasible error should be returned.
+* Allow the decrease of number of CPUs up to the CPUs allocated upon creation of the Guaranteed Pod ("baseline CPUs") of a running container of a Guaranteed Pod keeping "baseline CPUs".
+* Same rules for NUMA Topology applicable for CPU Limit increase should apply for CPU Limit decrease (Current behavior with Pod Admit).
+* Retained CPUs ("resized CPUs") can be a subset of the previous "resized CPUs", and "baseline CPUs" must be kept i.e. `baselineCPUs < resizedCPUS_A_UpSize, baselineCPUs <= resizedCPUS_B_DownSize < resizedCPUS_A_UpSize`.
+* Downsize does not need to be an upsize in reverse for example below is a valid flow.
 ```
-  upsize: original = 4 -> 8 -> 12
+  upsize: baseline = 4 -> 8 -> 12
   downsize: 12 -> 6
 ```
 
@@ -377,7 +377,7 @@ As it was decided in [SIG Node meeting discussing static CPU policy support](htt
 In the following section we will present examples demonstrating the proposed behavior based 
 on feedback provided during the [SIG Node meeting discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg). An implementation is available at [Kubernetes PR #129719](https://github.com/kubernetes/kubernetes/pull/129719) with a screencast demonstration in the description of this PR and update.
 
-For the examples we assume a working node which consists of 6 physical CPUs with simultaneous multithreading level 2 resulting in a total of 12 virtual CPUs ( 0 - 11 ). Virtual CPUs 0-5 use NUMA Node 0 and Virtual CPUs 6-11 use NUMA Node 1. The hardware topology of such a machine is given in the following diagram.
+For the examples we assume a working node which consists of 6 physical CPUs with simultaneous multithreading level 2 resulting in a total of 12 virtual CPUs (0 - 11). Virtual CPUs 0-5 use NUMA Node 0 and Virtual CPUs 6-11 use NUMA Node 1. The hardware topology of such a machine is given in the following diagram.
 
 ![alt_text](./hardware_topology_diagram.png "Hardware Topology Diagram")
 
@@ -404,14 +404,12 @@ Reasons for failure
 * CPU manager cannot generate topology hints which satisfies the topology manager policy. This would happen only during CPU increase resize request if:
   + the current NUMA affinity can't accommodate the increase 
   + current affinity cannot be extended
-* CPU manager can generate an extended hint keeping original CPUs: 
+* CPU manager can generate an extended hint keeping "baseline CPUs": 
   + but the new hint no longer respects topology manager policy (like single-numa-node).
   + Generated hint fails during the calculation of best NUMA affinity
-* CPU list generated does not contain the original CPUs checkpointed for any other reason
+* CPU list generated does not contain the "baseline CPUs" checkpointed for any other reason
 
-Three additional Error types, to cater Error handling of such corner cases and to facilitate troubleshooting during production, specific to CPU Manager InPlacePodVerticalScaling failures were needed. 
-
-Please refer to [Introduced Error types for this KEP](#introduced-error-types-for-this-kep) for more details.
+To cater Error handling of such corner cases and to facilitate troubleshooting during production, specific to CPU Manager InPlacePodVerticalScaling failures additional Error types might be needed, this is an implementation detail to be concluded in this KEP.
 
 When usage metrics for better observability are implemented, those metrics could be used as well.
 
@@ -425,11 +423,12 @@ For this example we assume a node with 16 CPUs without kubelet reserved CPUs
 {
   "policyName": "static",
   "defaultCpuSet": "0-15",
-  "checksum": 3285000135
+  "checksum": <computed checksum>,
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0-15\"}",
+  "dataChecksum": <computed data checksum>
 }
-
 ```
-First a one container QoS Guaranteed PoD ( gu-pod-1 ), managed by CPU Static policy with 2 CPUs is created. original has the assigned cpu 1-2, resized is empty, default cpuset 0,3-15.
+First a one container QoS Guaranteed PoD (gu-pod-1), managed by CPU Static policy with 2 CPUs is created. baseline has the assigned cpu 1-2, resized is empty, default cpuset 0,3-15.
 
 For educational purposes, in the example we use gu-pod-1-uid, in a real scenario it would be the podUID of gu-pod-1
 
@@ -443,12 +442,12 @@ For educational purposes, in the example we use gu-pod-1-uid, in a real scenario
     }
   },
   "checksum": <computed checksum>,
-  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,3-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}}}}",
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,3-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"}},\"baselines\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"baseline\":\"1-2\"}}}}",
   "dataChecksum": <computed data checksum>
 }
 ```
 
-After the Pods CPUs are increased by 2 CPUs, original is kept 1-2, entries updates with the new CPUset 1-4, and default CPU set with 0,5-15.
+After the Pods CPUs are increased by 2 CPUs, baseline is kept 1-2, entries updates with the new CPUset 1-4, and default CPU set with 0,5-15.
 
 ```
 {
@@ -460,12 +459,12 @@ After the Pods CPUs are increased by 2 CPUs, original is kept 1-2, entries updat
     }
   },
   "checksum": <computed checksum>,
-  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,5-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-4\"}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}}}}",
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,5-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-4\"}},\"baselines\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"baseline\":\"1-2\"}}}}",
   "dataChecksum": <computed data checksum>
 }
 ```
 
-Next the Pods CPUs are decreased by 2 CPUs, original is kept 1-2, entries updates with the new CPUset 1-2, default CPU Set updates with 0,3-15.
+Next the Pods CPUs are decreased by 2 CPUs, baseline is kept 1-2, entries updates with the new CPUset 1-2, default CPU Set updates with 0,3-15.
 
 ```
 {
@@ -477,12 +476,12 @@ Next the Pods CPUs are decreased by 2 CPUs, original is kept 1-2, entries update
     }
   },
   "checksum": <computed checksum>,
-  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,3-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}}}}",
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,3-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"}},\"baselines\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"baseline\":\"1-2\"}}}}",
   "dataChecksum": <computed data checksum>
 }
 ```
 
-Now, a QoS Guaranteed PoD ( gu-pod-2 ), managed by CPU Static policy with two containers with 4 CPUs is created. 
+Now, a QoS Guaranteed PoD (gu-pod-2), managed by CPU Static policy with two containers with 4 CPUs is created. 
 
 For educational purposes, in the example we use gu-pod-2-uid, in a real scenario it would be the podUID of gu-pod-2
 
@@ -500,7 +499,7 @@ For educational purposes, in the example we use gu-pod-2-uid, in a real scenario
     },
   },
   "checksum": <computed checksum>,
-  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,7-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"},\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4\",\"gu-container-2\":\"5-6\",}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}},\"gu-pod-2-uid\":{\"gu-container-1\":{\"original\":\"3-4\"},\"gu-container-2\":{\"original\":\"5-6\"},}}}",
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,7-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"},\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4\",\"gu-container-2\":\"5-6\"}},\"baselines\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"baseline\":\"1-2\"}},\"gu-pod-2-uid\":{\"gu-container-1\":{\"baseline\":\"3-4\"},\"gu-container-2\":{\"baseline\":\"5-6\"}}}}",
   "dataChecksum": <computed data checksum>
 }
 ```
@@ -518,7 +517,7 @@ Next we delete gu-pod-1-uid and then we up size gu-container-2 of gu-pod-2-uid, 
     },
   },
   "checksum": <computed checksum>,
-  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,2,8-15\",\"entries\":{\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4\",\"gu-container-2\":\"1,5-7\",}},\"originals"\":{\"gu-pod-2-uid\":{\"gu-container-1\":{\"original\":\"3-4\"},\"gu-container-2\":{\"original\":\"5-6\"},}}}",
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,2,8-15\",\"entries\":{\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4\",\"gu-container-2\":\"1,5-7\"}},\"baselines\":{\"gu-pod-2-uid\":{\"gu-container-1\":{\"baseline\":\"3-4\"},\"gu-container-2\":{\"baseline\":\"5-6\"}}}}",
   "dataChecksum": <computed data checksum>
 }
 ```
@@ -536,36 +535,37 @@ Last we up size gu-container-1 of gu-pod-2-uid by 2, and down size gu-container-
     },
   },
   "checksum": <computed checksum>,
-  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0-2,7,10-15\",\"entries\":{\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4,8-9\",\"gu-container-2\":\"5-6\",}},\"originals"\":{\"gu-pod-2-uid\":{\"gu-container-1\":{\"original\":\"3-4\"},\"gu-container-2\":{\"original\":\"5-6\"},}}}",
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0-2,7,10-15\",\"entries\":{\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4,8-9\",\"gu-container-2\":\"5-6\"}},\"baselines\":{\"gu-pod-2-uid\":{\"gu-container-1\":{\"baseline\":\"3-4\"},\"gu-container-2\":{\"baseline\":\"5-6\"}}}}",
   "dataChecksum": <computed data checksum>
 }
 ```
 
 ### Supported CPU Static Policy Options Combination matrix
 
-Based on [feasible CPU Static Policy Options Combination matrix](#feasible-cpu-static-policy-options-combination-matrix) conclusions. The upper bound number of tests is the 34 feasible combinations. To reduce the required test combinations, we propose, for this KEP in alpha, to start with a more limited set of tests for the first aplha and build from there. Where possible, targeted sentinel e2e tests to be used to identify combination(s) which can safely be elided.
+Based on [feasible CPU Static Policy Options Combination matrix](#feasible-cpu-static-policy-options-combination-matrix) conclusions. The upper bound number of tests is the 34 feasible combinations. To reduce the required test combinations, we propose, for this KEP in alpha, to start with a more limited set of tests for the first alpha and build from there. Where possible, targeted sentinel e2e tests to be used to identify combination(s) which can safely be elided.
 
 Based on those tests and feedback received, supported CPU Static Policy Options Combination matrix might be updated, in such case this section will have the updated supported combination matrix. 
 
-Another option would be this KEP to focus on GA and Beta combinations only ( for alpha ) . This will reduce the number of combinations to fifteen:
+Another option would be this KEP to focus on GA and Beta combinations only (for alpha) . This will reduce the number of combinations to sixteen:
 
-| index | full-pcpus-only GA (GA, visible by default) (1.33 or higher) | distribute-cpus-across-numa (alpha, hidden by default) | align-by-socket (alpha, hidden by default) (1.25 or higher) | distribute-cpus-across-cores (alpha, hidden by default) (1.31 or higher) | strict-cpu-reservation GA (GA, visible by default) (1.35 or higher) | prefer-align-cpus-by-uncorecache (beta, visible by default) (1.34 or higher)<br><br><br> | Comment                       |
-| ----- | ------------------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------- |
-| 1     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | GA but not enabled by default |
-| 2     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                          |
-| 3     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | GA but not enabled by default |
-| 4     | 0                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                          |
-| 5     | 0                                                            | 0                                                      | 0                                                           | 1                                                                        | 0                                                                   | 0                                                                                        | GA but not enabled by default |
-| 10    | 0                                                            | 0                                                      | 1                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                          |
-| 12    | 0                                                            | 0                                                      | 1                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                          |
-| 26    | 0                                                            | 1                                                      | 1                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                          |
-| 28    | 0                                                            | 1                                                      | 1                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                          |
-| 33    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 0                                                                                        | GA                            |
-| 34    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                          |
-| 35    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 0                                                                                        | GA Enabled by Default         |
-| 36    | 1                                                            | 0                                                      | 0                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                          |
-| 42    | 1                                                            | 0                                                      | 1                                                           | 0                                                                        | 0                                                                   | 1                                                                                        | Beta                          |
-| 44    | 1                                                            | 0                                                      | 1                                                           | 0                                                                        | 1                                                                   | 1                                                                                        | Beta                          |
+| index | full-pcpus-only | distribute-cpus-across-numa | align-by-socket | distribute-cpus-across-cores | strict-cpu-reservation | prefer-align-cpus-by-uncorecache | Comment                                                                                                                                    |
+| ----- | --------------- | --------------------------- | --------------- | -----------------------------| -----------------------| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------|
+| 1     | 0               | 0                           | 0               | 0                            | 0                      | 0                                | GA, visible by default                                                                                                                     |
+| 2     | 0               | 0                           | 0               | 0                            | 0                      | 1                                | GA, visible by default                                                                                                                     |
+| 3     | 0               | 0                           | 0               | 0                            | 1                      | 0                                | GA, visible by default                                                                                                                     |
+| 4     | 0               | 0                           | 0               | 0                            | 1                      | 1                                | GA, visible by default                                                                                                                     |
+| 17    | 0               | 1                           | 0               | 0                            | 0                      | 0                                | beta, visible by default                                                                                                                   |
+| 18    | 0               | 1                           | 0               | 0                            | 0                      | 1                                | beta, visible by default                                                                                                                   |
+| 19    | 0               | 1                           | 0               | 0                            | 1                      | 0                                | beta, visible by default                                                                                                                   |
+| 20    | 0               | 1                           | 0               | 0                            | 1                      | 1                                | beta, visible by default                                                                                                                   |
+| 33    | 1               | 0                           | 0               | 0                            | 0                      | 0                                | GA, visible by default                                                                                                                     |
+| 34    | 1               | 0                           | 0               | 0                            | 0                      | 1                                | GA, visible by default                                                                                                                     |
+| 35    | 1               | 0                           | 0               | 0                            | 1                      | 0                                | GA, visible by default                                                                                                                     |
+| 36    | 1               | 0                           | 0               | 0                            | 1                      | 1                                | GA, visible by default                                                                                                                     |
+| 49    | 1               | 1                           | 0               | 0                            | 0                      | 0                                | beta, visible by default                                                                                                                   |
+| 50    | 1               | 1                           | 0               | 0                            | 0                      | 1                                | beta, visible by default                                                                                                                   |
+| 51    | 1               | 1                           | 0               | 0                            | 1                      | 0                                | beta, visible by default                                                                                                                   |
+| 52    | 1               | 1                           | 0               | 0                            | 1                      | 1                                | beta, visible by default                                                                                                                   |
 
 ### Risks and Mitigations
 
@@ -583,7 +583,7 @@ Consider including folks who also work outside the SIG or subproject.
 
 Bugs in handling CPU resizing can result in incorrect CPU pinning affecting performance of the pod being resized and also the other pods on the node.
 
-Resource fragmentation could potentially caused, after pod resizes, especially downsize. Such fragementation could result that future resource requests could be harder to accommodate, including new admissions. In such case a possible mitigation would be in the future to review the allocation algorithm in general to better tolerate fragmentation.
+Resource fragmentation could potentially caused, after pod resizes, especially downsize. Such fragmentation could result that future resource requests could be harder to accommodate, including new admissions. In such case a possible mitigation would be in the future to review the allocation algorithm in general to better tolerate fragmentation.
 
 ## Design Details
 
@@ -598,39 +598,32 @@ proposal will be implemented, this is the place to discuss them.
 
 To effectively address the needs of both users and Kubernetes components for the realization of this KEP, the proposed implementation involves the following changes: 
 
-1. Update the `CPUManager` checkpoint file format as stated in [ContainerCPUs checkpoint](#containercpus-checkpoint) section), which will serve as the single source of truth to represent the original and resized exclusive CPUs of an in place CPU resize of a Guaranteed Pod with CPU Static Policy.
+1. Update the `CPUManager` checkpoint file format as stated in [ContainerCPUs checkpoint](#containercpus-checkpoint) section), which will serve as the single source of truth to represent the baseline and resized exclusive CPUs of an in place CPU resize of a Guaranteed Pod with CPU Static Policy.
 2. Update the `CPU Manager`, to support the in place CPU resize of Guaranteed Pods managed by Static Policy
     * maintaining the CPUs already allocated during a scale up Pod resize
-    * maintaining the original CPUs during a scale down Pod resize
+    * maintaining the "baseline CPUs" during a scale down Pod resize
     * handling `TopologySingleNUMA` , `TopologyNUMADistributed` and `TopologyNUMAPacked` topology manager policies, if those should be kept in CPU Manager or should be separated in topology manager is an implementation detail to be concluded in this KEP.
 3. Update the [Static Policy GetTopologyHints](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/policy_static.go#L551) function, to support the in place CPU resize of Guaranteed Pods managed by Static Policy
-    * attempting to generate and return hints that are a superset of the original hint (with original CPUs) when InPlacePodVerticalScaling and InPlacePodVerticalScalingExclusiveCPUs are set
+    * attempting to generate and return hints that are a superset of the baseline hint (with "baseline CPUs") when InPlacePodVerticalScaling and InPlacePodVerticalScalingExclusiveCPUs are set
     * return an empty hint When InPlacePodVerticalScaling or InPlacePodVerticalScalingExclusiveCPUs are not set 
 4. Update [allocateCPUs](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/policy_static.go#L444) function to
     * pass the `reusableCPUsForResize` and `mustKeepCPUsForResize` to the policy [takeByTopology](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/policy_static.go#L534) method
     * update the states.
 5. Update [takeByTopology](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/policy_static.go#L534) to
-    * protect against CPU leaks by failing early, when originalCPUs and or reusableCPUs are not a subset of the available CPUs
+    * protect against CPU leaks by failing early, when "baseline CPUs" and or reusableCPUs are not a subset of the available CPUs
     * to pass to [takeByTopologyNUMADistributed](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/cpu_assignment.go#L830) or [takeByTopologyNUMAPacked](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/cpu_assignment.go#L726) the `reusableCPUsForResize` and `mustKeepCPUsForResize`.
 
-Should the node not be able to resize, could be either during allocation or feasibility checks ( kubelet decides if it is capable of performing the resize ) or during the actuation ( kubelet actually performs the resize ) as per [KEP-1287 (In-place Resource Resize)](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources#summary).  
+Should the node not be able to resize, could be either during allocation or feasibility checks (kubelet decides if it is capable of performing the resize) or during the actuation (kubelet actually performs the resize) as per [KEP-1287 (In-place Resource Resize)](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources#summary).  
 
-Below are given as examples, it is not the full list, is an implementation detail to be concluded in this KEP.
+About Error handling, please see [What happens on CPU Resize failures](#what-happens-on-cpu-resize-failures) for more details.
 
-The PodResizePending condition should set as Infeasible if CPU static policy resize feasibility check fails:
-
-   * the resize attempts to reduce container's exclusively allocated pool below container's exclusively pool allocated when container was created, with `prohibitedCPUAllocationError` as reason.
-   * the resize attempts to either move a container from exclusively allocated pool to shared pool or move a container from shared pool to exclusively allocated pool, with `inconsistentCPUAllocationError` as reason
-   * kubelet fail to GetOriginalCPUSet from CPU Manager state file, thus not making it possible to perform a feasibility check, with `getOriginalCPUSetError` as reason
-   * [allocateCPUs](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/policy_static.go#L444) fails with topology.EmptyAllocation and err, with `resizeAllocateCPUsError` as reason including associated Topology Error.
-
-The PoDResizeInProgress condition should be set to Error with the error message, if there is an error during the actuation step,
+The PodResizeInProgress condition should be set to Error with the error message, if there is an error during the actuation step.
 
 #### ContainerCPUs checkpoint
 
 As it was decided in [SIG Node meeting discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg), 
 
-* CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed locally in the worker node ( please refer to Static CPU Management Policy Support for more details ) we use the term “original” ( or "promised" ) CPUs in the rest of this document to refer to those CPUs.
+* CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed locally in the worker node (please refer to Static CPU Management Policy Support for more details) we use the term “baseline” (or "promised") CPUs in the rest of this document to refer to those CPUs.
 * Use of existing CPU Manager checkpoint should be used for storing the “resized” CPUs after a successful resize.
 
 To satisfy this requirement, CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed, for this to happen [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) need to introduce CPUManagerCheckpoint struct to store cpu/pod assignments.
@@ -638,7 +631,7 @@ For `InPlacePodVerticalScalingExclusiveCPUs`, per-container data embedded in `CP
 CPUs resizing support, more explicitly. 
 
 * the _current_ set of CPUs exclusively allocated to a _container_
-* extra information required by this feature such us any _historical data_ of original CPUs exclusively allocated to a _container_ (e.g original CPUset, previous CPUset or previous N CPUsets)
+* extra information required by this feature such us any _historical data_ of "baseline CPUs" exclusively allocated to a _container_ (e.g baseline CPUset, previous CPUset or previous N CPUsets)
 
 To ensure there are no stale/lost resize data if the node state mutates during an upgrade downgrade and at the same time disabling
 `InPlacePodVerticalScalingExclusiveCPUs`, the needed per-container data will be embedded in `CheckpointData` section in `CPUManagerCheckpoint`
@@ -646,17 +639,17 @@ structure, more specifically:
 
 * `Entries` field will store the _current_ set of CPUs allocated to a _container_ keeping the same structure used
    as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
-* `Originals` field will store the _historical data_ of original CPUs exclusively allocated to a _container_
-   ( for alpha it will be the original CPUset only stored ) with the necessary format.
+* `Baselines` field will store the _historical data_ of "baseline CPUs" exclusively allocated to a _container_
+   (for alpha it will be the baseline CPUset only stored) with the necessary format.
 
 Final naming in the implementation can change slightly without changing concepts as expressed in this KEP.
 
 For `InPlacePodVerticalScalingExclusiveCPUs` embedded `CPUManagerCheckpointV2` format will be kept as is today with no modifications,
 ```
 // ContainerCPUs struct is used in a checkpoint in v4 format,
-// to support In place update pod resouces alongside Static CPU Manager policy
+// to support In place update pod resources alongside Static CPU Manager policy
 type ContainerCPUs struct {
-        Original  string `json:"original"`
+        Baseline  string `json:"baseline"`
 }
 
 // CPUManagerCheckpoint struct is used to store cpu/pod assignments in a checkpoint in v4 format
@@ -676,14 +669,15 @@ type CPUManagerCheckpointData struct {
        DefaultCPUSet string                              `json:"defaultCpuSet"`
        // the _current_ set of CPUs exclusively allocated to a _container_
        Entries       map[string]map[string]string        `json:"entries,omitempty"`
-       // extra information required by this feature such us any _historical data_ of original CPUs exclusively allocated to a _container_
-       Originals     map[string]map[string]ContainerCPUs `json:"entries,omitempty"`
+       // extra information required by this feature such us any _historical data_ of "baseline CPUs" exclusively allocated to a _container_
+       Baselines     map[string]map[string]ContainerCPUs `json:"baselines,omitempty"`
 } 
 ```
 
 In addition to above the following list of functions must be added : 
 * Upgrade support function(s) as needed. An example case is if upgrading from an older version with unsupported/disabled feature, cater when the checkpointed structures will be empty.
-* GetOriginalCPUSet
+* GetCPUBaselines to return all container-level CPU assignments recorded at admission time, prior to any resize.
+* GetCPUBaselineCPUSet to return container-level CPU assignments recorded at admission time, prior to any resize.
 
 Last
 * GetCPUSet and SetCPUSet where modified accordingly.
@@ -777,7 +771,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-e2e_node tests provide good test coverage of interactions between the new pod-level resource feature and existing Kubernetes components i.e. API server, kubelet, cgroup enforcement. We may replicate and/or move some of the E2E tests functionality into integration tests before GA using data from any issues we uncover that are not covered by planned and implemented tests.
+e2e_node tests provide good test coverage of interactions between In-place Update Pod Resources alongside Static CPU Manager Policy feature and existing Kubernetes components i.e. API server, kubelet, cgroup enforcement. We may replicate and/or move some of the E2E tests functionality into integration tests before GA using data from any issues we uncover that are not covered by planned and implemented tests.
 
 ##### e2e tests
 
@@ -796,7 +790,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-To ensure proper quality of the enhancment and ensure it does't impact quality of touched components following tests will be added: 
+To ensure proper quality of the enhancement and ensure it doesn't impact quality of touched components following tests will be added:
 * Cgroup settings when CPU Manager with InPlacePodVerticalScalingExclusiveCPUs are set.
 * Validate scheduling and admission
 * Validate [Pod Resize tests](https://github.com/ndixita/kubernetes/blob/master/test/e2e/common/node/pod_resize.go) alongside CPU Manager Static Policy when InPlacePodVerticalScalingExclusiveCPUs are set
@@ -847,7 +841,7 @@ Scenarios to be tested will mirror both negative and positive use cases as descr
 |                                                                  |                                                                                                                                        | should first increase (gu-container-1) CPU request/limit, afterwards fail to reduce (gu-container-1) CPU request/limit, below promised and increase (gu-container-2) CPU request/limit, within available capacity                                                         |
 |                                                                  |                                                                                                                                        | should first increase (gu-container-1) CPU request/limit, afterwards fail to restore (gu-container-1) CPU request/limit and to increase (gu-container-2) CPU request/limit above available capacity                                                                       |
 |                                                                  |                                                                                                                                        | should first increase (gu-container-1) CPU request/limit, afterwards restore (gu-container-1) CPU request/limit and increase (gu-container-2) CPU request/limit, within available capacity                                                                                |
-|                                                                  |                                                                                                                                        | when topologyManagerPolicOption is set to best-effort, resizing a Guaranteed multiple containers Pod with integer CPU request should first increase (gu-container-1) CPU request/limit, afterwards decrease (gu-container-1) CPU request/limit, within available capacity |
+|                                                                  |                                                                                                                                        | when topologyManagerPolicyOption is set to best-effort, resizing a Guaranteed multiple containers Pod with integer CPU request should first increase (gu-container-1) CPU request/limit, afterwards decrease (gu-container-1) CPU request/limit, within available capacity |
 |                                                                  | when topologyManagerPolicy is set to none, resizing a Guaranteed multiple containers Pod with integer CPU requests                     | should first increase CPU (gu-container-1) request and limit, afterwards decrease CPU (gu-container-1) request and limit within available capacity                                                                                                                        |
 |                                                                  |                                                                                                                                        | should first increase (gu-container-1) CPU request/limit, afterwards decrease (gu-container-1) CPU request/limit, within available capacity                                                                                                                               |
 
@@ -900,9 +894,9 @@ enhancement:
 keeping the same user experience introduced with [CPUManager V4 format](https://github.com/kubernetes/kubernetes/pull/139102)
 
 The `Entries` field in embedded `CPUManagerCheckpointV2` section must be filled with currently allocated CPU sets
-( Original if there was no resize, Resized if there was a resize ) when `InPlacePodVerticalScalingExclusiveCPUs` feature is enabled.
+(Baseline if there was no resize, Resized if there was a resize) when `InPlacePodVerticalScalingExclusiveCPUs` feature is enabled.
 
-This will allow the assignnment to be read properly if the checkpoint file is saved in a newer kubelet and loaded
+This will allow the assignment to be read properly if the checkpoint file is saved in a newer kubelet and loaded
 by the old kubelet, thus file reading will succeed without needed to drain the node or remove the file anymore.
 
 ### Version Skew Strategy
@@ -971,12 +965,11 @@ well as the [existing list] of feature gates.
 -->
 
 * [x] Feature gate (also fill in values in `kep.yaml`)
-  + Feature gate name: `InPlacePodVerticalScalingExclusiveCPUS`
-  + Components depending on the feature gate: kubelet, kube-controller-manager, kube-scheduler
-    - kubelet
-  + `InPlacePodVerticalScaling` feature must be enabled ( enabled by default )
-  + CPU Manager policy must be set to `static` ( `none` is the default policy )
-  + Introduced in v1.33, alpha
+  + Feature gate name: `InPlacePodVerticalScalingExclusiveCPUs`
+  + Components depending on the feature gate: kubelet
+  + `InPlacePodVerticalScaling` feature must be enabled (enabled by default)
+  + CPU Manager policy must be set to `static` (`none` is the default policy)
+  + Introduced in v1.32, alpha
 * [x] Other
   + Describe the mechanism: 
  + Will enabling / disabling the feature require downtime of the control
@@ -1036,7 +1029,7 @@ The following unit test covers what happens if I disable a feature gate after ha
 objects written with the new field (in this case, the field should persist).
 
 * Under pkg/kubelet/test/e2e_node
-  - cpu_manager_test.go ( updated )
+  - cpu_manager_test.go (updated)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1083,7 +1076,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 No to both.
 
-The introduction of `Originals` embedded in `CPUManagerCheckpointData` entry in `CPUManagerCheckpointData` struct in [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102), will be tested during alpha.
+The introduction of `Baselines` embedded in `CPUManagerCheckpointData` entry in `CPUManagerCheckpointData` struct in [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102), will be tested during alpha.
 
 Running pods will be unaffected by any change.
 
@@ -1129,18 +1122,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 In order to verify this feature is working, one should first inspect the kubelet configuration and ensure that all required feature gates are enabled as described in [Summary](#summary). 
 
-When usage metrics and/or podresources API (or any other suitable APIs) and/or surface data in the statuses are implemented, those metrics/API/statuses could be used ( planned for Beta ) to verify feature is working for their instance.
+When usage metrics and/or podresources API (or any other suitable APIs) and/or surface data in the statuses are implemented, those metrics/API/statuses could be used (planned for Beta) to verify feature is working for their instance.
 
-Until those metrics/API/statuses are implemented ( planned for Beta ), it is possible to determine the feature if functioning properly as follows:
-
-- User should create a guaranteed QoS Pod with integer CPU requests.
-- Inspect the `/var/lib/kubelet/cpu_manager_state` and check `Original` and `Entries` CPU set, for the created Pods running container.
-- Upon creation `Original` should be equal to `Entries`, the currently set of CPUs exclusively allocated checkpointed. If `Original` exist and is not nil, it means the feature is enabled and working.
-- The user can also check the CPU affinitity of the created Pod, from within the running container to confirm.
-- Afterwards the user should attempt to increase the number of CPUs, within the limits of the node, patching the created guaranteed QoS Pod.
-- Upon success, the user can check the CPU affinity of the resized Pod, from within the running container to confirm assigned CPU set is increased keeping original CPU set.
-
-When the usage metrics/API/statuses are implemented ( planned for Beta ), the user should not need to inspect the `/var/lib/kubelet/cpu_manager_state` but instead watch the values of those metrics/API/statuses after successful resizes.
+For alpha it will be prioritized the introduction of one metric to determine the feature is functioning properly.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1344,7 +1328,7 @@ For each of them, fill in the following information by copying the below templat
 
 Using this feature without enabling InPlacePodVerticalScaling feature flag. We are emitting appropriate error message for this case, Kubelet will fail to start and print error message what happened. To recover one just have to disable/enable feature flags.
 
-There are 3 scenarios, where we are emitting approriate error message for this case. Please see [Introduced Error types for this KEP](#introduced-error-types-for-this-kep) for more details.
+About Error handling, please see [What happens on CPU Resize failures](#what-happens-on-cpu-resize-failures) for more details.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1363,6 +1347,13 @@ Major milestones might include:
 * when the KEP was retired or superseded
 -->
 
+- 2024-03-05: Initial discussion in [sig-node weekly meeting](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.vkfugk6pprmu#heading=h.59p60wpwoqld)
+- 2024-11-08: [Introduction of KEPs feature gate to unblock development in Kubernetes v1.32](https://github.com/kubernetes/kubernetes/pull/128287) signaling SIG acceptance.
+- 2025-09-21: [Enhancement issue created](https://github.com/kubernetes/enhancements/issues/5554)
+- 2025-10-07: Proposal discussion in [sig-node weekly meeting](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.0#heading=h.kilnl8l3uhq)
+- 2025-01-20: Initial [KEP PR created](https://github.com/kubernetes/kubernetes/pull/129719)
+- 2026-02-16: [SIG agreement on a proposed design](https://github.com/kubernetes/enhancements/pull/5555)
+- 2026-07-16: [Alpha implementation PR created](https://github.com/kubernetes/kubernetes/pull/140629) targeting v1.38
 
 ## Drawbacks
 
@@ -1380,7 +1371,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-For the problems solved by the proposed `Original` introduction in checkpoint, the following options have been cosidered and presented in sig-node meetings. 
+For the problems solved by the proposed `Baseline` introduction in checkpoint, the following options have been considered and presented in sig-node meetings. 
 
 More info can be read at [129719 comment](https://github.com/kubernetes/kubernetes/pull/129719#issuecomment-2715258098) , [March 11th 2025, sig node meeting minutes](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.0#heading=h.g56cg3xshw40), [SIG Node meeting recording discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg) and [6170 comment](https://github.com/kubernetes/enhancements/pull/6170#discussion_r3403684470)
 
@@ -1395,7 +1386,7 @@ Introduction of a new field with `mustKeepCPUs` in API, solution was rejected be
 
 Introduction of `LIFO cpuset` functionality in `cpu_assignement.go` solution was rejected because:
 
-+ Modification of `cpuset package` to support Last In First Out ( LIFO ) was rejected because existing [cpuset go package](https://pkg.go.dev/k8s.io/utils/cpuset) is used widely, thus a `cpuset package` modification would impact users beyond Kubernetes.
++ Modification of `cpuset package` to support Last In First Out (LIFO) was rejected because existing [cpuset go package](https://pkg.go.dev/k8s.io/utils/cpuset) is used widely, thus a `cpuset package` modification would impact users beyond Kubernetes.
 + Creation of a new `LIFO cpuset go package` only for this KEP was considered an overkill.
 
 ### Option 3: Use NRI solution
