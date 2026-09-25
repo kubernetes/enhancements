@@ -18,6 +18,7 @@ approvers:
 see-also:
   - "/keps/sig-node/5683-lifecycle-conditions"
   - "/keps/sig-node/2000-graceful-node-shutdown"
+  - "/keps/sig-node/2712-pod-priority-based-graceful-node-shutdown"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha

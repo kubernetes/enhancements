@@ -22,11 +22,11 @@
   - [Other writers](#other-writers)
   - [Feature gating](#feature-gating)
   - [Metrics](#metrics)
-  - [Termination priorities and drain ordering (exploration)](#termination-priorities-and-drain-ordering-exploration)
-    - [Why this matters to Graceful Node Shutdown](#why-this-matters-to-graceful-node-shutdown)
-    - [The interaction this KEP creates](#the-interaction-this-kep-creates)
-    - [Candidate directions (recorded, not chosen)](#candidate-directions-recorded-not-chosen)
-    - [Position for this KEP's alpha](#position-for-this-keps-alpha)
+  - [Priority tiers](#priority-tiers)
+    - [How the kubelet terminates Pods today](#how-the-kubelet-terminates-pods-today)
+    - [Tier-aware admission](#tier-aware-admission)
+    - [The critical-phase condition](#the-critical-phase-condition)
+    - [Alpha approximation and graduation path](#alpha-approximation-and-graduation-path)
   - [Design Decisions](#design-decisions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -64,17 +64,17 @@ Items marked with (R) are required prior to targeting to a milestone / release.
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
   [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and
   SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests]
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints] must be hit by [Conformance Tests]
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for
   publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to
@@ -85,22 +85,44 @@ Items marked with (R) are required prior to targeting to a milestone / release.
 When a node undergoes Graceful Node Shutdown ([KEP-2000]; GNS below), the
 kubelet knows it is terminating Pods but the control plane does not. The
 DaemonSet controller observes a missing DaemonSet Pod on an otherwise eligible
-node, creates a replacement, the kubelet rejects it at admission, and the cycle
-repeats for the duration of the shutdown window.
+node, creates a replacement, the kubelet rejects it at admission, the controller
+deletes the rejected Pod and creates another, and the cycle repeats for the
+duration of the shutdown window. The result is sustained create/reject/delete
+churn against the API server — hundreds of cycles for a single Pod on a single
+node in production reports — in which no Pod ever runs. This KEP is scoped to
+stopping that churn.
 
 This KEP makes the kubelet publish the node's shutdown state on the Node object,
 using the `GracefulNodeShutdownInProgress` and `DrainInProgress` conditions
 introduced by [KEP-5683], and teaches the DaemonSet controller to stop creating
 Pods on a node while both conditions are `True`. The Node Lifecycle Controller
-clears the conditions in the single case where the kubelet can no longer do so.
-No new API types or condition constants are introduced; the change is the first
-in-tree writer and the first in-tree reader of conditions that are, as of v1.37,
-admin-managed only.
+sets the conditions to `Unknown` in the single case where the kubelet can no
+longer reset them itself.
+
+Two further changes, taken at API review (2026-09-25), keep the reader
+consistent with how Graceful Node Shutdown actually terminates Pods. The
+kubelet's shutdown admission becomes priority-tier-aware: it rejects only Pods
+whose priority falls in the tier being terminated or one already terminated,
+instead of every Pod. And the kubelet publishes a third condition,
+`GracefulNodeShutdownCriticalPhase=True`, when termination reaches the critical
+tier. The DaemonSet controller suppresses non-critical templates while the first
+two conditions are `True` and every template once the third is, so that under
+the default two-tier configuration it never withholds a Pod the kubelet would
+admit. See [Priority tiers](#priority-tiers), including the approximation this
+implies for multi-tier `shutdownGracePeriodByPodPriority` ladders.
+
+One new `NodeConditionType` constant is introduced; no new API types or reason
+values. The change is the first in-tree writer and the first in-tree reader of
+conditions that are, as of v1.37, admin-managed only.
 
 This is **option 2 of the four fixes enumerated by the reporter of
 [k/k#122912]** ("teach the DaemonSet controller about `NodeShutdown` status for
 a node so that it avoids attempting to schedule Pods there"). The other three
 are addressed in [Alternatives](#alternatives).
+
+This KEP is the DaemonSet-controller item of [KEP-5683]'s [alpha-2
+milestone][KEP-5683-alpha2] ("consume conditions in controllers"), carried as a
+standalone KEP so that it can graduate on its own feature gate.
 
 The DaemonSet **reader** keys on the conditions' `type` and `status` only, not
 on which component wrote them; see [Other writers](#other-writers) for what that
@@ -166,12 +188,12 @@ exists to resolve it; none does today. The report perceives a regression from
 long-standing. (The issue is also a tracking issue for [KEP-5683] Story 4.)
 
 > **Note the composition of that list: it is dominated by `system-node-critical`
-> networking and storage agents.** The DaemonSets that churn during shutdown
-> are, in practice, the ones whose absence most endangers clean termination of
-> the workloads still draining. This observation is load-bearing for
-> [Termination priorities and drain
-> ordering](#termination-priorities-and-drain-ordering-exploration) and for the
-> known limitation recorded in [Risks and Mitigations](#risks-and-mitigations).
+> networking and storage agents.** Today the kubelet's shutdown admission treats
+> them like any other Pod: `Admit()` checks only whether shutdown has begun, not
+> priority, so no new critical Pod runs on a shutting-down node during any
+> termination tier. The relationship between this KEP and the kubelet's
+> priority-tiered termination, and the admission change this KEP makes, are in
+> [Priority tiers](#priority-tiers).
 
 Taken together, the reported consequences are:
 
@@ -209,7 +231,12 @@ at its symptom.
 
 - The kubelet publishes Graceful Node Shutdown state on the Node object using
   the existing `GracefulNodeShutdownInProgress` and `DrainInProgress`
-  conditions.
+  conditions, and a new `GracefulNodeShutdownCriticalPhase` condition when
+  termination reaches the critical tier.
+- The kubelet's shutdown admission rejects only the Pods its priority-tiered
+  termination would terminate, and the DaemonSet controller suppresses only
+  what the kubelet would reject — exactly under the default two-tier
+  configuration, conservatively under multi-tier ladders.
 - The DaemonSet controller stops creating Pods on a node while that node is in
   graceful shutdown, without disturbing Pods the kubelet is already terminating
   and without hiding the resulting unavailability from DaemonSet status.
@@ -244,17 +271,21 @@ sibling enhancements under the same umbrella.
   the [KEP-5683] alpha-2 milestone (WG, 2026-08-17).
 - **`MaintenancePlanned` / `MaintenanceInProgress` semantics.** [KEP-6250] /
   [KEP-5683] territory.
-- **Drain ordering and priority-aware suppression.** Deferred to a separate
-  enhancement to be filed by the WG lead (WG, 2026-08-17); see [Termination
-  priorities and drain
-  ordering](#termination-priorities-and-drain-ordering-exploration) for the
-  exploration this KEP is required to carry.
+- **Per-tier precision under `shutdownGracePeriodByPodPriority`.** Alpha
+  distinguishes two phases, critical and everything below it. Publishing the
+  exact tier boundary so the reader is precise for arbitrary tier ladders is a
+  [beta criterion](#beta); see [Priority tiers](#priority-tiers). General
+  drain ordering across the SLM readers remains with the WG lead's separate
+  enhancement.
 - **General stuck-Pod cleanup for non-DaemonSet workloads** described in
   [#122912].
 - **Multi-writer coordination, ownership, or locking** for node lifecycle
   conditions. Alpha accepts last-writer-wins under the WG's admin-in-control /
-  best-effort assumptions; direction must be settled before beta (WG,
-  2026-08-17).
+  best-effort assumptions, with one rule recorded in [Kubelet
+  (writer)](#kubelet-writer): the kubelet never overwrites a
+  `DrainInProgress=True` it did not set. The general mechanism, shared by the
+  sibling KEPs that need it, is [#6430] (SLM: Coordinate Node lifecycle
+  condition writers).
 - **Sanctioning controller-driven node teardown as a writer** of
   `GracefulNodeShutdownInProgress`. Whether, and via which conditions, teardown
   orchestrated by a cluster-side controller should trigger DaemonSet suppression
@@ -264,7 +295,9 @@ sibling enhancements under the same umbrella.
   This KEP adds a new edge case to that bug and commits to handling it on the
   graduation path, but does not attempt the general fix in alpha.
 - **Graduating `GracefulNodeShutdown`** (beta since v1.21) or changing its
-  termination behavior.
+  termination ordering. The admission change in [Priority
+  tiers](#priority-tiers) narrows which Pods are rejected during a shutdown; it
+  does not change which Pods are terminated or in what order.
 
 ## Proposal
 
@@ -274,17 +307,25 @@ write is best-effort, and there is no ownership locking between writers.
 
 1. **Kubelet (writer).** On receiving the shutdown signal, before terminating
    any Pod, the shutdown manager publishes `GracefulNodeShutdownInProgress=True`
-   and `DrainInProgress=True` in a single Node status update. It sets both
-   `False` if the shutdown is cancelled, and unconditionally clears any
-   lingering `True` values at startup before reporting `Ready`.
-2. **DaemonSet controller (reader).** While a node has both conditions `True`,
-   the controller creates no DaemonSet Pods on that node (*suppression*, below).
-   It still deletes failed DaemonSet Pods on the node without replacing them,
-   and does not touch running ones.
+   and `DrainInProgress=True` in a single Node status update. If
+   `DrainInProgress` is already `True` — set by `kubectl drain` or another
+   writer — the kubelet leaves that entry untouched and writes only
+   `GracefulNodeShutdownInProgress`. When termination reaches the critical
+   tier it publishes `GracefulNodeShutdownCriticalPhase=True`. Its admission
+   handler rejects only Pods whose priority falls in the tier being terminated
+   or one already terminated. It sets the conditions it wrote back to `False`
+   if the shutdown is cancelled, and at startup sets any lingering `True` value
+   on any of the three conditions to `False` before reporting `Ready`.
+2. **DaemonSet controller (reader).** While a node has
+   `GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`, the
+   controller creates no non-critical DaemonSet Pods on that node; once
+   `GracefulNodeShutdownCriticalPhase` is also `True`, it creates none at all
+   (*suppression*, below). It still deletes failed DaemonSet Pods on the node
+   without replacing them, and does not touch running ones.
 3. **Node Lifecycle Controller (NLC; narrow writer).** Never asserts `True`.
-   Clears the conditions when the kubelet has been lost and the node is taken
-   offline, so a node that dies mid-shutdown does not carry stale state into
-   removal or recovery.
+   Sets the conditions to `Unknown` (reason `NodeStatusUnknown`) when the
+   kubelet has been lost and the node is taken offline, so a node that dies
+   mid-shutdown does not carry stale state into removal or recovery.
 
 Only `status: "True"` has behavioral effect. `False`, `Unknown`, and an absent
 condition are all equivalent to "no shutdown in progress" for every reader.
@@ -344,8 +385,11 @@ writers](#other-writers) and carried as a beta graduation criterion.*
   Unconditional clearing at startup is what makes this loss a non-issue for
   alpha.
 - **Conditions observe; taints enforce.** This KEP uses conditions as an
-  observation primitive that a controller reads. It does not repel Pods and is
-  not a scheduling policy.
+  observation primitive that a controller reads. The conditions do not affect
+  scheduling or admission; the only behavior they drive is whether the
+  DaemonSet controller creates a Pod. The admission change in [Priority
+  tiers](#priority-tiers) is a change to Graceful Node Shutdown's own handler,
+  keyed on the kubelet's in-memory tier state, not on the conditions.
 - **Reasons are cause categories, not phase encodings.** Per [KEP-5683]
   conventions (and the WG position for the `kubectl drain` writer), the `reason`
   field is informational and is not an API for readers to key behavior off. This
@@ -360,11 +404,8 @@ writers](#other-writers) and carried as a beta graduation criterion.*
 - **API doc-comment change.** The condition constants in
   [`staging/src/k8s.io/api/core/v1/types.go`][staging/src/k8s.io/api/core/v1/types.go]
   currently state that "the admin is responsible for setting and clearing this
-  condition." Adding an in-tree writer is a semantic change to that comment.
-  That path carries `no_parent_owners: true`, so an api-approver is needed in
-  addition to SIG Node. Given reviewer bandwidth ahead of the v1.38 enhancements
-  window, an api-approver should be identified at KEP-PR time, not at code-PR
-  time.
+  condition." Adding an in-tree writer is a semantic change to that comment,
+  which the implementation PR updates.
 
 ### Risks and Mitigations
 
@@ -373,9 +414,11 @@ writers](#other-writers) and carried as a beta graduation criterion.*
 | The kubelet's status write does not land before the machine dies (slow or unreachable API server during a rack-wide event). | Best-effort, bounded retry; the DaemonSet controller sees absent conditions and behaves as today. Never worse than status quo. |
 | Conditions left `True` after the kubelet is gone (crash, power loss). | Kubelet clears unconditionally at startup on return; Node Lifecycle Controller clears when the node is taken offline. Residual stale state until one of those fires is accepted for alpha; a stale-writer backstop is a graduation item. |
 | The NLC clears the conditions while teardown is still in progress, on architectures where the Node object intentionally outlives the kubelet (stop kubelet → post-kubelet cleanup → delete Node). | Accepted for alpha; with no kubelet there is no admission rejection, so Pods sit `Pending` rather than churning, and Node deletion resolves it. The trigger is [Design Decision 2](#design-decisions); see the [NLC section](#node-lifecycle-controller-narrow-writer) for the trade-offs. |
-| Another writer flips `DrainInProgress` mid-shutdown (`kubectl drain`, a maintenance operator, an admin). | Last-writer-wins, admin-in-control. Fail-open semantics mean the worst case is today's churn, not incorrect deletion. Cross-writer synchronization is deferred past alpha (WG, 2026-08-24). |
+| Another writer flips `DrainInProgress` mid-shutdown (`kubectl drain`, a maintenance operator, an admin). | Last-writer-wins, admin-in-control. Fail-open semantics mean the worst case is today's churn, not incorrect deletion. The kubelet never overwrites a `DrainInProgress=True` it did not set, so the initiating writer's `reason`, `message`, and `lastTransitionTime` survive the shutdown. General cross-writer coordination is [#6430]. |
+| A reboot resets a `DrainInProgress=True` that another writer set before the shutdown: the kubelet's startup reset is unconditional and writer-agnostic. | Accepted for alpha. The drain initiator observes the reset and re-asserts if its drain is still in progress; a startup reset that distinguishes writers is an outcome of [#6430]. |
 | An admin deletes a condition the kubelet is responsible for while shutdown is in progress (new edge case on [k/k#122674]). | Accepted for alpha. Graduation direction: the kubelet reads level-triggered shutdown state from the OS and continuously reconciles the conditions (WG, 2026-08-17). |
-| Suppression is phase-agnostic: during a long user-workload termination phase, a system-critical DaemonSet Pod that dies is not restarted, and its absence can impair the clean termination of the workloads GNS is draining. The evidence suggests this is the common case, not an edge case. | Known alpha limitation, bounded by the shutdown grace budgets (which may be large). Closing it is a beta criterion; the suppression metric's `critical` label measures it during alpha. A priority-class exemption was considered and rejected — see [Termination priorities and drain ordering](#termination-priorities-and-drain-ordering-exploration) and [Alternatives](#alternatives). |
+| Under `shutdownGracePeriodByPodPriority` with a tier between the default tier and `SystemCriticalPriority`, a template in a tier the kubelet has not reached yet is suppressed while the kubelet would still admit it. | Over-suppression only: no churn and no rejected Pod; the template's Pod returns when the conditions clear. The window is bounded by the lower tiers' grace periods, which are operator-chosen and can be long ([k/k#122912]'s reproduction configures `shutdownGracePeriod: 3600s`). Exact for the legacy two-tier configuration. Publishing the tier boundary for per-tier precision is a [beta criterion](#beta); see [Priority tiers](#priority-tiers). |
+| Tier-aware admission changes Graceful Node Shutdown behavior: a Pod admitted during a lower tier runs only until its own tier is reached. | Intended, and the same fate as a Pod admitted before the shutdown signal. Gated with the rest of the feature, so rollback restores today's reject-all admission. |
 | Informer propagation race: the DaemonSet controller may issue one create between the kubelet's write and the controller observing it. | Publishing the conditions before terminating Pods bounds the recreate loop to at most ~one controller sync instead of unbounded. |
 
 ## Design Details
@@ -386,7 +429,8 @@ writers](#other-writers) and carried as a beta graduation criterion.*
 lifecycle `NodeConditionType` constants merged into `k8s.io/api/core/v1` in
 v1.37 behind the `NodeLifecycleConditions` feature gate (alpha, default off). As
 of v1.37 nothing in core writes or reads them. This KEP adds the first in-tree
-writer and reader; no new API types, constants, or reason values are introduced.
+writer and reader, plus one new constant of the same kind,
+`GracefulNodeShutdownCriticalPhase`; no new API types or reason values.
 
 As published by the kubelet during shutdown, in a single status update:
 
@@ -402,6 +446,38 @@ status:
     reason: NodeShutdown
     message: "Graceful node shutdown is draining pods on this node"
 ```
+
+And, in a second update when termination reaches the critical tier:
+
+```yaml
+  - type: GracefulNodeShutdownCriticalPhase
+    status: "True"
+    reason: NodeShutdown
+    message: "Graceful node shutdown is terminating critical pods"
+```
+
+**Why two conditions.** `DrainInProgress` means Pods are being evicted from the
+node. It is set by `kubectl drain` today and by maintenance operators in sibling
+KEPs, and DaemonSet Pods are expected to keep running through those drains — a
+node-level logging or networking agent must be recreated if it dies mid-drain,
+not suppressed. `GracefulNodeShutdownInProgress` means the kubelet has received
+a shutdown signal and is rejecting new Pods in the tiers it is terminating, so
+recreating such a Pod there can only churn. The DaemonSet reader therefore acts
+only when **both** are `True`: the drain that warrants suppression is the one
+caused by the node going away. Either condition alone leaves the controller
+behaving as it does today. The third condition,
+`GracefulNodeShutdownCriticalPhase`, refines *which* templates are suppressed
+once the first two are `True`; it never triggers suppression on its own. The
+reader-side consequences are in [DaemonSet controller
+(reader)](#daemonset-controller-reader) and the rationale in [Priority
+tiers](#priority-tiers).
+
+**What "clear" means.** Throughout this document, clearing a condition means
+setting `status` on the existing entry, never removing the entry from
+`status.conditions`. The kubelet sets `False` (shutdown cancelled; kubelet
+startup). The Node Lifecycle Controller sets `Unknown` (kubelet lost). No
+component specified by this KEP deletes a condition entry; removal remains an
+administrator action under [KEP-5683]'s admin-managed model.
 
 Semantics for every reader in this KEP:
 
@@ -426,7 +502,8 @@ an impending shutdown — `PrepareForShutdown(true)` from systemd-logind on Linu
 
 1. **Publish the conditions** — a single Node status update setting
    `GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`, both with
-   reason `NodeShutdown`. The write is best-effort with a bounded retry: an
+   reason `NodeShutdown` (a `DrainInProgress=True` that is already present is
+   left as is; see below). The write is best-effort with a bounded retry: an
    unreachable API server must never delay the shutdown, and the write must
    complete inside the platform's shutdown window (the logind inhibit delay on
    Linux; the SCM preshutdown timeout on Windows). Today the shutdown manager records
@@ -438,7 +515,11 @@ an impending shutdown — `PrepareForShutdown(true)` from systemd-logind on Linu
    step 2, so that the conditions are ordered ahead of the first Pod termination
    rather than left to the status loop's timing.
 2. **Begin Pod termination** per the existing [KEP-2000] priority-tiered
-   ordering.
+   ordering, with the tier-aware admission and the critical-phase publish
+   described in [Priority tiers](#priority-tiers): the shutdown manager records
+   the lowest priority it has not yet begun terminating, `Admit()` rejects only
+   Pods below that boundary, and `GracefulNodeShutdownCriticalPhase=True` is
+   published before the first Pod in the critical tier is terminated.
 
 **Why a single write of both conditions.** Graceful Node Shutdown moves directly
 from signal detection to Pod termination; verified against the shutdown manager,
@@ -449,19 +530,34 @@ if they see an issue.*
 **Invariant (agreed with the issue author).** The signal that gates DaemonSet
 Pod creation transitions at the same moment the kubelet begins rejecting Pod
 admission. Publishing the conditions before terminating Pods is how the design
-honors it.
+honors it, and the same ordering holds per tier: the critical-phase condition is
+published before the kubelet begins terminating, and rejecting, critical Pods.
+
+**Pre-existing `DrainInProgress`.** If `DrainInProgress` is already `True` when
+the shutdown signal arrives — set by `kubectl drain`, a maintenance operator, or
+an administrator — the kubelet writes only `GracefulNodeShutdownInProgress` and
+leaves the existing entry untouched, so its `reason`, `message`, and
+`lastTransitionTime` continue to record who initiated the drain and when. The
+reader's AND holds either way. The kubelet tracks in memory which conditions it
+wrote during the current shutdown and, on cancel, resets only those; it does
+not inspect `reason` to decide. This is the one ownership rule alpha carries;
+the general mechanism is [#6430].
 
 Two more transitions complete the happy path:
 
 - **Shutdown cancelled.** logind emits `PrepareForShutdown(false)`; the shutdown
   manager already handles this by re-acquiring the inhibit lock and resuming
-  admission. The kubelet sets both conditions `False` on this path.
-- **Kubelet startup.** The kubelet unconditionally clears lingering `True`
-  values before reporting `Ready`. Because shutdown state is in-memory only, a
-  restarted kubelet cannot know it was mid-shutdown; unconditional clearing at
-  startup makes that state loss a non-issue and covers reboot-after-shutdown,
-  crash recovery, and disablement rollback with a single rule. *Resolved in WG
-  (2026-08-17): accepted as the alpha mechanism.*
+  admission. The kubelet sets the conditions it wrote for this shutdown to
+  `False` on this path.
+- **Kubelet startup.** The kubelet unconditionally sets any lingering `True`
+  value on any of the three conditions to `False` before reporting `Ready`.
+  Because shutdown state is in-memory only, a restarted kubelet cannot know it
+  was mid-shutdown; an unconditional reset at startup makes that state loss a
+  non-issue and covers reboot-after-shutdown, crash recovery, and disablement
+  rollback with a single rule. It also resets a `DrainInProgress` another
+  writer set before the reboot; see [Risks and
+  Mitigations](#risks-and-mitigations). *Resolved in WG (2026-08-17): accepted
+  as the alpha mechanism.*
 
 **Windows.** [KEP-4802] (`WindowsGracefulNodeShutdown`, beta since v1.34) gives
 Windows nodes the same shutdown manager shape: `ProcessShutdownEvent` in
@@ -471,7 +567,9 @@ duration — so the DaemonSet churn this KEP fixes occurs on Windows today. The
 condition publish is therefore implemented as a shared helper in the
 `nodeshutdown` package, invoked by both platform managers immediately before
 `killPods`, which gives Windows the same ordering guarantee with no
-platform-specific code. Two differences are absorbed by the existing design:
+platform-specific code. The tier boundary and the critical-phase publish live
+in the shared `podManager` tier walk, so tier-aware admission is likewise
+platform-neutral. Two differences are absorbed by the existing design:
 [KEP-4802] lists shutdown cancellation as a Non-Goal and the Windows manager has
 no cancel path, so the "shutdown cancelled" transition above does not exist on
 Windows and kubelet-startup clear is the only recovery rule there; and the
@@ -499,8 +597,10 @@ exploration is an alpha requirement.
 condition setters in [`pkg/kubelet/nodestatus/`][pkg/kubelet/nodestatus/],
 following the established pattern, driven by the shutdown manager's state, and
 a shared publish helper in `nodeshutdown` called by both the Linux and Windows
-managers. Unit-testable against the existing fake `dbusInhibiter` on Linux and
-against the shared helper directly on Windows.
+managers. The tier boundary, the tier-aware `Admit()` check, and the
+critical-phase publish live in the shared `podManager` tier walk. Unit-testable
+against the existing fake `dbusInhibiter` on Linux and against the shared helper
+directly on Windows.
 
 ### Node Lifecycle Controller (narrow writer)
 
@@ -512,22 +612,21 @@ mid-shutdown does not carry stale state into removal or recovery flows.
 
 **Trigger.** When the controller transitions the node's `Ready` condition to
 `Unknown` (i.e., the kubelet has stopped heartbeating beyond
-`nodeMonitorGracePeriod`), it sets both conditions to `status=Unknown` with
-reason `NodeStatusUnknown` — the same reason it writes on `Ready` for the same
-event. It does not inspect the existing `reason` first: under the WG's alpha
-last-writer-wins model an administrator's condition on a node whose kubelet
-has vanished is superseded like any other. `Unknown` rather than `False`
-because the control plane cannot distinguish a graceful shutdown that ran to
-completion from a plug pulled mid-shutdown from a network partition; all three
-look identical from `Ready=Unknown`, `False` would assert one of them, and
-`Unknown` says exactly what the controller knows (which is also [KEP-5683]'s
+`nodeMonitorGracePeriod`), it sets all three of this KEP's conditions to
+`status=Unknown` with reason `NodeStatusUnknown` — the same reason it writes on
+`Ready` for the same event. It does not inspect the existing `reason` first:
+under the WG's alpha last-writer-wins model an administrator's condition on a
+node whose kubelet has vanished is superseded like any other. `Unknown` rather
+than `False` because the control plane cannot distinguish a graceful shutdown
+that ran to completion from a plug pulled mid-shutdown from a network partition;
+all three look identical from `Ready=Unknown`, `False` would assert one of them,
+and `Unknown` says exactly what the controller knows (which is also [KEP-5683]'s
 definition of the value). The DaemonSet reader keys on `True` alone, so
-suppression lifts either way. Rationale for the trigger: at that
-point the writer is definitively gone; the purpose of the suppression — not
-fighting a kubelet that is actively rejecting Pods — no longer applies; and
-reverting an unreachable node to today's DaemonSet behavior is the fail-open
-default. Node object deletion requires no handling (the conditions go away
-with the object).
+suppression lifts either way. Rationale for the trigger: at that point the
+writer is definitively gone; the purpose of the suppression — not fighting a
+kubelet that is actively rejecting Pods — no longer applies; and reverting an
+unreachable node to today's DaemonSet behavior is the fail-open default. Node
+object deletion requires no handling (the conditions go away with the object).
 
 **Known limitation of this trigger.** On architectures where the Node object
 intentionally outlives the kubelet — teardown flows that stop the kubelet, then
@@ -563,10 +662,12 @@ convention of a stable, CamelCase cause category (see [Design Decision
 
 The reader is the DaemonSet controller
 ([`pkg/controller/daemon/`][pkg/controller/daemon/]). The change touches three
-places, all keyed on the same predicate — the node carries both
-`GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`. The
-implementation factors that predicate into one helper (working name
-`nodeShutdownSuppressed(node)`) so the call sites cannot drift:
+places, all keyed on the same predicate: the node carries
+`GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`, and either
+the DaemonSet's template is non-critical or the node also carries
+`GracefulNodeShutdownCriticalPhase=True`. The implementation factors that
+predicate into one helper (working name `nodeShutdownSuppressed(node, ds)`) so
+the call sites cannot drift:
 
 1. `podsShouldBeOnNode` — the per-node decision made on every sync.
 2. `rollingUpdate` — walks nodes independently of `podsShouldBeOnNode` and
@@ -575,8 +676,20 @@ implementation factors that predicate into one helper (working name
    Node update reaches the controller at all; without a change here the
    controller never observes the conditions changing.
 
-**`podsShouldBeOnNode`.** While a node is suppressed, the controller does the
-following:
+**Critical templates.** A DaemonSet is critical when its
+`spec.template.spec.priorityClassName` is `system-node-critical` or
+`system-cluster-critical`. Both names are reserved, and their values sit at or
+above `SystemCriticalPriority`, which is the boundary the kubelet's
+`IsCriticalPod` uses for non-static Pods, so the controller needs no
+PriorityClass lister to apply the rule. A critical DaemonSet is suppressed only
+while `GracefulNodeShutdownCriticalPhase` is `True`; during the lower tiers the
+kubelet admits its Pods and the controller keeps recreating them as it would
+during a `kubectl drain`. The two-phase approximation this implies for
+`shutdownGracePeriodByPodPriority` ladders is in [Priority
+tiers](#priority-tiers).
+
+**`podsShouldBeOnNode`.** While a node is suppressed for a DaemonSet, the
+controller does the following:
 
 - **Create nothing on the node** — no replacement Pods, no first-time
   placements.
@@ -597,7 +710,7 @@ hand — and DaemonSet Pods are normally expected to survive a drain. Requiring
 `GracefulNodeShutdownInProgress` as well scopes the suppression to the one case
 this KEP is about. Read together, the two conditions contextualize what kind of
 drain is occurring. *Resolved in WG (2026-08-24): accepted for alpha;
-cross-writer synchronization of `DrainInProgress` is explicitly deferred.* An
+cross-writer coordination of `DrainInProgress` is [#6430].* An
 integration test asserts that a node with only `GracefulNodeShutdownInProgress`
 (or only `DrainInProgress`) is not suppressed.
 
@@ -609,8 +722,9 @@ immediately rejects — the same churn this KEP removes from the core loop. With
 `maxSurge == 0`, an old Pod that is still available is a deletion candidate, so
 the controller would race the kubelet for a Pod that is already being
 terminated and spend `maxUnavailable` budget doing it. The implementation builds
-the suppressed-node set once from `nodeList` at the top of `rollingUpdate` and
-skips those nodes as surge-create and delete candidates in both branches. This
+the suppressed-node set for the DaemonSet once from `nodeList` at the top of
+`rollingUpdate` and skips those nodes as surge-create and delete candidates in
+both branches. This
 removes the controller as an *actor* on the node; it does not change
 accounting. A suppressed node's missing or terminating Pod continues to count
 as unavailable, consistent with the status treatment above, and whether it
@@ -620,31 +734,33 @@ should be exempt from the `maxUnavailable` budget remains [KEP-6250]'s question.
 **Recovery.** One filter change, then existing machinery. Today
 `shouldIgnoreNodeUpdate` compares only `Labels` and `Spec.Taints`, so a change
 to `Node.Status.Conditions` never reaches the node-update worker. Under the
-gate, the filter additionally returns `false` when the `Status` of either
-condition differs between the old and new Node. Only `Status` is compared —
-never `LastHeartbeatTime` or `LastTransitionTime` — so heartbeats enqueue
-nothing and the controller sees exactly two events per shutdown: enter and
-exit. From there the existing `syncNodeUpdate` worker does the right thing
-without modification. On exit, `NodeShouldRunDaemonPod` is `true` and no Pod
-is scheduled on the node, which is already an enqueue condition, and the Pod
-returns on the next sync. On enter, the running Pod is still scheduled, nothing
-is enqueued, and the kubelet's own termination drives the subsequent Pod
-events. Without the filter change, recovery after a reboot would only *happen*
-to work because the `node.kubernetes.io/not-ready` taint flips on the way
-through; an aborted shutdown that never goes `NotReady` (inhibitor released,
-kubelet clears the conditions) would leave the node without its DaemonSet Pods
-until an unrelated event arrived.
+gate, the filter additionally returns `false` when the `Status` of any of the
+three conditions differs between the old and new Node. Only `Status` is compared
+— never `LastHeartbeatTime` or `LastTransitionTime` — so heartbeats enqueue
+nothing and the controller sees at most three events per shutdown: enter,
+critical phase, and exit. From there the existing `syncNodeUpdate` worker does
+the right thing without modification. On exit, `NodeShouldRunDaemonPod` is
+`true` and no Pod is scheduled on the node, which is already an enqueue
+condition, and the Pod returns on the next sync. On enter, the running Pod is
+still scheduled, nothing is enqueued, and the kubelet's own termination drives
+the subsequent Pod events. Without the filter change, recovery after a reboot
+would only *happen* to work because the `node.kubernetes.io/not-ready` taint
+flips on the way through; an aborted shutdown that never goes `NotReady`
+(inhibitor released, kubelet clears the conditions) would leave the node without
+its DaemonSet Pods until an unrelated event arrived.
 
 **Informer ordering.** The Node condition write and the kubelet's first Pod
 deletion arrive on separate informers with no ordering guarantee between them.
 If a Pod-delete event is processed before the Node event carrying the
 conditions, `podsShouldBeOnNode` sees an unsuppressed node and creates one
 replacement, which the kubelet rejects and the next sync deletes. This is
-fail-open and bounded to one Pod per DaemonSet per shutdown. The kubelet
-publishes the conditions before it begins terminating Pods, and termination
-takes at least the Pod's grace period, so the window is narrow in practice.
-Alpha accepts it; closing it would require a live read of the Node before every
-create and is not worth the API cost.
+fail-open and bounded to one Pod per DaemonSet per condition transition: one for
+a non-critical DaemonSet, at the initial publish; up to two for a critical
+DaemonSet, whose suppression begins at the critical-phase publish. The kubelet
+publishes each condition before it begins terminating the Pods it governs, and
+termination takes at least the Pod's grace period, so the window is narrow in
+practice. Alpha accepts it; closing it would require a live read of the Node
+before every create and is not worth the API cost.
 
 **Expectations.** The early return that skips a create must not leave a dangling
 creation expectation on the controller; the implementation must ensure
@@ -676,8 +792,9 @@ churn, and it deserves the same coordination. The correct way to serve it is a
 reader question — should the DaemonSet controller also suppress for
 `DrainInProgress` together with `MaintenanceInProgress`, or for some other
 combination that [KEP-6250] defines — not a writer question about who may set
-the GNS condition. That question is deferred to beta, alongside the multi-writer
-coordination direction, and this KEP records it as a graduation item. An
+the GNS condition. That question is deferred to beta, alongside the
+coordination mechanism defined by [#6430], and this KEP records it as a
+graduation item. An
 external writer that chooses to set these conditions in the meantime does so
 under the admin-managed model as it stands in v1.37, inherits the
 stale-condition risks above without the kubelet's startup-clear safety net, and
@@ -689,11 +806,25 @@ is responsible for its own clearing.
 for its behavior. It introduces its own feature gate so that the
 DaemonSet-coordination behavior matures on its own track while
 `NodeLifecycleConditions` and the `kubectl drain` writer graduate separately.
+The new gate does depend on `NodeLifecycleConditions`, since it writes and reads
+the conditions that gate introduced.
 
 - **Gate name:** `DaemonSetGracefulNodeShutdown` (see [Design
   Decisions](#design-decisions))
 - **Components:** kubelet, kube-controller-manager
 - **Stage:** alpha, default off, v1.38
+- **Depends on:** `NodeLifecycleConditions`, declared in
+  `defaultKubernetesFeatureGateDependencies` in
+  [`pkg/features/kube_features.go`][pkg/features/kube_features.go]. Feature-gate
+  validation refuses to start a component with `DaemonSetGracefulNodeShutdown`
+  enabled and `NodeLifecycleConditions` disabled.
+- **Admission change placement.** The tier-aware `Admit()` behavior from
+  [Priority tiers](#priority-tiers) ships under this gate for alpha, so a
+  rollback restores today's reject-all admission together with the rest of the
+  feature. The alternative, recorded for SIG Node, is to land it as a fix under
+  `GracefulNodeShutdownBasedOnPodPriority` (beta, default on), which would
+  change admission for every cluster in v1.38 and decouple it from the reader
+  that depends on it. Recommendation: this gate; decision at SIG Node review.
 
 The working assumption is a single gate covering both this KEP's kubelet writer
 and its DaemonSet reader, to minimize gate count per the WG's alpha philosophy.
@@ -706,7 +837,7 @@ Layout relative to the existing gate:
 |---|---|---|
 | off | off | v1.37 behavior; conditions admin-managed only. |
 | on | off | Conditions remain admin-managed; today's churn persists. Safe. |
-| off | on | Kubelet writes and DaemonSet controller reads this KEP's conditions; behavior active independent of the admin-conditions gate. |
+| off | on | Rejected at component startup by feature-gate dependency validation; this combination cannot run. |
 | on | on | Full behavior; churn loop broken. |
 
 Fail-open semantics make every partial combination safe: any component without
@@ -718,23 +849,25 @@ Metrics are defined per consuming KEP (per prior scoping with the issue author).
 Alpha adds, at minimum, on the DaemonSet reader:
 
 - **`daemonset_controller_node_shutdown_suppression_total`** — counter recorded
-  in the node-update worker (`syncNodeUpdate`) when a node's suppression state
-  flips, incremented once per DaemonSet that has a Pod on the node at the moment
-  of the flip. Gives PRR an observable signal that the feature is active and
-  makes the bounded-loop claim verifiable.
-  - **Label `transition="enter"|"exit"`** — whether the node entered or left
-    the suppressed state. The feature is in use only between an `enter` and its
-    matching `exit`, so the difference of the two over a window is the in-use
-    gauge; no separate gauge is added.
-  - **Label `critical="true"|"false"`**, true when the DaemonSet Pod's
-    priority class is `system-node-critical` or `system-cluster-critical`.
-    Without a priority dimension there is no way to observe, during alpha,
-    whether the critical-daemon-Pod gap described in [Risks and
-    Mitigations](#risks-and-mitigations) is occurring in the field; [#137895]
-    suggests the affected population is predominantly critical, and this label
-    is what turns the beta priority-aware decision into a data-driven one. The
-    label is bounded (priority class *names* are user-defined and would be
-    unbounded cardinality, so they are not used).
+  in the node-update worker (`syncNodeUpdate`) when an observed condition
+  change flips a DaemonSet's suppression state on that node, incremented once
+  per DaemonSet that has a Pod on the node and whose state flipped. Gives PRR an
+  observable signal that the feature is active and makes the bounded-loop claim
+  verifiable.
+  - **Label `transition="enter"|"exit"`** — whether the DaemonSet entered or
+    left suppression on the node. The feature is in use only between an `enter`
+    and its matching `exit`, so the difference of the two over a window is the
+    in-use gauge; no separate gauge is added.
+  - **Label `critical="true"|"false"`**, true when the DaemonSet's template
+    priority class is `system-node-critical` or `system-cluster-critical`. The
+    two populations enter suppression at different moments — non-critical
+    DaemonSets when the first two conditions are set, critical ones when
+    `GracefulNodeShutdownCriticalPhase` is — so the counter is incremented for
+    a DaemonSet when *its* suppression state flips, and the label says which
+    rule fired. [#137895] suggests the affected population is predominantly
+    critical, so this is also the label that shows whether the critical phase
+    is where the churn was. The label is bounded (priority class *names* are
+    user-defined and would be unbounded cardinality, so they are not used).
 
   Recording in the node worker rather than in `podsShouldBeOnNode` is
   deliberate. A counter bumped inside `syncDaemonSet` counts syncs that
@@ -750,116 +883,117 @@ Alpha adds, at minimum, on the DaemonSet reader:
 Writer-side metrics belong to the condition-writing milestone and are not
 proposed here.
 
-### Termination priorities and drain ordering (exploration)
+### Priority tiers
 
-*Required per WG direction (2026-08-17, 2026-08-24). This section records the
-problem and candidate directions; solving it is explicitly deferred.*
+*Added at API review (2026-09-25). Supersedes the "exploration" section carried
+in earlier drafts; the WG lead concurred with the direction the same day.*
 
-#### Why this matters to Graceful Node Shutdown
+Graceful Node Shutdown terminates Pods in priority tiers, but until this KEP
+the kubelet told no one which tier it was in and rejected every new Pod
+regardless of tier. The API reviewer's objection to a phase-agnostic reader was
+that a critical DaemonSet Pod should remain creatable while the kubelet is still
+terminating lower tiers, and that a design which cannot express the tier would
+codify the kubelet's reject-all admission rather than fix it. This section
+records what the kubelet does today and the two changes that make the reader
+consistent with it. Source references are pinned to
+[kubernetes/kubernetes@e79a603][k/k-e79a603].
 
-Priority-tiered termination is not incidental to Graceful Node Shutdown; it is
-how the feature works. The kubelet terminates Pods in ordered tiers: by default
-regular Pods within `shutdownGracePeriod` and then critical Pods within
-`shutdownGracePeriodCriticalPods`, and with `shutdownGracePeriodByPodPriority`
-an arbitrary ladder of priority ranges each with its own grace budget. A node in
-graceful shutdown therefore passes through phases: user workloads are draining
-while system-critical DaemonSet Pods (CNI, CSI, log shipping) are deliberately
-still running — and still needed, since the user workloads' clean termination
-depends on them.
+#### How the kubelet terminates Pods today
 
-[k/k#122912] states this explicitly as existing kubelet behavior: the shutdown
-manager ensures "that crucial system workloads (often run as DaemonSets) are to
-be terminated the last—attempting to ensure that node will not lose its network
-access, the metrics can still be sent, and monitoring won't be interrupted to
-the very end." The admission callback, by contrast, "makes no attempts to handle
-different types of workloads." The kubelet is already priority-aware on the
-termination path and priority-blind on the admission path; this KEP's alpha
-reader is likewise priority-blind.
+- Every configuration becomes one sorted list of priority tiers.
+  `shutdownGracePeriodByPodPriority` is used as written; the legacy
+  `shutdownGracePeriod` / `shutdownGracePeriodCriticalPods` pair is converted
+  by `migrateConfig` into two tiers split at `SystemCriticalPriority`
+  (2000000000), the same boundary `IsCriticalPod` uses
+  ([`migrateConfig`][k/k-migrateconfig]).
+- `killPods` buckets running Pods into those tiers and walks them from lowest
+  to highest, waiting at most each tier's `shutdownGracePeriodSeconds` before
+  moving on; empty tiers are skipped without waiting ([`killPods`][k/k-killpods]).
+  A tier can end early, never late.
+- The current tier exists only as the loop variable in `killPods` and a V(1)
+  log line. It is not in the kubelet's state file, its metrics, or the Node.
+- `Admit()` checks only whether shutdown has begun. Every Pod is rejected with
+  reason `NodeShutdown` from the first tier to the last, on Linux and Windows
+  alike ([`Admit`][k/k-admit]).
 
-There are known bugs in this area today. [#122912] is the reference, and among
-the fixes it proposes is teaching the shutdown manager to leave DaemonSets
-untouched until the final phase. It also links earlier reports in the same area
-([#98004], [#100184], [#109450], [#122122]) and notes that fixes landed in
-[#98005], [#117073], and [#109450] have not fully settled the behavior. This KEP
-does not attempt to fix the priority-tier behavior itself, but the DaemonSet
-coordination it introduces must not make it harder to fix.
+The last point is why a phase-agnostic reader did not regress behavior — a
+critical DaemonSet Pod created during a lower tier was already rejected and
+looped — and also why fixing admission on its own is not enough: once the
+kubelet admits critical Pods during lower tiers, a reader that suppresses every
+template would withhold Pods the kubelet would take.
 
-#### The interaction this KEP creates
+#### Tier-aware admission
 
-Alpha suppression is phase-agnostic: while both conditions are `True`, the
-DaemonSet controller creates nothing on the node — critical and non-critical
-alike. That is correct for the terminal end-state, but during a long
-user-workload phase it introduces a gap: if a system-critical DaemonSet Pod dies
-or is rolled during that window, it will not be restarted, and its absence
-(storage, networking) can break the clean termination of the very workloads GNS
-is trying to drain gracefully.
+Under the `DaemonSetGracefulNodeShutdown` gate, the shutdown manager records a
+boundary: the `Priority` of the next tier `killPods` has not yet reached.
+`Admit()` rejects a Pod only when its `spec.priority` is below that boundary,
+which is exactly the set of Pods that fall in the tier being terminated or one
+already terminated; once the last tier begins there is no next tier and every
+Pod is rejected, as today. Pods at or above the boundary are admitted and run
+until their own tier is reached, exactly as Pods admitted before the shutdown
+signal do. The boundary is updated in memory at each tier transition and read
+by admission under the same lock as the shutdown flag, so the two never
+disagree. The tier walk lives in the shared `podManager`, so Windows gets the
+same behavior with no platform-specific code.
 
-Two data points from the motivating issues size this gap, and together they
-suggest it is the common case rather than an edge case:
+This is a change to Graceful Node Shutdown's admission behavior, not only to
+this KEP's writer, and it is gated for that reason; see [Feature
+gating](#feature-gating) for the placement recommendation and the alternative
+recorded for SIG Node.
 
-- **The affected population is predominantly critical.** [#137895]'s list of
-  DaemonSets stuck Pending during node removal — `istio-cni-node`, `ztunnel`,
-  `aws-node`, `kube-proxy`, `ebs-csi-node`, `efs-csi-node`, `s3-csi-node`,
-  `eks-node-monitoring-agent`, `eks-pod-identity-agent` — is almost entirely
-  CNI, CSI, and node-critical agents. The DaemonSets this KEP suppresses are, in
-  practice, the DaemonSets whose absence is most consequential.
-- **The window can be tens of minutes.** [#122912]'s own reproduction configures
-  `shutdownGracePeriod: 3600s` and `shutdownGracePeriodCriticalPods: 1800s`.
-  "Bounded by the admin-configured shutdown grace budgets" is accurate, but
-  those budgets are operator-chosen and, in the canonical repro for this very
-  problem, are one hour and thirty minutes respectively. [#122912] separately
-  observes that scheduling failures "keep increasing over time" precisely
-  because "the worker node can run workloads that take a long time to stop and
-  terminate."
+**Implementation order.** The kubelet change — tier-aware admission together
+with all three condition writes — lands first, and the DaemonSet reader lands
+on top of it. The reader's rule assumes tier-aware admission: a controller
+that stops suppressing critical templates during lower tiers is only correct
+if the kubelet admits them there. Reviewing the kubelet PR first also lets SIG
+Node evaluate the admission change on its own terms before anything depends on
+it.
 
-#### Candidate directions (recorded, not chosen)
+#### The critical-phase condition
 
-**A. Phase-encoded reasons.** The kubelet flips the `DrainInProgress` reason as
-it crosses tiers — e.g. `DrainingUserWorkloads` → `DrainingCriticalWorkloads` —
-and the DaemonSet controller matches the phase against the DaemonSet Pod's
-priority class (`system-cluster-critical`, `system-node-critical`), continuing
-to schedule critical DaemonSet Pods during the user phase. Cheap to implement:
-the tier transition points already exist in the shutdown manager, and producer
-and consumer are both known (kubelet and DaemonSet controller), so the
-concurrency risk is low. The objection is convention: the WG's position for
-`kubectl drain` is that condition reasons are informational and not an API for
-readers to key behavior off. This option cuts against that precedent and would
-need the tension resolved explicitly. This KEP's own contract deliberately does
-not key on reasons, which weighs against A.
+The critical tier is the one `groupByPriority` places critical Pods in: the
+highest tier whose `Priority` is at or below `SystemCriticalPriority`. Under the
+legacy configuration that is the second tier. Under a
+`shutdownGracePeriodByPodPriority` ladder whose top tier sits below
+`SystemCriticalPriority`, it is the top tier, because that is where critical
+Pods are bucketed and terminated; defining it this way guarantees the condition
+is published before the first critical Pod is terminated under any ladder. When
+`killPods` reaches that tier, and before terminating any Pod in it, the kubelet
+publishes `GracefulNodeShutdownCriticalPhase=True` (reason `NodeShutdown`; see
+[The conditions](#the-conditions) for the entry as written). It is a new
+`NodeConditionType` constant alongside the [KEP-5683] set; the name follows
+that set's style and is open to API review. It is cleared with the other two on
+cancel and at startup, and set to `Unknown` by the Node Lifecycle Controller
+with them. It has no meaning on its own: the reader consults it only when
+`GracefulNodeShutdownInProgress` and `DrainInProgress` are both `True`. Under
+the legacy two-tier configuration it flips exactly when the kubelet moves from
+the regular-Pod phase to the critical-Pod phase.
 
-**B. A reported priority-tier field.** The kubelet reports the priority tier
-currently being terminated as structured state on the Node object, and the
-DaemonSet controller reads it as a purpose-built point-to-point integration.
-Avoids overloading `reason`, is more expressive than a taint's on/off semantics,
-and could also inform phase-aware `maxUnavailable` accounting in [KEP-6250]'s
-territory. The cost is new API surface with a single consumer today.
+The reader rule becomes: with the first two conditions `True`, suppress
+templates whose `priorityClassName` is neither `system-node-critical` nor
+`system-cluster-critical`; once the third is also `True`, suppress every
+template. Both names are reserved and their values sit at or above
+`SystemCriticalPriority`, so the controller needs no PriorityClass lister to
+apply the rule.
 
-Both directions ultimately belong to the broader drain-ordering problem, which
-spans `kubectl drain` and other writers. Drain ordering will be addressed in a
-separate KEP under the SLM umbrella; that enhancement is expected to gate beta
-graduation across the SLM reader KEPs, and this document will link it once the
-issue is filed.
+#### Alpha approximation and graduation path
 
-#### Position for this KEP's alpha
+The condition expresses two phases. `shutdownGracePeriodByPodPriority` can
+define more: a ladder with a tier at, say, priority 1000 between the default
+tier and the critical one. While the kubelet is terminating the default tier it
+admits a priority-1000 Pod, but the reader, which sees only "not critical",
+suppresses it. That is over-suppression — no churn, no rejected Pod, and the
+template's Pod returns when the conditions clear — so alpha accepts it and
+records it in [Risks and Mitigations](#risks-and-mitigations).
 
-The WG's resolution (2026-08-24) is that alpha ships the phase-agnostic
-behavior: suppression applies uniformly while both conditions are `True`,
-reasons remain informational, and no priority-aware exceptions are made. The
-critical-daemon-Pod gap is acknowledged as a known limitation. This KEP commits
-to revisiting priority-aware suppression at beta, in alignment with the separate
-ordering enhancement, choosing between directions A and B (or a successor
-design) with SIG Node and SIG Apps input at that point.
-
-Two things follow from the data points above rather than being left open. First,
-closing the critical-daemon-Pod gap is an explicit **beta graduation criterion**,
-not a note. Second, the suppression metric carries a `critical` label
-(see [Metrics](#metrics)) so that the gap's real-world incidence is measured during
-alpha and the beta decision between A, B, or a successor is made on evidence.
-
-A narrower alternative — exempting `system-node-critical` /
-`system-cluster-critical` DaemonSet Pods from suppression in alpha, without any
-phase signal — was considered and rejected; the reasoning is in
-[Alternatives](#alternatives).
+The precise form is for the kubelet to publish the boundary it is terminating
+as an integer and for the reader to compare the template's resolved priority
+against it. That needs a Node status field (a condition cannot carry an
+integer) and a PriorityClass lister in the DaemonSet controller, and it is a
+[beta criterion](#beta). When it lands, the reader rule narrows to "suppress
+when the resolved priority is below the boundary"; an absent boundary from an
+older kubelet falls back to the two-phase rule above, so the change is
+additive.
 
 ### Design Decisions
 
@@ -877,7 +1011,7 @@ open; the list exists so reviewers can see where each answer came from.*
    Mitigations](#risks-and-mitigations), and revisiting the trigger is a
    [beta criterion](#beta). Decided at KEP review.
 3. **Node Lifecycle Controller write.** `status=Unknown`, reason
-   `NodeStatusUnknown`, on both conditions. `Unknown` is the only honest
+   `NodeStatusUnknown`, on all three conditions. `Unknown` is the only honest
    value: once heartbeats stop, the control plane cannot tell a shutdown that
    completed from a plug pulled mid-shutdown from a network partition, and
    `False` would assert one of those. It matches [KEP-5683]'s definition
@@ -888,14 +1022,19 @@ open; the list exists so reviewers can see where each answer came from.*
    (last-writer-wins, per the WG's alpha model). Confirmed with the WG lead,
    2026-09-22.
 4. **Single feature gate for writer and reader.** *Resolved in WG
-   (2026-08-24)*; see [Feature gating](#feature-gating).
+   (2026-08-24)*; see [Feature gating](#feature-gating). The gate depends on
+   `NodeLifecycleConditions` via the feature-gate dependency map. Decided at
+   SIG Apps review.
 5. **Metric labels.** `transition` and `critical` on
    `daemonset_controller_node_shutdown_suppression_total`, both bounded
    two-value labels. Cardinality is reviewed by SIG Instrumentation at the
    implementation PR as usual. Decided at KEP review.
-6. **Critical-daemon-Pod gap.** A hard [beta criterion](#beta) for this KEP.
-   If the separate drain-ordering enhancement closes it first, this KEP inherits
-   that resolution. Decided at KEP review.
+6. **Priority tiers in alpha.** The phase-agnostic reader was replaced by
+   tier-aware kubelet admission plus the `GracefulNodeShutdownCriticalPhase`
+   condition, with per-tier precision as a [beta criterion](#beta). Raised by
+   the API reviewer (a reader that cannot express the tier would codify the
+   kubelet's reject-all admission); direction confirmed by the WG lead. See
+   [Priority tiers](#priority-tiers). Decided at API review, 2026-09-25.
 7. **Reader keys on `type` and `status` only; partial-rollout safety is
    operational.** Keying on `reason` was considered as a way to distinguish
    kubelet-written state from administrator-written or stale state and
@@ -905,12 +1044,17 @@ open; the list exists so reviewers can see where each answer came from.*
    reader-first disablement, and a preflight listing of nodes carrying the
    conditions hard requirements, and the reader-only enablement test exercises
    the writer-agnostic behavior directly. Decided at PRR review.
+8. **Condition name.** `GracefulNodeShutdownCriticalPhase`, matching the
+   [KEP-5683] naming style. It is a new `NodeConditionType` constant and the
+   name is open to API review on the implementation PR.
+9. **Admission change placement.** Under this KEP's gate for alpha; the
+   alternative of landing it under `GracefulNodeShutdownBasedOnPodPriority` is
+   recorded in [Feature gating](#feature-gating) for SIG Node to decide.
 
-**Follow-up (not a design question).** The drain-ordering enhancement referenced
-in [Termination priorities and drain
-ordering](#termination-priorities-and-drain-ordering-exploration) has not been
-filed yet. [KEP-5683] is the umbrella reference until it is; the link will be
-added when the WG lead files it.
+**Follow-up (not a design question).** Multi-writer coordination of node
+lifecycle conditions is tracked in [#6430]. General drain ordering across the
+SLM readers remains with the WG lead's separate enhancement; [KEP-5683] is the
+umbrella reference until it is filed.
 
 ### Test Plan
 
@@ -936,18 +1080,27 @@ Coverage at time of writing (`go test -cover`):
 Coverage in `pkg/kubelet/nodeshutdown` is low because the systemd/logind
 integration in `nodeshutdown_manager_linux.go` is only partially exercisable
 with the fake `dbusInhibiter`; the condition-writing path added by this KEP
-will be covered by unit tests against that fake, and end-to-end against real
-systemd in `test/e2e_node/`.
+will be covered by unit tests against that fake, the tier-aware admission and
+critical-phase paths against the shared `podManager` directly, and all of it
+end-to-end against real systemd in `test/e2e_node/`.
 
 New and updated tests:
 
 - [`pkg/kubelet/nodeshutdown/`][pkg/kubelet/nodeshutdown/]: condition write on
   shutdown signal, clear on cancel, clear on startup; against the existing fake
-  `dbusInhibiter`.
+  `dbusInhibiter`. Tier-aware admission: a Pod in the current or an
+  already-terminated tier is rejected, a Pod at or above the boundary is
+  admitted, under both the legacy config and a multi-tier
+  `shutdownGracePeriodByPodPriority`; gate off restores reject-all.
+  `GracefulNodeShutdownCriticalPhase` is published when the critical tier is
+  reached — after the lower tiers finish and before the first critical Pod is
+  terminated — and cleared with the other two.
 - [`pkg/kubelet/nodestatus/`][pkg/kubelet/nodestatus/]: new setter, gate on/off.
 - [`pkg/controller/daemon/`][pkg/controller/daemon/]: `podsShouldBeOnNode` with
-  both conditions, one condition, neither; failed-Pod deletion without
-  replacement; gate on/off. `rollingUpdate`: a suppressed node is neither a
+  both conditions, one condition, neither; a critical template with and without
+  `GracefulNodeShutdownCriticalPhase`; a non-critical template with the third
+  condition alone (no effect); failed-Pod deletion without replacement; gate
+  on/off. `rollingUpdate`: a suppressed node is neither a
   surge-create candidate (`maxSurge > 0`) nor a delete candidate
   (`maxSurge == 0`), gate on/off. `shouldIgnoreNodeUpdate`: a condition
   `Status` flip passes the filter, a heartbeat-only update does not, gate off
@@ -961,10 +1114,14 @@ New and updated tests:
 [`test/integration/daemonset/`][test/integration/daemonset/] — the clearest
 statement of what this KEP does:
 
-- Node with both conditions `True` → DaemonSet Pod deleted and not recreated.
+- Node with both conditions `True` → non-critical DaemonSet Pod deleted and not
+  recreated.
 - Node with `GracefulNodeShutdownInProgress=True` only → Pod is recreated
   (proves the AND is deliberate).
 - Node with `DrainInProgress=True` only → Pod is recreated.
+- Node with both conditions `True` and a `system-node-critical` DaemonSet →
+  Pod is recreated until `GracefulNodeShutdownCriticalPhase=True` is added,
+  then deleted and not recreated.
 - Reader enabled against a node already carrying both conditions `True` →
   suppressed until cleared (the writer-agnostic reader; exercised deliberately
   so the rollout-ordering requirement is backed by a test).
@@ -984,27 +1141,32 @@ statement of what this KEP does:
 - [`test/e2e_node/`][test/e2e_node/] — extend the existing graceful node
   shutdown suite (the only place GNS is exercised against real systemd) to
   assert the conditions are published before Pod termination begins and cleared
-  on kubelet restart.
+  on kubelet restart; that a critical Pod is admitted while the default tier is
+  being terminated and rejected once the critical tier begins; and that
+  `GracefulNodeShutdownCriticalPhase` appears at that transition.
 
 ### Graduation Criteria
 
 #### Alpha (v1.38)
 
-- Feature gate `DaemonSetGracefulNodeShutdown`, default off.
-- Kubelet writer, DaemonSet reader, and Node Lifecycle Controller clearing
-  implemented behind the gate.
-- Unit and integration coverage with the gate on and off.
-- Suppression counter metric present, with the `critical` label (pending Open
-  Question 6).
+- Feature gate `DaemonSetGracefulNodeShutdown`, default off, declaring its
+  dependency on `NodeLifecycleConditions`.
+- Kubelet writer (all three conditions), tier-aware admission, DaemonSet
+  reader, and Node Lifecycle Controller clearing implemented behind the gate.
+- `GracefulNodeShutdownCriticalPhase` added to `k8s.io/api/core/v1`.
+- Unit and integration coverage with the gate on and off, including the
+  critical-template cases.
+- Suppression counter metric present, with the `critical` label.
 
 #### Beta
 
 *Direction only; criteria to be firmed up with the WG-level plan for how the SLM
 writer and reader KEPs graduate together.*
 
-- **Multi-writer coordination.** A settled direction for ownership /
-  coordination of node lifecycle conditions (new API or otherwise), including
-  cross-writer synchronization of `DrainInProgress` for this KEP's AND.
+- **Multi-writer coordination.** Adoption of the mechanism defined by [#6430]
+  (SLM: Coordinate Node lifecycle condition writers), including cross-writer
+  handling of `DrainInProgress` for this KEP's AND and a kubelet startup reset
+  that distinguishes writers.
 - **Amnesia-bug edge case.** The kubelet reads level-triggered shutdown state
   from the OS and continuously reconciles the conditions.
 - **Stale-writer detection.** Node Lifecycle Controller backstop that detects a
@@ -1012,10 +1174,11 @@ writer and reader KEPs graduate together.*
 - **NLC clearing trigger revisited** for architectures where the Node object
   outlives the kubelet (see [Risks and Mitigations](#risks-and-mitigations) and
   [Design Decision 2](#design-decisions)).
-- **Critical-daemon-Pod gap closed.** Priority-aware suppression lands in
-  alignment with the separate drain-ordering enhancement (directions A / B above
-  or a successor), informed by the `critical` metric label collected during
-  alpha.
+- **Per-tier precision.** The kubelet publishes the priority boundary it is
+  terminating, and the reader compares the template's resolved priority
+  against it, replacing the two-phase approximation of [Priority
+  tiers](#priority-tiers); informed by the `critical` metric label collected
+  during alpha and aligned with the separate drain-ordering enhancement.
 - **Controller-driven teardown.** A decision on whether, and via which condition
   combination, teardown orchestrated by a cluster-side controller triggers
   DaemonSet suppression (see [Other writers](#other-writers)), taken together
@@ -1061,7 +1224,7 @@ Fail-open semantics make every skew combination safe:
 
 | Kubelet | kube-controller-manager | Result |
 |---|---|---|
-| New (writes conditions) | Old (ignores them) | Conditions present, unconsumed. Today's churn persists on shutting-down nodes; no new failure mode. Kubelet startup clears the conditions. |
+| New (writes conditions) | Old (ignores them) | Conditions present, unconsumed. Today's churn persists on shutting-down nodes, except that tier-aware admission now admits critical DaemonSet Pods the old controller creates during lower tiers, which is strictly less churn; no new failure mode. Kubelet startup clears the conditions. |
 | Old (never writes) | New (would consume) | No kubelet-written conditions exist. DaemonSet behavior unchanged unless conditions pre-exist (see preflight); no new failure mode. |
 | Both new, gate off | — | No change. |
 | Both new, gate on | — | Feature works. |
@@ -1086,9 +1249,11 @@ partial combination.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, on nodes undergoing graceful shutdown only: the DaemonSet controller stops
-recreating DaemonSet Pods on those nodes for the duration of the shutdown. Nodes
-not in shutdown are unaffected.
+Yes, on nodes undergoing graceful shutdown only. The DaemonSet controller stops
+recreating non-critical DaemonSet Pods on those nodes for the duration of the
+shutdown, and all DaemonSet Pods once the critical tier begins. The kubelet
+admits Pods above the tier it is terminating instead of rejecting every Pod;
+see [Priority tiers](#priority-tiers). Nodes not in shutdown are unaffected.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1125,15 +1290,18 @@ Rollout enables a writer and a reader that are each inert without the other's
 conditions, so a partial rollout does not fail in a way that affects running
 workloads: the worst case on any component is today's behavior. The same holds
 for Pods not yet running. The kubelet's rejection of new Pod admission during
-a shutdown is existing Graceful Node Shutdown behavior that this KEP neither
-adds nor changes; with only the kubelet side enabled, DaemonSet Pods targeted
-at a shutting-down node are rejected exactly as today, and the node's next
-kubelet startup clears the conditions before the node reports `Ready`. A
-partially enabled cluster therefore cannot block an upgrade.
+a shutdown is existing Graceful Node Shutdown behavior that this KEP narrows to
+the tiers being terminated; with only the kubelet side enabled, DaemonSet Pods
+targeted at a shutting-down node are rejected as today except for those above
+the tier being terminated, which are admitted, and the node's next kubelet
+startup clears the conditions before the node reports `Ready`. A partially
+enabled cluster therefore cannot block an upgrade.
 
 The reader is writer-agnostic — it keys on `type` and `status` only, per API
 conventions — so a node that already carries both conditions `True` when the
-reader is enabled is suppressed immediately, whoever wrote them. For an
+reader is enabled is suppressed immediately for non-critical DaemonSets (and
+for critical ones if it also carries `GracefulNodeShutdownCriticalPhase=True`),
+whoever wrote them. For an
 administrator-written pair that is the intended [KEP-5683] semantics. For stale
 state it is not, which is why rollout ordering and the preflight check in
 [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) are requirements:
@@ -1157,8 +1325,9 @@ inert, exactly as today.
 rising while no node in the cluster is shutting down would indicate stale or
 incorrect conditions. `enter` counts with no matching `exit` over a long window
 indicate conditions that are not being cleared. With the `critical` label,
-sustained suppression of critical DaemonSet Pods on long-running shutdowns is a
-signal that the critical-daemon-Pod gap is being exercised in practice.
+`enter` events for critical DaemonSets on a node that never reached the
+critical phase would indicate the reader is suppressing without
+`GracefulNodeShutdownCriticalPhase`, which is a bug.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1173,15 +1342,17 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Presence of `GracefulNodeShutdownInProgress` / `DrainInProgress` on Node
-objects, and a non-zero suppression counter.
+Presence of `GracefulNodeShutdownInProgress` / `DrainInProgress` (and, during
+the critical tier, `GracefulNodeShutdownCriticalPhase`) on Node objects, and a
+non-zero suppression counter.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [ ] Events
 - [x] API .status
   - Condition name: `GracefulNodeShutdownInProgress` and `DrainInProgress`
-    with reason `NodeShutdown` on a shutting-down Node.
+    with reason `NodeShutdown` on a shutting-down Node, joined by
+    `GracefulNodeShutdownCriticalPhase` once the critical tier begins.
 - [x] Other (treat as last resort)
   - Details: `daemonset_controller_node_shutdown_suppression_total` increments
     with `transition="enter"` when the shutdown begins and `transition="exit"`
@@ -1191,9 +1362,11 @@ objects, and a non-zero suppression counter.
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 For alpha: no DaemonSet Pod admission is rejected with reason `NodeShutdown` on
-a node after its conditions were published, beyond the one-sync informer
-propagation window. Formal SLOs will be set at beta once alpha metrics
-establish a baseline for suppression counts and propagation latency.
+a node after the condition governing that DaemonSet was published (the first two
+for a non-critical DaemonSet, `GracefulNodeShutdownCriticalPhase` for a critical
+one), beyond the one-sync informer propagation window at each transition.
+Formal SLOs will be set at beta once alpha metrics establish a baseline for
+suppression counts and propagation latency.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1225,9 +1398,10 @@ condition-writing milestone and is deferred.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-One Node status update per shutdown event (setting both conditions), one on
-cancel, and one at kubelet startup if clearing is needed. The startup clear can
-be coalesced into the kubelet's initial status update. The Node Lifecycle
+One Node status update per shutdown event (setting the first two conditions),
+one when termination reaches the critical tier, one on cancel, and one at
+kubelet startup if clearing is needed. The startup clear can be coalesced into
+the kubelet's initial status update. The Node Lifecycle
 Controller issues one additional status update when it clears the conditions
 on a node whose kubelet has been lost. Net effect is a **reduction** in API
 calls, since the create/reject/delete churn is eliminated — per [#137895], that
@@ -1243,13 +1417,15 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Two additional entries in `Node.status.conditions` on shutting-down nodes only.
+Up to three additional entries in `Node.status.conditions` on shutting-down
+nodes only; the third appears only once termination reaches the critical tier.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 No. The kubelet's condition write is bounded and does not delay shutdown; the
-DaemonSet controller's per-node check is two condition lookups on an object it
-already holds.
+DaemonSet controller's per-node check is up to three condition lookups on an
+object it already holds and a comparison of the template's priority class name
+against two constants.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1307,27 +1483,33 @@ proceeds. The DaemonSet controller sees absent conditions and behaves as today.
 3. Check that `daemonset_controller_node_shutdown_suppression_total{transition="enter"}`
    incremented when the shutdown began; if it did not, the DaemonSet controller
    is not observing the conditions (informer lag or gate off).
-4. If conditions are stale `True` on a node that is not shutting down, delete
+4. For a critical DaemonSet whose Pods are rejected with `NodeShutdown` late in
+   the shutdown, confirm `GracefulNodeShutdownCriticalPhase` appeared when the
+   critical tier began; if it did not, the kubelet published the first two
+   conditions but not the third — check the kubelet's shutdown-manager logs
+   for the tier transition.
+5. If conditions are stale `True` on a node that is not shutting down, delete
    them, and check whether the kubelet restarted (it should have cleared them
    at startup) or whether the Node Lifecycle Controller has processed the node.
 
 **Break-glass.** Two properties bound the worst case. The reader *is* the
-DaemonSet controller, so if the API server is unreachable the controller
-neither suppresses nor creates — exactly as today, with or without this
-feature — and recovery is the cluster's existing bootstrap path; static Pods
-are never gated by the conditions. And the kubelet's rejection of new Pods
-applies only to a node actually shutting down ([KEP-2000] behavior, unchanged
-here); on a healthy node carrying stuck conditions the kubelet admits normally
-and the DaemonSet controller is the only thing holding Pods back. Suppression
-affects creation only: a crash-looping Pod is restarted by the kubelet and is
-untouched. To release a stuck node, in order of least knowledge required:
+DaemonSet controller, so if the API server is unreachable the controller neither
+suppresses nor creates — exactly as today, with or without this feature — and
+recovery is the cluster's existing bootstrap path; static Pods are never gated
+by the conditions. And the kubelet's rejection of new Pods applies only to a
+node actually shutting down ([KEP-2000] behavior, narrowed by tier here but
+still confined to a real shutdown); on a healthy node carrying stuck conditions
+the kubelet admits normally and the DaemonSet controller is the only thing
+holding Pods back. Suppression affects creation only: a crash-looping Pod is
+restarted by the kubelet and is untouched. To release a stuck node, in order of
+least knowledge required:
 
-- **Restart the kubelet on the node.** Its startup clear removes the
-  conditions and the DaemonSet controller recreates on the next sync. Node-local;
-  no API knowledge needed.
+- **Restart the kubelet on the node.** Its startup clear sets the conditions
+  to `False` and the DaemonSet controller recreates on the next sync.
+  Node-local; no API knowledge needed.
 - **Clear the conditions on the node's status subresource** (NodeRestriction
   permits this for administrators):
-  `kubectl patch node <n> --subresource=status --type=strategic -p '{"status":{"conditions":[{"type":"GracefulNodeShutdownInProgress","status":"False","reason":"AdminRequested"},{"type":"DrainInProgress","status":"False","reason":"AdminRequested"}]}}'`.
+  `kubectl patch node <n> --subresource=status --type=strategic -p '{"status":{"conditions":[{"type":"GracefulNodeShutdownInProgress","status":"False","reason":"AdminRequested"},{"type":"DrainInProgress","status":"False","reason":"AdminRequested"},{"type":"GracefulNodeShutdownCriticalPhase","status":"False","reason":"AdminRequested"}]}}'`.
   The reader keys on `True`, so `False` releases the node on the next sync.
 - **Cluster-wide:** disable `DaemonSetGracefulNodeShutdown` on
   kube-controller-manager. Suppression stops on the next sync of every
@@ -1354,6 +1536,16 @@ stale condition heartbeat — is the stale-writer backstop listed under
 - **2026-09-21:** SIG Apps review (@janetkuo): reader extended to
   `rollingUpdate` and `shouldIgnoreNodeUpdate`; metric moved to the
   node-update worker; @janetkuo added as approver.
+- **2026-09-24:** WG lead files [#6430] for multi-writer coordination; this
+  KEP's coordination placeholders now point there.
+- **2026-09-25:** SIG Apps review (@soltysh): clearing semantics made explicit
+  (kubelet sets `False`, NLC sets `Unknown`, entries never removed); a
+  pre-existing `DrainInProgress=True` is left untouched by the kubelet; gate
+  depends on `NodeLifecycleConditions`; two-condition rationale moved up front.
+- **2026-09-25:** API review (@deads2k), direction confirmed by the WG lead:
+  tier-aware kubelet admission and the `GracefulNodeShutdownCriticalPhase`
+  condition replace the phase-agnostic alpha; the exploration section becomes
+  [Priority tiers](#priority-tiers).
 
 ## Drawbacks
 
@@ -1363,10 +1555,15 @@ stale condition heartbeat — is the stale-writer backstop listed under
 - Alpha accepts residual stale-condition and multi-writer risk under the
   admin-in-control assumption; these are real operational sharp edges until the
   graduation items land.
-- Phase-agnostic suppression can, during a long user-workload phase, leave a
-  dead system-critical DaemonSet Pod unrestored — and the evidence in
-  [Motivation](#motivation) suggests critical DaemonSet Pods are the common
-  case, not the exception.
+- The critical-phase condition expresses two phases only. Under
+  `shutdownGracePeriodByPodPriority` ladders with intermediate tiers, templates
+  in a tier the kubelet has not reached are over-suppressed until per-tier
+  precision lands at beta (see [Priority tiers](#priority-tiers)).
+- Tier-aware admission is a change to Graceful Node Shutdown's own behavior
+  carried under this KEP's gate; it widens the KEP's blast radius from the
+  DaemonSet controller to the kubelet's admission path.
+- A third condition type is added to the [KEP-5683] vocabulary for a single
+  reader.
 - The alpha NLC clearing trigger under-serves architectures where the Node
   object outlives the kubelet.
 
@@ -1399,7 +1596,7 @@ implements **option 2**. The others:
   last moment before eviction.** Reduces the window but does not close it — the
   controller still recreates once those Pods are terminated — and moves the fix
   into the kubelet, which cannot stop the controller from creating. Retained as
-  input to the priority-aware design at beta.
+  input to the per-tier precision work at beta.
 
 Other alternatives considered:
 
@@ -1415,20 +1612,26 @@ Other alternatives considered:
   observe shutdown; only the kubelet can. Publishing must originate at the
   kubelet to honor the admission-rejection invariant.
 - **Exempt `system-node-critical` / `system-cluster-critical` DaemonSet Pods
-  from suppression in alpha.** Attractive because it needs no phase signal and
-  would close the critical-daemon-Pod gap immediately. Rejected because the
-  kubelet terminates *every* critical Pod, by design, during the critical phase;
-  with the exemption, each one is recreated, rejected, and looped for the entire
-  `shutdownGracePeriodCriticalPods` window — reintroducing the churn for
-  precisely the population [#137895] reports, in the phase where it occurs
-  today. A priority-aware reader without a phase signal cannot distinguish "user
-  phase, critical Pod crashed, restore it" from "critical phase, kubelet is
-  terminating it, leave it"; directions A and B exist to supply that signal. The
-  exemption also does not map onto `shutdownGracePeriodByPodPriority`, whose
-  tiers are arbitrary and need not put the two built-in classes on top. It
-  contradicts the WG's 2026-08-24 resolution for alpha. The underlying gap is
-  instead carried as a beta criterion, with the `critical` metric label
-  measuring it during alpha.
+  from suppression without a phase signal.** Needs no new condition, but the
+  kubelet terminates *every* critical Pod, by design, during the critical
+  phase; with a bare exemption each one is recreated, rejected, and looped for
+  the entire `shutdownGracePeriodCriticalPods` window — reintroducing the churn
+  for precisely the population [#137895] reports. A reader without a phase
+  signal cannot distinguish "lower tier, critical Pod died, restore it" from
+  "critical tier, kubelet is terminating it, leave it". The exemption is
+  adopted only in combination with `GracefulNodeShutdownCriticalPhase`, which
+  supplies exactly that signal; see [Priority tiers](#priority-tiers).
+- **Publish the tier boundary as a Node status field in alpha.** Precise for
+  arbitrary `shutdownGracePeriodByPodPriority` ladders, where the critical-phase
+  condition over-suppresses intermediate tiers. Deferred to beta: a new status
+  field needs API shape review the alpha schedule cannot absorb, the reader
+  would need a PriorityClass lister to resolve template priority, and the
+  two-phase condition is a strict subset of the eventual rule, so adding the
+  field later is additive.
+- **Keep reject-all admission and suppress every template.** Behavior-neutral
+  today, since no critical Pod is admitted during any tier, but it codifies the
+  kubelet's priority-blind admission into a control-plane contract. Rejected at
+  API review, 2026-09-25.
 - **Reuse the `NodeLifecycleConditions` gate.** Changes the meaning of a gate
   that already shipped and couples this behavior's maturity to the admin-managed
   conditions and the `kubectl drain` writer. *Rejected in WG (2026-08-24).*
@@ -1465,9 +1668,15 @@ None.
 [k/k#122912]: https://github.com/kubernetes/kubernetes/issues/122912
 [k/k#137895]: https://github.com/kubernetes/kubernetes/issues/137895
 [KEP-5683]: https://github.com/kubernetes/enhancements/issues/5683
+[KEP-5683-alpha2]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5683-lifecycle-conditions/README.md#alpha2---consume-conditions-in-controllers
+[#6430]: https://github.com/kubernetes/enhancements/issues/6430
+[k/k-e79a603]: https://github.com/kubernetes/kubernetes/tree/e79a603500e18bfb713af5dc4e57f8fe39514ab1
+[k/k-migrateconfig]: https://github.com/kubernetes/kubernetes/blob/e79a603500e18bfb713af5dc4e57f8fe39514ab1/pkg/kubelet/nodeshutdown/nodeshutdown_manager.go#L237-L259
+[k/k-killpods]: https://github.com/kubernetes/kubernetes/blob/e79a603500e18bfb713af5dc4e57f8fe39514ab1/pkg/kubelet/nodeshutdown/nodeshutdown_manager.go#L129-L226
+[k/k-admit]: https://github.com/kubernetes/kubernetes/blob/e79a603500e18bfb713af5dc4e57f8fe39514ab1/pkg/kubelet/nodeshutdown/nodeshutdown_manager_linux.go#L117-L128
+[pkg/features/kube_features.go]: https://github.com/kubernetes/kubernetes/blob/master/pkg/features/kube_features.go
 [KEP-6250]: https://github.com/kubernetes/enhancements/issues/6250
 [KEP-6251]: https://github.com/kubernetes/enhancements/issues/6251
-[#98004]: https://github.com/kubernetes/kubernetes/issues/98004
 [#122912]: https://github.com/kubernetes/kubernetes/issues/122912
 [#137895]: https://github.com/kubernetes/kubernetes/issues/137895
 [pkg/kubelet/nodeshutdown/]: https://github.com/kubernetes/kubernetes/tree/master/pkg/kubelet/nodeshutdown
@@ -1478,11 +1687,6 @@ None.
 [test/e2e_node/]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e_node
 [staging/src/k8s.io/api/core/v1/types.go]: https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/core/v1/types.go
 [nodeshutdown_manager_linux.go]: https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/nodeshutdown/nodeshutdown_manager_linux.go
-[#98005]: https://github.com/kubernetes/kubernetes/issues/98005
-[#100184]: https://github.com/kubernetes/kubernetes/issues/100184
-[#109450]: https://github.com/kubernetes/kubernetes/issues/109450
-[#117073]: https://github.com/kubernetes/kubernetes/issues/117073
-[#122122]: https://github.com/kubernetes/kubernetes/issues/122122
 [KEP-2000]: https://github.com/kubernetes/enhancements/issues/2000
 [KEP-4802]: https://github.com/kubernetes/enhancements/issues/4802
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements
