@@ -40,8 +40,8 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -49,11 +49,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#summary-of-changes) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation, e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation, e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -304,10 +304,10 @@ from reconstruction, and a fallback in two CSI call sites:
    the volume does not have, finds no volume data there, and returns success
    while the volume is still staged.
 
-4. `pkg/kubelet/volumemanager` (reconstruction): after the existing walk of
-   `/var/lib/kubelet/pods`, reconstruction calls each such plugin and, for every
-   entry not already tracked, derives the name with
-   `GetUniqueVolumeNameFromSpec` and registers it through
+4. `pkg/kubelet/volumemanager` (reconstruction): before the existing walk of
+   `/var/lib/kubelet/pods`, and even when that walk fails, reconstruction calls
+   each such plugin and, for every entry not already tracked, derives the name
+   with `GetUniqueVolumeNameFromSpec` and registers it through
    `AddAttachUncertainReconstructedVolume` and `MarkDeviceAsUncertain`. The
    reconciler resolves it from there: a volume still in the desired state is
    re-verified, one no pod wants is unstaged and only then removed. The name is
@@ -686,6 +686,17 @@ staged, so it belongs in that list by the field's own definition. No new API
 objects, and one extra `UniqueVolumeName` entry per recovered mount the node
 still has attached, until `NodeUnstageVolume` completes. On a healthy node that
 count is zero.
+
+Sized per node: each entry is `kubernetes.io/csi/<driver>^<volumeHandle>`, about
+55 bytes for an EBS handle and at most about 210 for a driver that keeps to the
+CSI spec, since a driver name is capped at 63 characters and the spec's general
+limit for a string, which covers the volume ID, is 128 bytes. The minimum is
+zero and the average is effectively zero: an entry is only kept from a kubelet
+restart that finds an orphaned global mount until the node status update after
+its unstage, seconds when the unstage succeeds, and a node that restarts with a
+handful of them carries a few hundred bytes meanwhile. The maximum is one entry
+per volume attached to the node, about 27 KB with 128 attached volumes, the
+ceiling the list already has when every attached volume is in use by a pod.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
