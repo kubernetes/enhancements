@@ -1,0 +1,25 @@
+title: Explicitly Indicating Future Conformance Tests
+kep-number: 5922
+authors:
+  - "@danwinship"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-network
+  - sig-testing
+  - sig-docs
+status: provisional
+creation-date: 2026-02-12
+reviewers:
+  - "@dims"
+  - "@aojea"
+  - "@BenTheElder"
+  - "@pohly"
+approvers:
+  - "@dims"        # sig-architecture
+  - "@aojea"       # sig-network
+  - "@BenTheElder" # sig-testing
+
+stage: stable
+latest-milestone: "v1.38"
+milestone:
+  stable: "v1.38"
