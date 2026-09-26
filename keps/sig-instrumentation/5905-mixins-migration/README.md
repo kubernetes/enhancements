@@ -599,7 +599,17 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-TBD
+- 2026-02-09: KEP created and merged as `implementable`, signaling SIG
+  Instrumentation acceptance of the proposal.
+- v1.37 (Alpha): `kubernetes-mixin` repository transferred from
+  `kubernetes-monitoring` to `kubernetes-sigs` via GitHub repository transfer.
+- v1.38 (Stable): Graduated directly from Alpha to Stable, skipping Beta. The
+  Beta verification criterion (redirects resolve for `clone`/`fetch`/`push`
+  and web links) was confirmed, the migration was announced on the SIG
+  Instrumentation mailing list and the #sig-instrumentation Slack channel, and
+  the repository README was updated to recommend the new location. Beta is
+  skipped because this is a one-time repository transfer with no feature gate,
+  no in-tree code, and no user-feedback soak requirement.
 
 ## Drawbacks
 
