@@ -1,0 +1,58 @@
+title: Network-Isolated Pod Sandboxes
+kep-number: 6313
+authors:
+  - "@aojea"
+  - "@MikeZappa87"
+owning-sig: sig-network
+participating-sigs:
+  - sig-network
+  - sig-node
+status: implementable
+creation-date: 2026-09-02
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@liggitt"
+  - "@mrunalp"
+  - "@dchen1107"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@mrunalp"
+  - "@dchen1107"
+
+see-also:
+  - "/keps/sig-node/5328-node-declared-features"
+  - "/keps/sig-node/4817-resource-claim-device-status"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+# Beta waits until every kubelet in the supported skew window (n-3) knows the
+# field, see Graduation Criteria and Version Skew Strategy.
+milestone:
+  alpha: "v1.38"
+  beta: "v1.41"
+  stable: "v1.43"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PodDefaultNetwork
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - kubelet_pod_start_duration_seconds
+  - kubelet_started_pods_errors_total
