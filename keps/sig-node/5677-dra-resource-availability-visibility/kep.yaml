@@ -16,7 +16,6 @@ reviewers:
   - "@pohly"
 approvers:
   - "@mrunalp"
-  - "@harche" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
@@ -24,16 +23,23 @@ see-also:
 
 stage: alpha
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.36"
+  beta: "v1.39"
 
 feature-gates:
   - name: DRAResourcePoolStatus
     components:
       - kube-apiserver
       - kube-controller-manager
+  # Gates ResourceSlice.Spec.PartitionTypeAttribute and the request's
+  # spec.defaultPartitionTypeAttribute. Enforced in the apiserver only;
+  # the controller groups on whatever attribute has been persisted.
+  - name: DRAPartitionableDevicesType
+    components:
+      - kube-apiserver
 disable-supported: true
 
 metrics:
