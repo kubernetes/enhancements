@@ -74,7 +74,12 @@ This KEP makes the policy tolerate a bounded, benign per-node memory drift and
 re-baseline onto the current machine, while still failing on genuine hardware or
 configuration changes. The tolerance is off by default and is turned on with a
 memory manager policy option, which derives the bound from the size of the
-running kernel image or pins it to a value.
+running kernel image or pins it to a value. That shape follows the other kubelet
+policy options: the existing behavior stays the default until an administrator
+asks for the new one, and the option is also the only way to set the bound on a
+platform where it cannot be derived. Whether `auto` becomes the default once the
+feature is on by default is a beta decision, taken on the drift data gathered
+during alpha.
 
 The mechanism is Linux-specific: the drift comes from Linux kernel behavior and
 the bound is read from `/proc/iomem`. It is validated on x86-64, where all the
@@ -130,7 +135,8 @@ surfaces on ordinary reboots.
   assignment that no longer fits.
 - The tolerated bound is principled (derived from the running kernel), not a
   hand-picked constant.
-- Operators can opt out of, or override, the behavior.
+- Operators can keep the exact comparison, or set the bound themselves where it
+  cannot be derived.
 
 ### Non-Goals
 
@@ -328,6 +334,11 @@ configuration to exercise; unit tests and node e2e cover it.
 - arm64 confirmed.
 - The 64 MiB grace confirmed or refined from the observed-drift metric gathered
   during alpha.
+- Decided, on the same data, whether `auto` becomes the default once the feature
+  is on by default. `off` stays as the opt-out.
+- A health SLI for the feature identified and documented in the PRR (kubelet
+  start success after a reboot, `kubelet_pod_start_sli_duration_seconds`), on
+  top of the informational gauges.
 - The node e2e test in place and passing in the sig-node periodic jobs.
 - Feedback from users affected by kubernetes/kubernetes#131253; no open
   correctness issues.
@@ -410,9 +421,17 @@ drift).
 
 ###### What specific metrics should inform a rollback?
 
-An increase in kubelet start failures with
-`the expected machine state is different from the real one`, or nodes going
-`NotReady` after reboot under the `Static` memory manager policy.
+A node under the `Static` memory manager policy that stays `NotReady` after a
+reboot with the tolerance enabled: kubelet still failing to start with
+`the expected machine state is different from the real one` (a drift beyond the
+bound, or a node where the size could not be derived and the tolerance is
+silently off) or with `the memory assignment does not fit the machine state` (a
+real capacity loss). The feature can only remove start failures, not add new
+ones, so the signal is a node that does not come back rather than a new error.
+`kubelet_memory_manager_memory_drift_bytes` approaching
+`kubelet_memory_manager_drift_tolerance_bytes` on a node is the early warning.
+Admission and running pods are not affected: after a tolerated start the
+re-baselined state is what a fresh start on that machine would produce.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -454,13 +473,18 @@ with negligible overhead (one `/proc/iomem` read and a per-node comparison).
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `kubelet_memory_manager_drift_tolerance_bytes`,
-    `kubelet_memory_manager_memory_drift_bytes`
+  - Metric name: `kubelet_pod_start_sli_duration_seconds` and the node `Ready`
+    condition after a reboot: a `Static`-policy node that comes back `Ready` and
+    starts pods at its usual latency is the health signal.
+    `kubelet_memory_manager_drift_tolerance_bytes` and
+    `kubelet_memory_manager_memory_drift_bytes` are informational: whether the
+    tolerance is in effect and how far the node is from the bound.
   - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-None beyond the two above.
+A feature-specific health SLI (kubelet start success rate after a reboot) is a
+beta item, see the graduation criteria.
 
 ### Dependencies
 
@@ -532,6 +556,9 @@ current `/sys/.../nodeN/meminfo`.
   stated.
 - 2026-09-22: third review pass; the tolerance is opt-in through the option
   even with the gate enabled, grace refinement moved to the beta criteria.
+- 2026-09-26: PRR review. Rollback signals and SLIs reworded around node
+  readiness and pod start latency, `auto` by default and a health SLI added to
+  the beta criteria.
 
 ## Drawbacks
 
