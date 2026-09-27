@@ -218,10 +218,10 @@ class determination.
     cap or `swap: "0"` to disable swap for that container.
 -  **Scope with KEP-2837:** This KEP scopes pod-level swap support strictly to
     explicit `pod.spec.resources.limits.swap` configuration in
-    `WorkloadControlledSwap` mode. Pod-level resource specific details—such as
-    implicit `LimitedSwap` calculations and pod-level limit derivation/defaulting
-    rules—are handled in the dedicated
-    [KEP-2837 (Pod-Level Resource Specifications)](https://kep.k8s.io/2837).
+    `WorkloadControlledSwap` and `LimitedSwap` coexistence modes. Pod-level resource
+    specific details—such as implicit `LimitedSwap` calculations when `limits.swap`
+    is omitted and pod-level limit derivation/defaulting rules—are handled in the
+    dedicated [KEP-2837 (Pod-Level Resource Specifications)](https://kep.k8s.io/2837).
 
 ```yaml
 resources:
@@ -469,11 +469,11 @@ before the API server.
 
 ## Version Skew Strategy
 
-This feature introduces a new field, `resources.limits.swap`, to the container spec. The behavior of this field depends on the version of the kubelet running on the node.
+This feature introduces a new resource key, `swap`, under `resources.limits` at both the container level (`containers[*].resources.limits.swap`) and the pod level (`pod.spec.resources.limits.swap`). The enforcement of this limit depends on the version of the kubelet running on the node.
 
-If the control plane is upgraded to a version that supports this feature, but some nodes are still running older kubelet versions, pods with the `swap` field may be scheduled on those older nodes. The older kubelet will not recognize the `swap` field and will ignore it. The container will be started without any swap limit applied, and there will not be any Pod event to indicate this, as the kubelet is not aware of the feature. The feature will only be enforced once the kubelet on the node is upgraded to a compatible version.
+If the control plane is upgraded to a version that supports this feature, but some nodes are still running older kubelet versions, pods with `resources.limits.swap` may be scheduled on those older nodes. The older kubelet will not recognize `limits.swap` and will ignore it, falling back to the node's configured `swapBehavior` (`NoSwap` or `LimitedSwap`) without emitting a swap-specific event. Enforcement of explicit workload swap limits is active once the kubelet on the node is upgraded to a compatible version with the `WorkloadControlledSwap` feature gate enabled.
 
-Therefore, the functionality described in this KEP is only guaranteed on nodes where the kubelet version is new enough to support the feature. During a cluster upgrade, the enforcement of swap limits will be best-effort until all kubelets are upgraded.
+Therefore, the functionality described in this KEP is only guaranteed on nodes where the kubelet version is new enough to support the feature. During a cluster upgrade, the enforcement of swap limits will be best-effort until all kubelets are upgraded (and can be paired with Node Declared Features in [KEP-5424](https://github.com/kubernetes/enhancements/issues/5424) for scheduler placement awareness).
 
 ## Production Readiness Review Questionnaire
 
@@ -487,7 +487,7 @@ Therefore, the functionality described in this KEP is only guaranteed on nodes w
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. KEP introduces safe default with WorkloadControlledSwap - if explicitly specified use the limits for swap, otherwise set it as 0 (no swap). To ensure backward compatibility, this change will be a new node behavior, so existing users who are working with the LimitedSwap swap behavior will not be impacted. The api set limits are not applicable in LimitedSwap configured nodes.
+No default behavior changes for existing pods that do not specify `resources.limits.swap` on existing `NoSwap` or `LimitedSwap` nodes. On nodes explicitly configured with `swapBehavior: WorkloadControlledSwap`, the default swap limit when `resources.limits.swap` is omitted is `0` (no swap). On `LimitedSwap` and `WorkloadControlledSwap` nodes where the feature gate is enabled, pods that explicitly specify `resources.limits.swap` have their explicit swap limit enforced ("workload swap wins").
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -508,7 +508,7 @@ the swap limits for any Pods that have the field defined.
 
 - Unit test for the API's validation with the feature enabled and disabled.
 - Unit test for the kubelet with the feature enabled and disabled.
-- Unit test for API on the new field. First enable the feature gate, create a Pod with a container including `resources.limits.swap` field, validation should pass and the Pod API should match the expected result. Second, disable the feature gate, validate the Pod API should still pass and it should match the expected result. Lastly, re-enable the feature gate, validate the Pod API should pass and it should match the expected result.
+- Unit test for API on the new field. First enable the feature gate, create a Pod with `resources.limits.swap` (at the container and/or pod level), validation should pass and the Pod API should match the expected result. Second, disable the feature gate, validate the Pod API should still pass and it should match the expected result. Lastly, re-enable the feature gate, validate the Pod API should pass and it should match the expected result.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -518,41 +518,28 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-
 If this feature is being actively used in a cluster that has this feature
-partially enabled on some nodes, pods on nodes with WorkloadControlledSwap
-enabled may configure different swap limits than pods on nodes without this 
-feature.
+partially enabled on some nodes, pods specifying `resources.limits.swap` on
+nodes with `WorkloadControlledSwap` enabled (in `WorkloadControlledSwap` or
+`LimitedSwap` mode) will have their explicit swap limit enforced, whereas pods
+on nodes without this feature enabled will fall back to the node's configured
+`swapBehavior` (`NoSwap` or calculated `LimitedSwap`). Because scheduler
+integration with `NodeDeclaredFeatures` is deferred to
+[KEP-5424](https://github.com/kubernetes/enhancements/issues/5424), the
+scheduler will not automatically route pods based on kubelet swap configuration
+in Alpha. Already running workloads are not impacted.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Operators can monitor `kubelet_node_swap_allocated_bytes`, container/pod OOM kills (`container_oom_events_total`), and kubelet pod admission/cgroup configuration errors. A spike in unexpected swap exhaustion or cgroup setup failures after enabling `WorkloadControlledSwap` should inform a rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Unit and node e2e tests in Alpha verify feature gate enablement, disablement (validation ratcheting on existing pods and fallback on kubelet), and re-enablement. Full cluster upgrade->downgrade->upgrade testing will be completed prior to Beta graduation.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No. `LimitedSwap` and `NoSwap` remain supported and unchanged.
 
 ### Monitoring Requirements
 
@@ -657,8 +644,7 @@ No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-
-Enabling this feature will introduce a new field `resources.limits.swap` to the [Container](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L2601) API spec.
+No. It introduces a new `swap` resource name constant under existing `resources.limits` maps at the container level (`containers[*].resources.limits.swap`) and pod level (`pod.spec.resources.limits.swap`).
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -666,7 +652,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-This feature adds a new key-value pair to the resources.limits map within the [v1.Container](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L2601) spec for each container that specifies a swap limit. Key: "swap" (4 bytes) and Value: a string like "1Gi" (3 bytes) or "500Mi" (5 bytes). The total increase per container could be 10-15 bytes per container.
+This feature adds a new key-value pair to the `resources.limits` map within the [v1.Container](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L2601) spec and/or [v1.PodSpec](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L3515) (`pod.spec.resources.limits`) for each container or pod that specifies a swap limit. Key: `"swap"` (4 bytes) and Value: a string like `"1Gi"` (3 bytes) or `"500Mi"` (5 bytes). The total increase is approximately 10-15 bytes per container or pod specifying a swap limit.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
