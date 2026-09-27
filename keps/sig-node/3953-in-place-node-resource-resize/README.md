@@ -61,6 +61,11 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Layer 1 Pre-requisite Tests](#layer-1-pre-requisite-tests)
   - [Layer 2 Implementation: Declarative Capacity Actuation](#layer-2-implementation-declarative-capacity-actuation)
     - [Proposed Core Code Changes](#proposed-core-code-changes)
+    - [3.1 CPU Manager Synchronization](#31-cpu-manager-synchronization)
+    - [3.2 Memory Manager and Memory QoS Synchronization](#32-memory-manager-and-memory-qos-synchronization)
+    - [3.3 Topology Manager and NUMA Layout](#33-topology-manager-and-numa-layout)
+    - [3.4 Checkpoint State File Consistency](#34-checkpoint-state-file-consistency)
+    - [3.5 Feature Scope Progression (Alpha to GA)](#35-feature-scope-progression-alpha-to-ga)
   - [Observability and Metrics](#observability-and-metrics)
   - [Test Plan](#test-plan)
       - [Layer 1: Ecosystem Tolerance Tests (Pre-requisite, no feature gate required)](#layer-1-ecosystem-tolerance-tests-pre-requisite-no-feature-gate-required)
@@ -670,26 +675,54 @@ type ResourceResizer interface {
 }
 ```
 
-3. **Resource Manager Synchronization**
+3. **Resource Manager Synchronization and State Reconciliation**
 
-When the `ContainerManager` detects a capacity drift, it invokes the `SyncCapacity()` method on its internal sub-managers. This triggers specific state reconciliations:
+When the Container Manager detects a capacity drift, it notifies its sub-managers to synchronize their internal state. Because the Kubelet manages cpusets, memory pages, checkpointed state files, and NUMA alignments, dynamic resize requires coordinated reconciliation across each subsystem:
 
-- **CPU Manager:** 
-  * **Upscale (Hot-plug):** 
-  
-  Newly added CPUs are instantly detected and added to the "shared pool" (the default cpuset). They immediately become available for pods in the Burstable and BestEffort QoS classes, or for new Guaranteed pods requesting exclusive cores.
+#### 3.1 CPU Manager Synchronization
+The CPU Manager dynamically reconciles capacity changes depending on the configured policy:
 
-  * **Downscale (Hot-unplug):**
+* **Policy: `none`**
+  - All pods run across the entire machine's cpuset. On upscale or downscale, the Kubelet updates the host and QoS cgroup cpuset hierarchies to match the new root cpuset.
 
-  If CPUs are removed, the CPU Manager removes them from the shared pool. If the new total CPU core count falls below what is required to fulfill the strict, exclusive core allocations of existing Guaranteed pods, the Kubelet's capacity reconciliation loop intercepts this scheduling contract violation and evicts the affected pods with a `Failed` status (Reason: `NodeCapacityExceeded`). Additionally, if the removed CPU IDs directly overlap with the exclusive cpuset already pinned to a running Guaranteed pod — even if the total remaining core count appears sufficient — those pods are also evicted, because the specific hardware they were guaranteed no longer exists. The CPU Manager validates both the total count and cpuset membership before clearing the violation.
+* **Policy: `static`**
+  - **Shared Pool Updates for Burstable and BestEffort Pods:**
+    - Non-Guaranteed pods (Burstable, BestEffort) and Guaranteed pods with non-integer CPU requests execute within the default shared cpuset pool (all physical CPUs excluding reserved CPUs and active exclusive allocations).
+    - When capacity changes, the CPU Manager recalculates the shared cpuset pool and triggers an active reconciliation run to push updated cpuset boundaries to all running Burstable and BestEffort containers through standard container runtime resource updates.
+  - **Reserved CPU Invariant:**
+    - Reserved CPUs represent an invariant reservation for host and kubelet system daemons.
+    - If a hot-unplug event attempts to remove CPU IDs that overlap with the configured reserved CPUs, the Kubelet rejects the downscale as infeasible to protect host system stability.
+  - **Guaranteed Pods and Exclusive Core Allocations:**
+    - *Upscale:* Newly added CPU IDs expand the shared pool, making more cores available for shared workloads or for subsequent Guaranteed pod admissions.
+    - *Downscale:* If CPU core removal reduces total capacity below the count required for active exclusive allocations, or if removed CPU IDs directly overlap with exclusive cores pinned to running Guaranteed containers, the Kubelet evicts the affected pods with a `Failed` status (Reason: `NodeCapacityExceeded`).
+  - **Burstable Pod Degradation Semantics:**
+    - For Burstable pods, CPU requests establish scheduler bandwidth shares. If a downscale reduces node CPU below aggregate Burstable requests, pods are not evicted by default; they gracefully degrade and share available CPU bandwidth proportionally across the contracted shared cpuset.
 
-- **Memory Manager:**
+#### 3.2 Memory Manager and Memory QoS Synchronization
+* **NUMA Node Allocation Boundaries:**
+  - The Memory Manager re-evaluates available physical memory and hugepages per NUMA node, updating its internal state memory map.
+* **Memory QoS:**
+  - For nodes running with Memory QoS enabled, resizing node allocatable memory alters the proportional calculation for memory protection and throttling boundaries.
+  - If a memory downscale causes aggregate memory usage to exceed new limits, standard Memory QoS throttling triggers, followed by standard Eviction Manager ranking (evicting BestEffort workloads before Burstable).
 
-  - The Memory Manager recalculates the total memory and hugepages available per NUMA node. It updates its internal state machine so that future TopologyManager admission checks accurately reflect the resized NUMA boundaries.
+#### 3.3 Topology Manager and NUMA Layout
+* **Machine Topology Refresh:**
+  - The Topology Manager queries the refreshed machine topology information to update its internal NUMA cell map, socket counts, and distance matrix.
+* **Admission Alignment:**
+  - Running pods retain their existing NUMA node and resource pinning. Future pod admissions use the updated NUMA boundaries and refreshed hint providers for single-NUMA or multi-NUMA alignment decisions.
 
-- **Topology Manager:**
+#### 3.4 Checkpoint State File Consistency
+* The CPU Manager and Memory Manager persist state across restarts via local checkpoint state files on disk.
+* Capacity synchronization ensures that whenever in-memory state (such as the shared pool, allocations, and NUMA memory maps) is modified, the new topology and allocation table are atomically committed to the state files on disk. This prevents topology validation errors during subsequent Kubelet restarts.
 
-  - While the Topology Manager itself does not store capacity state, the underlying updates to the CPU and Memory managers ensure that any subsequent topology alignment checks (for new pods) use the freshly updated hardware boundaries.
+#### 3.5 Feature Scope Progression (Alpha to GA)
+To ensure safety and manage implementation complexity:
+* **Alpha Scope:**
+  - **CPU Manager:** Full support for `cpuManagerPolicy: none`. For `cpuManagerPolicy: static`, support upscaling (expanding the shared cpuset pool) and non-destructive downscaling (reclaiming unallocated shared cores). Hot-unplugging cores that conflict with reserved CPUs or allocated exclusive cpusets is rejected.
+  - **Memory Manager:** Scoped to `memoryManagerPolicy: None`.
+  - **Topology Manager:** Scoped to `topologyManagerPolicy: none` or single-NUMA architectures.
+* **Beta Scope:**
+  - Dynamic multi-NUMA topology cell changes, multi-NUMA memory block redistribution (`memoryManagerPolicy: Static`), and full Topology Manager hint provider recalculation across dynamic NUMA boundaries.
 
 ### Observability and Metrics
 
