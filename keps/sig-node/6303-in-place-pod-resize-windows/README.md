@@ -30,9 +30,9 @@
     - [Integration tests](#integration-tests)
     - [e2e tests (Windows)](#e2e-tests-windows)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (v1.38)](#alpha-v138)
-    - [Beta (v1.39)](#beta-v139)
-    - [GA (v1.41)](#ga-v141)
+    - [Alpha (v1.39)](#alpha-v139)
+    - [Beta (v1.40)](#beta-v140)
+    - [GA (v1.42)](#ga-v142)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -423,7 +423,7 @@ be added. We base this on reviews and discussions with owners of the involved co
 
 ### Graduation Criteria
 
-#### Alpha (v1.38)
+#### Alpha (v1.39)
 
 - New `WindowsInPlacePodResize` gate, off by default, `disable-supported: true`.
 - Container-level CPU (`CpuMaximum`) and memory commit resize works for process-isolated containers
@@ -432,13 +432,13 @@ be added. We base this on reviews and discussions with owners of the involved co
   covered by tests.
 - A flake-free window in SIG-Windows periodic jobs before beta.
 
-#### Beta (v1.39)
+#### Beta (v1.40)
 
 - Gate defaults to on, with SIG sign-off.
 - Pod-level resource resize on Windows is implemented (`UpdatePodSandboxResources` no longer skipped).
 - CPU and memory parity (`CpuMaximum`, commit cap) documented and tested.
 
-#### GA (v1.41)
+#### GA (v1.42)
 
 - Conformance e2e for Windows in-place resize present and passing, with a maintained Windows CI job.
 - The required minimum two-week flake-free window for GA e2e tests is satisfied.
@@ -669,6 +669,8 @@ separate capability/refusal causes from validation rejects.
   gap. Windows OOM observability is recorded as a runtime-side follow-up: containerd classifies OOM only
   for the Linux exit code 137, so no current kubelet signal covers a Windows commit-limit breach and
   liveness probes are the interim mitigation.
+- 2026-09-28: Release-plan metadata updated for the v1.39 alpha target; beta moved to v1.40
+  and GA moved to v1.42.
 - Tracking issue: kubernetes/enhancements#6303.
 
 ## Drawbacks
