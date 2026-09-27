@@ -19,7 +19,7 @@
   - [Memory Manager Integration](#memory-manager-integration)
   - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
-    - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
@@ -33,7 +33,6 @@
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-    - [How can a rollout or rollback fail? Can it impact already running workloads?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
@@ -119,7 +118,7 @@ at the time.
 ## Proposal
 
 Extend `--system-reserved` and `--kube-reserved` to accept `hugepages-<size>`
-keys. Kubelet already subtracts matching
+keys (including config file-based values). Kubelet already subtracts matching
 `system-reserved` and `kube-reserved` entries from node capacity when computing
 Allocatable, so hugepages flow through that path with no scheduler changes.
 The same totals unblock `--reserved-memory`: Memory Manager requires per-type
@@ -180,6 +179,15 @@ is not meaningful:
 
 `node.status.capacity` and `node.status.allocatable` report node-wide totals
 per hugepage size. They do not expose per-NUMA hugepages.
+
+**NUMA-local exhaustion with Memory Manager policy `None`:**
+This KEP fixes global node-level accounting - it ensures `Allocatable`
+correctly reflects hugepages consumed by system daemons. However, on
+multi-NUMA nodes with Memory Manager policy `None`, it does not prevent
+per-NUMA exhaustion. This limitation is acceptable for alpha, which focuses
+on solving the global accounting problem. Pairing this KEP with Memory
+Manager policy `Static` and `--reserved-memory` resolves the NUMA-local
+exhaustion problem by pinning reserved hugepages to specific NUMA nodes.
 
 Kubelet does not allocate hugepages from the kernel. The host must still
 pre-allocate the pool through sysfs before kubelet can reserve or schedule
@@ -360,7 +368,7 @@ removing the flag entries already provides.
 existing tests to make this code solid enough prior to committing the changes
 necessary to implement this enhancement.
 
-#### Prerequisite testing updates
+##### Prerequisite testing updates
 
 None.
 
@@ -530,7 +538,7 @@ and that allocatable computation correctly subtracts them.
 
 ### Rollout, Upgrade and Rollback Planning
 
-#### How can a rollout or rollback fail? Can it impact already running workloads?
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 **Case 1 — enforcement caps a running daemon below its demand:**
 An administrator sets `--system-reserved=hugepages-2Mi=512Mi` with
@@ -723,4 +731,6 @@ but there's no real direct/explicit control over the ordering on which kubelet r
 
 ## Infrastructure Needed (Optional)
 
-None.
+Existing CI lanes already run tests with hugepages pre-allocated on the host.
+These lanes are not part of the default test environment. The tests planned
+for this KEP will reuse those same lanes.
