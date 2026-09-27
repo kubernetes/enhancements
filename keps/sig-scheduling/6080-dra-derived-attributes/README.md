@@ -67,20 +67,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -427,6 +427,7 @@ None.
   - Verify correct CEL evaluation and constraint matching.
 
 ##### Integration tests
+- [`TestDRA/all/DerivedAttributes`](https://github.com/kubernetes/kubernetes/blob/f7b9c23180e5cf149af7669d07f55d1dc92d809a/test/integration/dra/derived_attributes.go): [integration-master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=TestDRA), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=TestDRA.*DerivedAttributes)
 - `test/integration/scheduler_perf/dra/derived-attributes`:
   - Include a realistic scenario (number of attributes, complexity of the CEL
     expressions), then define a simple case for correctness checking and
@@ -449,6 +450,21 @@ None.
 - Any additional e2e tests implemented and running in Testgrid canaries.
 - Verify scheduler performance and latency overhead with large device counts
   using the `scheduler_perf` test cases.
+- Revisit CEL compilation and evaluation caching strategy during performance
+  benchmarking (e.g., evaluating whether using compiled CEL expression pointers
+  as map keys offers benefits over exact expression strings; see
+  [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3636503040)).
+- Revisit `valToDeviceAttribute` conversion logic in CEL package with CEL
+  experts to check type handling (e.g., considering `val.Value().(type)`,
+  `traits.Lister`, or `ConvertToNative`; see
+  [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3630068626)).
+- Revisit sharing derived attribute evaluation cache across parallel node Filter
+  operations to evaluate expressions once per claim rather than once per node
+  (see [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3638735028)).
+- Discuss CEL cost limit enforcement options for derived attributes with CEL
+  maintainers (e.g., static cost validation vs. aggregate runtime evaluation vs.
+  cost sampling; see
+  [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3629395631)).
 
 #### GA
 - Proven adoption in deployment manifests and user documentation for real-world DRA drivers (e.g., dra-driver-cpu,
@@ -524,8 +540,10 @@ referencing claims with `derivedAttributes` may fail to schedule.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Manual upgrade and rollback testing will be performed during Alpha by toggling
-the feature gate on a local test cluster and verifying scheduling behavior.
+Yes. Automated strategy tests in `pkg/registry/resource/resourceclaim/strategy_test.go`
+and `pkg/registry/resource/resourceclaimtemplate/strategy_test.go` verify
+enablement, disablement (rollback), and re-enablement of the
+`DRADerivedAttributes` feature gate, alongside manual testing during Alpha.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -623,6 +641,12 @@ proceed without the API server.
   - **Mitigations**: The scheduler enforces a bounded execution time for CEL
     evaluation. If an expression exceeds the limit or fails at runtime, the
     candidate device is pruned.
+  - **Diagnostics**: `kube-scheduler` logs (`-v=2` and `-v=5` in the
+    `DynamicResources` plugin) and Pod `FailedScheduling` events surface CEL
+    evaluation errors and offending request/attribute names.
+  - **Testing**: Covered by unit tests in
+    `staging/src/k8s.io/dynamic-resource-allocation/cel/compile_test.go` and
+    `staging/src/k8s.io/dynamic-resource-allocation/structured/internal/allocatortesting/allocator_testing.go`.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -633,6 +657,8 @@ in pending `ResourceClaims` are causing high evaluation latency.
 ## Implementation History
 
 - 2026-05-15: Initial KEP draft created for Alpha in v1.37.
+- 2026-07-24: Alpha implementation merged in v1.37 ([kubernetes#140029](https://github.com/kubernetes/kubernetes/pull/140029)).
+- 2026-09-23: Proposed Beta graduation in v1.38.
 
 ## Drawbacks
 
