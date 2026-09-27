@@ -966,8 +966,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
+- [x] Events
+  - Event Reason: `FailedScheduling`
+  - Details: When no device combination satisfies the list-typed
+    `matchAttribute`/`distinctAttribute` constraints, the scheduler records a
+    `FailedScheduling` event on the Pod. The event message includes the
+    allocation failure reported by the `DynamicResources` plugin, for example,
+    `cannot allocate all claims`.
 - [x] API .status
   - Condition name: N/A
   - Other field: `ResourceClaim.Status.Allocation` is populated once a claim with `matchAttribute`/`distinctAttribute` constraints over a list-typed attribute is successfully allocated; the claim stays `Pending` (unschedulable) if no device combination satisfies the constraint.
