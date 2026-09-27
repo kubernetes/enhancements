@@ -2,9 +2,8 @@ title: Job Pod replacement during node maintenance
 kep-number: 6262
 authors:
   - "@archanaanand0212"
-owning-sig: sig-node
+owning-sig: sig-apps
 participating-sigs:
-  - sig-apps
   - sig-node
 status: provisional
 creation-date: 2026-07-29
