@@ -134,9 +134,25 @@ dot. Validation strips at most one trailing `.` before running the existing DNS-
 subdomain check against the remainder, so this is additive: every value that is
 valid today remains valid.
 
-`hostAliases` is set at pod creation and is not part of the mutable subset of the pod
-spec, so unlike some other relaxed-validation KEPs there is no separate "update"
-validation path to reconcile, only pod creation is affected.
+`hostAliases` is not part of the mutable subset of the pod spec: a pod update that
+actually changes the value of `hostAliases` is rejected outright as an illegal
+mutation, independent of this KEP. However, `ValidatePodUpdate` also runs full
+content validation of the *unchanged* spec on every update (e.g. a label-only
+change), via `validatePodMetadataAndSpec` → `ValidatePodSpec` →
+`ValidateHostAliases`, before the immutable-fields check is reached. Without
+ratcheting, this means: a pod created with a trailing-dot entry while the gate was
+enabled would fail *any* future update, including unrelated ones, once the gate is
+disabled, since its existing (unchanged) `hostAliases` value would be re-validated
+against the now-stricter rules.
+
+To avoid this, `ValidateHostAliases` is ratcheted on update: when validating an
+update, the new `hostAliases` value is only checked against the gate-disabled rules
+if it differs from `oldPod.Spec.HostAliases`. If unchanged, validation is skipped
+entirely, regardless of gate state, the same pattern used for Ingress's
+`backend.service.name` in
+[KEP-5311](/keps/sig-network/5311-relaxed-validation-for-service-names#design-details).
+An update that does change `hostAliases` is still validated fresh against
+whatever rules are active at the time of that update.
 
 ### Test Plan
 
@@ -166,6 +182,13 @@ will be updated to cover both the gate-enabled and gate-disabled paths.
    with the existing validation error.
 3. With the feature gate enabled, confirm a `hostAliases` entry without a trailing
    dot is still accepted (no regression on the existing behavior).
+4. Create a Pod with a trailing-dot `hostAliases` entry while the gate is enabled,
+   disable the gate, then update an unrelated field (e.g. a label) on that Pod and
+   confirm the update succeeds (ratcheting: the unchanged `hostAliases` value is not
+   re-validated).
+5. With the gate disabled and the same Pod from (4), attempt to change the
+   `hostAliases` value itself and confirm that update is rejected (a real change to
+   the field is validated fresh against the currently active rules).
 
 ##### e2e tests
 
@@ -196,18 +219,29 @@ will be updated to cover both the gate-enabled and gate-disabled paths.
 
 ### Upgrade / Downgrade Strategy
 
-Upgrade: existing pods are unaffected, since `hostAliases` is only validated at
-creation. Newly created pods can use the relaxed format once the gate is enabled.
+Upgrade: existing pods are unaffected. Newly created pods can use the relaxed
+format once the gate is enabled.
 
-Downgrade: a pod already running with a trailing-dot `hostAliases` entry continues
-running unaffected (validation is not re-run against live objects). New pod creation
-using the relaxed format will fail once the gate is disabled, the same downgrade
-behavior as KEP-5311.
+Downgrade: a pod already running with a trailing-dot `hostAliases` entry keeps
+running unaffected, and, thanks to the update-time ratcheting described in
+[Design Details](#design-details), can still be updated on unrelated fields (e.g.
+labels) without that pre-existing value being re-validated. New pod creation using
+the relaxed format, and any update that actually *changes* `hostAliases`, will fail
+once the gate is disabled, the same downgrade behavior as KEP-5311.
 
 ### Version Skew Strategy
 
-Not applicable, this only changes kube-apiserver validation for a single component;
-no other component's behavior depends on it.
+kube-apiserver is the only component that validates this field, so a gate flip only
+ever changes what a given apiserver instance accepts. kubelet is nonetheless the
+component that turns an accepted `hostAliases` entry into behavior: it writes the
+raw `IP\thostnames` line into the container's `/etc/hosts`
+(`hostsEntriesFromHostAliases` in `pkg/kubelet/kubelet_pods.go`) without parsing or
+validating the hostname string at all. That means an older kubelet handed a pod
+with a new trailing-dot entry, because a newer, gate-enabled apiserver accepted it,
+writes it through unchanged; there is no kubelet-side validation to skew. Version
+skew is therefore safe in both directions, but "no other component's behavior
+depends on it" undersells kubelet's role, so this section now says so explicitly
+instead.
 
 ## Production Readiness Review Questionnaire
 
