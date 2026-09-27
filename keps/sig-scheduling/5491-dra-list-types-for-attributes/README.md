@@ -868,7 +868,20 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes, it will be covered by [Unit tests](#unit-tests).
+Yes. The feature enablement and disablement coverage summarized in
+[Unit tests](#unit-tests) is implemented in the following tests:
+
+- The `ResourceSlice` REST strategy tests exercise
+  [creation with the feature gate enabled and disabled](https://github.com/kubernetes/kubernetes/blob/6c1c7702cf2052245ef10e699d45f071af306f59/pkg/registry/resource/resourceslice/strategy_test.go#L417-L429)
+  and [updates, including preservation of existing list-typed attributes after
+  the gate is disabled](https://github.com/kubernetes/kubernetes/blob/6c1c7702cf2052245ef10e699d45f071af306f59/pkg/registry/resource/resourceslice/strategy_test.go#L891-L943).
+- The CEL tests verify that
+  [stored expressions with list-typed attributes remain valid when the feature
+  gate is disabled](https://github.com/kubernetes/kubernetes/blob/6c1c7702cf2052245ef10e699d45f071af306f59/staging/src/k8s.io/dynamic-resource-allocation/cel/compile_test.go#L864-L880).
+- The allocator tests verify the disabled-gate behavior for list-typed
+  [`matchAttribute`](https://github.com/kubernetes/kubernetes/blob/6c1c7702cf2052245ef10e699d45f071af306f59/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/allocatortesting/allocator_testing.go#L7592-L7608)
+  and [`distinctAttribute`](https://github.com/kubernetes/kubernetes/blob/6c1c7702cf2052245ef10e699d45f071af306f59/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/allocatortesting/allocator_testing.go#L7887-L7905)
+  constraints.
 
 ### Rollout, Upgrade and Rollback Planning
 
