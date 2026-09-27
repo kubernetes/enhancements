@@ -536,23 +536,34 @@ Overlapping rolling updates between these deployment modes are not supported.
 Operators must also update or suspend any operator, GitOps configuration, or
 autoscaler that could recreate the old deployment.
 
-The startup migration check in csi-lib-utils will work as follows:
+The AIO replica that holds the consolidated Lease (the AIO leader) performs the
+startup migration check using csi-lib-utils. This check automates startup
+validation only; it does not stop legacy deployments or perform the deployment
+cutover. The check works as follows:
 
 1. Acquire and renew the consolidated Lease before starting any controllers.
-2. Inspect the `migration.csi.k8s.io/status: completed` annotation on that Lease.
-   If present, skip the initial legacy Lease check. This is only a record of a
-   previous migration, not proof that legacy sidecars cannot be running.
-3. If the marker is absent, acquire and temporarily renew all legacy Leases for
-   the controllers being replaced. The migration instructions must identify their
-   actual names and namespaces, including any driver-specific overrides. Acquire
-   them through normal leader election; do not overwrite an active holder.
-4. Only after all required Leases are held, write the completion marker, release
-   the legacy Leases, and start the controllers while retaining the consolidated
-   Lease. No controller may start after only a partial acquisition.
-5. If acquisition or recording the marker fails, or the consolidated Lease is
-   lost, do not start controllers. Release any acquired migration Leases and exit
-   with an error. Log the affected Lease and distinguish an active holder from
-   API or RBAC errors so operators can correct the cause before retrying.
+2. Inspect the `aio.csi.k8s.io/migration-status: completed` annotation on that
+   Lease. This annotation is the completion marker used below. The AIO leader
+   writes it after the check in step 3 succeeds. If present, skip the initial
+   legacy Lease check. This is only a
+   record of a previous migration, not proof that legacy sidecars cannot be
+   running.
+3. If the annotation is absent, acquire and temporarily renew all legacy Leases
+   for the controllers being replaced. The migration instructions must identify
+   their actual names and namespaces, including any driver-specific overrides.
+   Acquire them through normal leader election; do not overwrite an active holder.
+4. Only after all required Leases are held, write the completion marker by setting
+   the `aio.csi.k8s.io/migration-status: completed` annotation, release the legacy
+   Leases, and start the controllers while retaining the consolidated Lease. No
+   controller may start after only a partial acquisition.
+5. If Lease acquisition or writing the annotation fails, or the consolidated
+   Lease is lost, do not start controllers, or stop them if already running.
+   Release any temporarily acquired legacy Leases and exit with a non-zero status.
+   The kubelet then restarts the AIO container and the migration check retries
+   from step 1. An active legacy holder or persistent API or RBAC error requires
+   the operator to stop the remaining legacy replica or correct the configuration;
+   the next container restart retries automatically. Do not delete an active Lease
+   to force a retry.
 
 Acquiring the old Leases is a startup guard, not fencing: once they are released,
 a legacy sidecar could acquire them again. The stop-before-start deployment
@@ -916,8 +927,8 @@ To roll back:
 
 1. Prevent deployment automation from recreating AIO, stop all AIO replicas, and
    confirm their processes have terminated before starting legacy controllers.
-2. Remove the `migration.csi.k8s.io/status` annotation from the consolidated Lease
-   while AIO is stopped. Do not delete an active Lease or storage API objects.
+2. Remove the `aio.csi.k8s.io/migration-status` annotation from the consolidated
+   Lease while AIO is stopped. Do not delete an active Lease or storage API objects.
 3. Restore the saved legacy manifests and replicas, allowing them to acquire
    their original Leases normally, and verify storage operations recover.
 
