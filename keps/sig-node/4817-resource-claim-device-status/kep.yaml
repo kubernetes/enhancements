@@ -6,7 +6,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-network
-status: implementable
+status: implemented
 creation-date: 2024-08-30
 reviewers:
   - "@johnbelamaric"
