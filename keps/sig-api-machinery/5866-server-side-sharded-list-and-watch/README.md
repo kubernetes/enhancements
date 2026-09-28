@@ -348,7 +348,7 @@ operator (`||`) implemented by the CEL evaluator.
 
 For Beta, `k8s.io/apimachinery/pkg/sharding` and `k8s.io/client-go/tools/cache` will provide built-in support for sharded informers and reflectors:
 - **Shard Range Construction**: Helper utilities in `apimachinery/pkg/sharding` to construct `sharding.Selector` instances and format `ListOptions.ShardSelector` expressions for a given shard index and total shard count.
-- **Automatic Client-Side Fallback**: When configured with a `sharding.Selector`, `Reflector` automatically attaches `ShardSelector` to outgoing `LIST` and `WATCH` requests and inspects `ListMeta.ShardInfo` on responses. If `ShardInfo` is absent (e.g., when communicating with an API server that has `ShardedListAndWatch` disabled), `Reflector` transparently filters incoming objects client-side using `sharding.Selector.Matches` before updating the local cache store.
+- **Automatic Client-Side Fallback**: When configured with a `sharding.Selector`, `client-go` automatically attaches `ShardSelector` to outgoing `LIST` and `WATCH` requests. On `LIST`, it inspects `ListMeta.ShardInfo` and filters returned items client-side via `sharding.Selector.Matches` when `ShardInfo` is absent. On `WATCH`, because individual watch events do not carry `ListMeta.ShardInfo`, incoming object events are filtered client-side via `watch.Filter` using `sharding.Selector.Matches` (while passing `Bookmark` events through) before updating the local cache store.
 
 ### Server Design
 
@@ -683,7 +683,7 @@ will rollout across nodes.
 
 During a rolling upgrade or rollback in a high-availability control plane, some `kube-apiserver` instances may have `ShardedListAndWatch` enabled while others have it disabled. A client connecting to an un-upgraded or rolled-back API server will receive the full, un-sharded stream without `ListMeta.ShardInfo`.
 
-In Beta, `client-go` informers and reflectors configured with a shard selector handle this fallback automatically: they inspect `ListMeta.ShardInfo` and apply client-side filtering via `k8s.io/apimachinery/pkg/sharding` whenever `ShardInfo` is absent, ensuring out-of-shard objects are never added to the local store. Workloads that do not specify `shardSelector` are completely unaffected.
+In Beta, `client-go` informers and reflectors configured with a shard selector handle this fallback automatically: on `LIST`, they inspect `ListMeta.ShardInfo` and apply client-side filtering via `k8s.io/apimachinery/pkg/sharding` when `ShardInfo` is absent, and on `WATCH`, they filter incoming object events client-side via `watch.Filter` (while passing `Bookmark` events through), ensuring out-of-shard objects are never added to the local store even if a watch reconnects to an un-upgraded API server. Workloads that do not specify `shardSelector` are completely unaffected.
 
 ###### What specific metrics should inform a rollback?
 
