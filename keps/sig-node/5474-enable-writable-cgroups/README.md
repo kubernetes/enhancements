@@ -543,7 +543,6 @@ The feature can be controlled via:
 
 **Yes**. Restarting kubelet with the gate disabled terminates Pods with an explicit
 cgroup mount mode. Disabling it on kube-apiserver drops the field from new Pods.
-See [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -580,7 +579,7 @@ Possible rollout failure modes:
 Rollback (disabling the feature gate):
 
 - Disabling the gate on kube-apiserver drops `cgroupOptions` from new Pods, which then use the runtime's default cgroup mount mode. Operations that require writable cgroups fail if that default is read-only.
-- Restarting kubelet with the gate disabled terminates Pods with an explicit cgroup mount mode; see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+- Restarting kubelet with the gate disabled terminates Pods with an explicit cgroup mount mode.
 
 No impact on workloads that do not opt in to the feature.
 
@@ -735,7 +734,7 @@ No SLOs at alpha. If pod startup latency degrades after enabling the feature gat
 1. Check scheduler events for Pods stuck `Pending` and kubelet events for `PodFeatureUnsupported`.
 2. Confirm the node lists `CgroupOptions` under `status.declaredFeatures` via `kubectl get node -o yaml`.
 3. Confirm the host has cgroup v2 with `nsdelegate` (`findmnt /sys/fs/cgroup`).
-4. Follow [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) when disabling the gate; restarting kubelet terminates Pods with an explicit cgroup mount mode.
+4. Follow [Feature Enablement and Rollback](#feature-enablement-and-rollback) when disabling the gate; restarting kubelet terminates Pods with an explicit cgroup mount mode.
 
 ## Implementation History
 
