@@ -590,14 +590,17 @@ Whether to add a feature-specific dimension to existing counters is deferred to 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO: requires the alpha implementation in kubernetes/kubernetes and a container runtime supporting the new CRI field. Plan: implement in kubernetes and containerd, then exercise the upgrade -> downgrade -> upgrade flow in `kind` (cheap to swap node images and flip feature gates). Cases to cover:
+Yes. Manual testing completed successfully on a real multi-VM AWS Kubernetes
+cluster that ran a source build of the writable-cgroups implementation and a
+container runtime that implements `cgroup_mount_mode`.
 
-- Enable feature gate, create pod with `cgroupOptions.mountMode: Writable`, confirm container has writable `/sys/fs/cgroup`.
-- Disable the gate on kube-apiserver, confirm it drops the field from new Pods and preserves it on existing Pods.
-- Disable the gate on kubelet and restart it. Confirm existing Pods with an explicit cgroup mount mode enter `Failed` and their containers are terminated.
-- Re-enable feature gate, confirm new pods can be created again.
+The test run covered:
 
-True version downgrade behavior (to a kubernetes version without the field) is described under [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+- A supported v1.37 to v1.38 rolling upgrade with ordinary workload canaries.
+- Scheduler, kubelet, and runtime version-skew combinations, including the
+  old-scheduler rollout hazard.
+- A downgrade to v1.37, unknown-field validation, restarted-container behavior,
+  and restoration to v1.38.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
