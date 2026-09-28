@@ -50,6 +50,7 @@
   - [Alternative 1: Scheduler-Based NUMA Balancing](#alternative-1-scheduler-based-numa-balancing)
   - [Alternative 2: Pod-Level Annotations](#alternative-2-pod-level-annotations)
   - [Alternative 3: Static NUMA Assignment](#alternative-3-static-numa-assignment)
+  - [Alternative 4: Express This Through DRA and the CPU DRA Driver](#alternative-4-express-this-through-dra-and-the-cpu-dra-driver)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -891,12 +892,30 @@ stays at zero while the option is configured means every admission so far was
 already structurally determined (or no scored candidates tied), not necessarily
 that the feature is broken.
 
-- [ ] Other (treat as last resort)
-  - Details: Launch a pod requiring resources from a specific NUMA node on a
-    node with known asymmetric allocation. Verify via `taskset -cp 1` and
-    `numactl -H` inside the container that resources are assigned from the
-    expected NUMA node (most-allocated or least-allocated depending on the
-    configured option).
+The metric is node-scoped and aggregate: it tells an operator that scoring is
+changing placement decisions on a node, but it does not attribute a decision to
+a particular pod, so a workload owner cannot use it alone to tell whether *their*
+pod was placed differently because of this feature. Per-workload attribution is
+a pre-existing gap in Topology Manager observability rather than one introduced
+here: none of the existing Topology Manager metrics or policy options report
+which hint was chosen for a given pod, and the admission decision is not
+surfaced in pod status. This KEP does not attempt to close that gap, but it also
+does not widen it, and any general solution (an admission event, or extending
+the PodResources API to report the selected affinity) would cover this option
+along with the rest.
+
+- [x] Other (treat as last resort)
+  - Details: To confirm placement for a specific workload, read the concrete
+    assignments for its containers from the PodResources API `List` endpoint
+    ([KEP-2043](/keps/sig-node/2043-pod-resource-concrete-assigments)), which
+    reports the CPU IDs, memory regions, and devices assigned to each container
+    along with their NUMA topology. This can be compared against the node's
+    allocation state at admission time to confirm the expected NUMA node was
+    selected. Equivalently, launch a pod requiring resources from a specific
+    NUMA node on a node with known asymmetric allocation and verify via
+    `taskset -cp 1` and `numactl -H` inside the container that resources are
+    assigned from the expected NUMA node (most-allocated or least-allocated
+    depending on the configured option).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -947,6 +966,17 @@ the feature is operative:
   running containers. The gauge is decremented when a container's allocation is
   released, and is rebuilt from the checkpointed allocation state when the
   kubelet restarts.
+
+Neither metric attributes a placement decision to an individual pod, so a
+workload owner still cannot tell from metrics alone whether their pod was
+placed differently because of this option. Per-pod attribution is a gap shared
+by all Topology Manager policy options, and a per-pod counter or gauge is the
+wrong shape for it: the cardinality is unbounded and the information is a
+one-shot admission fact, not a time series. At beta we will revisit this
+together with the wider Topology Manager observability discussion in SIG Node,
+where the plausible carriers are an admission-time event on the pod or the
+PodResources API reporting the affinity the Topology Manager selected. Both are
+broader than this KEP and are deliberately left out of scope for alpha.
 
 Both metrics are registered in `pkg/kubelet/metrics` alongside the existing
 Topology Manager metrics, use the same `kubelet` subsystem, and are registered
@@ -1079,6 +1109,58 @@ Pre-assign NUMA nodes to pod QoS classes.
 **Pros:** Simple, predictable.
 **Cons:** Inflexible, wastes resources when QoS classes don't match NUMA
 topology.
+
+### Alternative 4: Express This Through DRA and the CPU DRA Driver
+
+Model CPUs as DRA devices with the
+[CPU DRA driver](https://github.com/kubernetes-sigs/dra-driver-cpu) and let the
+scheduler pick the NUMA domain when it allocates the claim, rather than adding a
+placement preference to the Topology Manager.
+
+DRA already covers part of this. With
+[KEP-6072](/keps/sig-node/6072-dra-standard-numanode) standardizing
+`resource.kubernetes.io/numaNode` and a `matchAttribute` constraint over it, a
+claim can require that its CPU, memory, GPU, and NIC devices come from the same
+NUMA node, which is the alignment guarantee the Topology Manager provides today.
+DRA is also the better long-term home for this: the scheduler sees allocation
+state cluster-wide in ResourceSlices, so it can avoid placing a pod on a node
+whose NUMA domains cannot satisfy it, instead of discovering that at admission
+time and rejecting the pod.
+
+What is missing for this KEP's use case:
+
+- **DRA allocation satisfies constraints; it does not rank candidates.**
+  `matchAttribute` answers "may these devices be allocated together", not "which
+  of the several NUMA domains that all satisfy the constraint should be used".
+  There is no packing or spreading preference over equally valid device sets,
+  which is exactly the decision this KEP addresses. Even `enforcement:
+  preferred` on `matchAttribute`, which KEP-6072 lists as a non-goal, would
+  soften the alignment requirement rather than order the candidates by
+  utilization. A DRA equivalent needs device-level scoring in the scheduler,
+  which does not exist today and is a considerably larger change than a
+  Topology Manager policy option.
+- **Not all the relevant resources are DRA devices.** Memory and hugepages are
+  managed by the memory manager, and CPUs are managed by the CPU manager for any
+  pod not using the CPU DRA driver. Reconciling DRA-managed and node-allocatable
+  resources is itself open work
+  ([KEP-5517](/keps/sig-scheduling/5517-dra-node-allocatable-resources)). Until
+  that is settled, a NUMA placement policy that spans CPU, memory, and devices
+  has to live where all three are visible, which is the Topology Manager.
+- **The workloads that need this run on the existing stack.** The telco, NFV,
+  and ML users driving
+  [kubernetes/kubernetes#125453](https://github.com/kubernetes/kubernetes/issues/125453)
+  run the static CPU manager policy with the Topology Manager today, and will
+  for several releases. Requiring them to migrate their resource management
+  model to obtain a placement preference is disproportionate to the size of the
+  change.
+
+This KEP is therefore complementary rather than competing, and it does not
+foreclose the DRA path. Score is an internal field on `TopologyHint` and the
+options are opt-in kubelet configuration, so nothing here becomes API surface
+that a future DRA-based mechanism would have to carry. If CPU and memory
+allocation eventually move to DRA, the natural place for a utilization
+preference is the DRA allocator, and these options would be deprecated along
+with the rest of the Topology Manager policy options rather than separately.
 
 ## Infrastructure Needed (Optional)
 
