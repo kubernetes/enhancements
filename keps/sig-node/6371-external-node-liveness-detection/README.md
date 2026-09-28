@@ -307,6 +307,7 @@ None for alpha.
 #### Alpha
 
 - Unit and integration tests above.
+- An example external implementation is available in open source.
 
 #### Beta
 
