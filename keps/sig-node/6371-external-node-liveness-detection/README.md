@@ -191,8 +191,10 @@ node lifecycle, including taints and eviction.
 
 ### Notes/Constraints/Caveats (Optional)
 
-The two settings must be enabled in order: the kube-controller-manager first,
-then the kubelets. See [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+The `ExternalNodeLivenessDetection` feature gate must be enabled on a
+component before that component's setting can be used. The two settings must
+then be enabled in order: the kube-controller-manager first, then the
+kubelets. See [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ### Risks and Mitigations
 
@@ -245,8 +247,18 @@ is true.
 
 ### Feature gate
 
-Both settings are opt-in and controlled by the cluster administrator. Feature
-gates are unnecessary.
+`ExternalNodeLivenessDetection` is a new alpha feature gate, defaulting to
+`false`, gating both settings above:
+
+- On the kube-controller-manager, `--node-liveness-source=external` is
+  rejected at flag validation when the gate is disabled.
+- On the kubelet, `enableNodeLease: false` fails strict validation of
+  `KubeletConfiguration` when the gate is disabled. Under lenient decoding the
+  field is ignored, a warning is logged, and the kubelet keeps heartbeating.
+
+Enabling the feature gate does not by itself change any behavior. The cluster
+administrator must still opt in to each setting explicitly, and each component
+only needs the gate enabled if that component's setting is used.
 
 ### Metrics
 
@@ -306,11 +318,14 @@ None for alpha.
 
 #### Alpha
 
+- `ExternalNodeLivenessDetection` feature gate implemented, disabled by
+  default.
 - Unit and integration tests above.
 - An example external implementation is available in open source.
 
 #### Beta
 
+- `ExternalNodeLivenessDetection` feature gate enabled by default.
 - At least one external liveness detector outside the test suite reported in
   use.
 - An e2e test with a test writer, running in CI.
@@ -322,20 +337,24 @@ None for alpha.
 
 #### GA
 
+- `ExternalNodeLivenessDetection` feature gate locked to enabled.
 - Two releases at beta with no reported defects.
 - Documentation on kubernetes.io for the flag, the field, and the external
   detector contract.
 
 ### Upgrade / Downgrade Strategy
 
-To enable, set `--node-liveness-source=external` on every kube-controller-manager
-replica first, then set `enableNodeLease: false` on the kubelets. The controller
-must change first because leader election can move the controller to any
-replica, and a replica still in `kubelet` mode will treat lease-less nodes as
-dead.
+To enable, enable the `ExternalNodeLivenessDetection` feature gate on every
+kube-controller-manager replica and set `--node-liveness-source=external`,
+then enable the feature gate on the kubelets and set `enableNodeLease: false`.
+The controller must change first because leader election can move the
+controller to any replica, and a replica still in `kubelet` mode will treat
+lease-less nodes as dead.
 
 To disable, reverse the order: re-enable kubelet leases first, then set every
-kube-controller-manager replica back to `kubelet` mode.
+kube-controller-manager replica back to `kubelet` mode. The feature gate can be
+disabled on each component once that component's setting is back to its
+default.
 
 A kube-controller-manager older than 1.38 rejects `--node-liveness-source` as an
 unknown flag and fails to start, so the flag must be removed before downgrading.
@@ -365,24 +384,31 @@ objects they already use.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [ ] Feature gate
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `ExternalNodeLivenessDetection`
+  - Components depending on the feature gate: `kube-controller-manager`, `kubelet`
 - [x] Other
-  - Describe the mechanism: `--node-liveness-source=external` on
-    kube-controller-manager and `enableNodeLease: false` in KubeletConfiguration.
-    Both are opt-in and default to today's behavior.
+  - Describe the mechanism: With the feature gate enabled,
+    `--node-liveness-source=external` on kube-controller-manager and
+    `enableNodeLease: false` in KubeletConfiguration become usable. Both remain
+    opt-in and default to today's behavior even when the feature gate is
+    enabled.
   - Will enabling / disabling the feature require downtime of the control plane?
-    No. Changing the flag requires a kube-controller-manager restart, which is a
-    rolling restart in HA deployments.
+    No. Changing the feature gate or the flag requires a kube-controller-manager
+    restart, which is a rolling restart in HA deployments.
   - Will enabling / disabling the feature require downtime or reprovisioning of
     a node? Requires a kubelet restart.
 
 ###### Does enabling the feature change any default behavior?
 
-No.
+No. Enabling the feature gate only makes `--node-liveness-source=external` and
+`enableNodeLease: false` available; the cluster administrator must still set
+them explicitly.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Turn kubelet leases back on, then set every kube-controller-manager back to `kubelet` mode.
+Yes. Turn kubelet leases back on, then set every kube-controller-manager back
+to `kubelet` mode, then disable the feature gate on each component.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
