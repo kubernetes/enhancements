@@ -11,7 +11,7 @@ participating-sigs:
   - sig-auth
 status: implementable
 creation-date: 2020-05-12
-last-updated: 2026-05-27
+last-updated: 2026-09-16
 reviewers:
   - "@msau42"
   - "@jsafrane"
