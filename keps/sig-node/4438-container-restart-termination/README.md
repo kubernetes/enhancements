@@ -91,6 +91,13 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Pod termination and In-Place Pod Restart interaction](#pod-termination-and-in-place-pod-restart-interaction)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Scope and worker transitions](#scope-and-worker-transitions)
+  - [Observations and scheduling](#observations-and-scheduling)
+  - [Desired actions and ordering](#desired-actions-and-ordering)
+  - [Deadlines and cancellation](#deadlines-and-cancellation)
+  - [Recovery](#recovery)
+  - [Completion, resources and status](#completion-resources-and-status)
+  - [Lifecycle invariants and review requirements](#lifecycle-invariants-and-review-requirements)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -216,9 +223,6 @@ The following behaviors should be maintained during pod termination:
 - service account token rotation
 - secret and configmap volume updates
 
-Also, container termination should be non-blocking, which will fix issue [#121398](https://github.com/kubernetes/kubernetes/issues/121398)
-a container cannot restart when there is any terminating container in the same pod.
-
 ### Non-Goals
 
 <!--
@@ -267,56 +271,247 @@ This might be a good place to talk about core concepts and how they relate.
 
 #### Alpha limitations
 
-The Alpha implementation (`SidecarsRestartableDuringPodTermination` v1.37) provides a scoped
-restart guarantee with the following known limitations to be addressed in Beta:
+The proposed Alpha implementation targets v1.38 behind
+`SidecarsRestartableDuringPodTermination`, disabled by default. It restarts a
+previously started sidecar while application containers or later sidecars still
+need it, and stops the current instance at its ordered turn. The lifecycle design
+below is proposed for review alongside [kubernetes/kubernetes#140133]; that PR is
+not a merged implementation or evidence of design approval.
 
-- **SIGKILL on restart**: restarted sidecars receive SIGKILL (not an ordered SIGTERM), because
-  the termination ordering machinery is already in flight.
-- **Probes not re-attached**: liveness, readiness, and startup probes are not re-connected
-  after a mid-termination restart.
-- **Pull secrets not re-resolved**: image pull secrets are not re-resolved at restart time.
-- **RestartCount inflated**: each mid-termination restart increments the container's
-  `RestartCount`, which may confuse monitoring tools.
-- **Short grace periods excluded**: pods with `terminationGracePeriodSeconds <= 1` are not
-  eligible for sidecar restart to avoid restarting a container that will be SIGKILL-ed
-  immediately anyway.
-- Container lifecycle hooks (`postStart`/`preStop`) are not invoked on the mid-termination
-  restart.
+- **Probes:** liveness and startup probes are stopped when termination begins.
+  Probe workers are not reattached to replacement instances. Restarts are driven
+  by observed exits, not probe failures. Probe support remains Beta work.
+- **Recovery:** API deletion deadlines survive kubelet restart through
+  `DeletionTimestamp`. Local eviction and static-pod termination requests have no
+  durable termination checkpoint; their original intent and deadline are not
+  guaranteed to survive kubelet restart. See [Recovery](#recovery).
+- **Hooks:** `postStart` uses the normal start path. `preStop` is scheduled for
+  each observed running instance, including replacements, while grace remains.
+  Hook completion is not persisted, so a hook may execute again after kubelet
+  restart. Hooks must tolerate replay.
+- **Deadline expiry:** no restart is attempted with at most one second remaining.
+  At expiry, ordering and unfinished hooks no longer delay forced stops. The
+  proposed zero-grace behavior differs from the legacy minimum stop grace and
+  requires explicit review; see [Deadlines and cancellation](#deadlines-and-cancellation).
+- **Availability:** a deadline bounds the requested grace, not the time at which
+  an unavailable runtime or hung node physically stops a process. Failed runtime
+  observations keep termination pending and retain resources.
+- **Configuration:** pull secrets and image volumes are resolved through the
+  normal start path. This does not add service-account token rotation or secret
+  and configmap volume refresh during termination.
+- **Observability:** pod status is refreshed on each successful observation,
+  including replacement IDs and restart counts. API publication remains
+  asynchronous. The restart counter resets on kubelet restart and counts
+  successful start-path completions, not starts whose CRI response was lost.
 
 #### Pod termination and In-Place Pod Restart interaction
 
-To prevent conflicting lifecycle actions, when a Pod enters its termination phase (i.e. `pod.DeletionTimestamp != nil`), the kubelet must not trigger a pod-wide `RestartAllContainers` (In-Place Pod Restart) action. This ensures that the graceful deletion sequence is not disrupted by a pod-wide restart. In-place restart checks (e.g. `ShouldAllContainersRestart` function) must return `false` during Pod termination, allowing the KEP-4438 sidecar monitoring and restart watcher to manage the sidecar container restarts in isolation during Pod shutdown.
+`ShouldAllContainersRestart` returns false for an API pod with a
+`DeletionTimestamp`. Once the worker enters `TerminatingPod`, it no longer calls
+`SyncPod`, including for local termination requests. Only the termination
+reconciler may restart eligible sidecars; it never starts application containers
+or triggers `RestartAllContainers`.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+Changing `SyncTerminatingPod` from a one-shot operation to reconciliation changes
+when other kubelet subsystems may release resources. A successful RPC, an expired
+deadline, or a missing cache entry must not independently authorize cleanup.
+Tests exercise the worker completion signal, runtime observations, final status,
+and DRA unprepare boundary.
 
-How will security be reviewed, and by whom?
+Lost CRI responses can leave a created or running replacement behind. A fresh
+runtime observation precedes each reconciliation, and created replacements are
+removed before retrying. Outstanding stop requests are deduplicated by container
+ID. Replays rely on CRI's idempotent `StopContainer` and `RemoveContainer`
+contracts. Tests with the fake CRI cover failure before and after side effects;
+real-runtime node tests remain necessary to validate cancellation and ordering.
 
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
-The main risk of this proposal is that the lifecycle of sidecar containers will be changed, which could
-potentially break existing behavior. To mitigate this risk, we will introduce several e2e tests
-and peer review to ensure that the changes are safe.
-
-There is no security impact of this proposal.
-
-The UX impact of this proposal is minimal, as it adds an expected behavior to the lifecycle of sidecar containers.
+Restarting a sidecar continues using pod resources during termination, including
+images and credentials. The feature does not extend their validity or the pod's
+grace budget. Alpha remains opt-in. Approval of the lifecycle decisions and
+passing node tests are release requirements, separate from unit-test success.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+### Scope and worker transitions
+
+The kubelet enables reconciliation only for a pod with restartable init
+containers when `SidecarsRestartableDuringPodTermination` is enabled. Ordinary
+pods, gate-disabled pods, sandbox replacement in `SyncPod`, and runtime-only
+orphan cleanup retain their existing kill paths. No API fields or CRI methods
+are added. The generic one-shot `KillPod` path does not contain a restart watcher.
+
+The pod worker remains the sole owner of lifecycle transitions for a pod UID:
+
+| Current state | Result | Next action |
+| --- | --- | --- |
+| `SyncPod` | Termination requested or normal execution finished | Enter `TerminatingPod`; stop normal setup |
+| `TerminatingPod` | `complete=false, err=nil` | Keep resources and kill waiters; schedule another reconciliation |
+| `TerminatingPod` | Error | Keep resources and kill waiters; retry with backoff |
+| `TerminatingPod` | `complete=true, err=nil` | Notify kill waiters and allow `SyncTerminatedPod` cleanup |
+| `TerminatedPod` | Cleanup succeeds | Finish the worker under the existing cleanup contract |
+
+The completion boolean is explicit: returning nil error does not mean the pod
+has stopped. An expired deadline also does not imply completion.
+
+### Observations and scheduling
+
+Each invocation obtains the runtime pod and its container status directly, with
+one two-second context budget for the observation. The terminating worker skips
+`podCache.GetNewerThan`: that wait has no timeout and could otherwise prevent the
+worker's retry timer from firing when PLEG stops advancing. A failed observation
+returns an error; it is not interpreted as an empty pod.
+
+PLEG continues to supply ordinary observations and wakeups. It owns no desired
+termination state. The worker also owns a retry timer, normally one second for
+pending work. Errors use the existing worker backoff, capped by the time remaining
+until the pod deadline. After expiry, retries continue. The timer reuses the
+worker's last pod specification, so eviction and removed static pods do not
+require another update from podManager. A shorter grace request cancels the
+current worker context and supplies an earlier deadline on the next invocation.
+
+A slow start may occupy the worker until its context ends. Starts use the pod
+deadline and the worker cancellation context. The design depends on CRI and hook
+implementations honoring context cancellation; it does not promise progress
+through an indefinitely hung runtime call.
+
+### Desired actions and ordering
+
+The reconciler derives desired actions from the pod specification, absolute
+deadline, and latest runtime observation:
+
+1. Application containers and non-restartable init containers are never started.
+   Their observed live instances must stop.
+2. Walk restartable init containers in reverse specification order. A sidecar is
+   still needed while any application container, non-restartable init container,
+   or later sidecar is observed non-exited. Unknown state is conservatively live.
+3. A needed sidecar can restart only if it has previously started, is now exited
+   (or has an unstarted replacement from a partial start), has a ready sandbox,
+   and has more than one second left. Normal restart backoff applies. Missing
+   status for a never-started sidecar does not authorize starting it.
+4. Once a sidecar's turn arrives, stop its current observed instance. Do not
+   restart a sidecar that exited at or after its turn. At the deadline, stop all
+   remaining instances regardless of ordering and remove unstarted instances.
+
+Starts use `startContainer`, including image pull secrets, image volumes and
+`postStart`. Secret and configmap managers are registered during termination so
+configuration can be resolved after kubelet restart. This registration does not
+restore volume-update or token-rotation behavior deferred from Alpha.
+
+Runtime-manager records track outstanding hook and stop calls per container ID,
+and successful replacements per exited ID. They suppress duplicate work across
+repeated observations but do not define which containers should run. Calls
+complete through buffered channels; only the pod worker accesses these records.
+
+### Deadlines and cancellation
+
+For a newly terminating worker, the local deadline is termination start plus the
+effective grace period. If the pod has a `DeletionTimestamp`, use the earlier of
+that timestamp and the local deadline. A shorter grace request can move the
+deadline earlier to request time plus the new grace. Repeated or longer requests
+never move it later within that worker's lifetime.
+
+`preStop` begins as soon as a running instance is observed during termination,
+including sidecars whose ordered stop is still pending. Each observed replacement
+gets its own hook. Hooks and ordering consume the same absolute grace budget.
+Hook completion is retained per instance for the lifetime of the runtime manager.
+
+Hooks and stops run asynchronously so another reconciliation can observe exits
+and restart eligible sidecars. A stop passes the rounded-up remaining grace to
+CRI. Its RPC context allows two additional seconds for transport completion.
+When grace is shortened, a superseded stop context is cancelled and a new stop
+is issued for the same ID with the shorter grace. Cancellation is not evidence
+that the original server-side operation was rolled back or that the container
+stopped. Subsequent runtime observations determine progress.
+
+At expiry, hooks are cancelled, new starts are forbidden, created instances are
+removed, and remaining containers receive a zero-grace stop. Each retry after
+expiry has a bounded stop RPC context. That transport allowance does not add
+container shutdown grace or authorize cleanup.
+
+<<[UNRESOLVED deadline compatibility]>>
+The proposed implementation does not preserve the legacy kill path's minimum
+two-second container grace after a long `preStop` or ordering wait. Reviewers must
+choose whether an absolute deadline should force immediately, as implemented, or
+whether a single bounded shutdown extension is required. If an extension is
+chosen, its recovery and shortening rules must be designed so retries cannot
+renew it. The deadline/hook tests currently assert zero-grace stops at expiry.
+<<[/UNRESOLVED]>>
+
+### Recovery
+
+No new checkpoint is introduced in Alpha. On kubelet restart, spec and runtime
+status reconstruct ordering and restart eligibility. The API deletion timestamp
+reconstructs the original deadline even when it has already expired. Backoff and
+operation-deduplication records are in memory and may reset.
+
+| Interrupted operation | Observation after restart | Recovery |
+| --- | --- | --- |
+| Create did not take effect | Previous sidecar exited | Retry through the normal start path |
+| Create committed; start did not | Created replacement with a restart attempt | Remove it and retry only while eligible; remove at expiry |
+| Start committed; response lost | Running replacement | Keep that instance; do not create another |
+| Stop pending or response lost | Container still running | Reissue idempotent stop using the remaining grace |
+| Stop committed | Container exited | Advance ordering without waiting for the old RPC result |
+| `preStop` interrupted or completed | Same instance still running | Hook may replay while grace remains |
+
+These decisions assume the runtime reports committed operations and enforces
+container identity/name reservations for overlapping creation attempts. The
+in-memory records are not an exactly-once transaction across kubelet and CRI.
+
+Local evictions and static-pod removals retain their deadline while the same
+worker exists. Without an API deletion timestamp, kubelet restart can lose the
+original local kill intent and deadline, as with existing local termination.
+If only a runtime pod remains and its spec is unavailable, the existing
+`SyncTerminatingRuntimePod` path stops it without sidecar restart.
+
+<<[UNRESOLVED local termination recovery]>>
+Alpha proposes retaining the existing lack of durable local kill intent. Before
+claiming deadline preservation for all termination sources, design a checkpoint
+for both the intent and the absolute deadline, including eviction policy,
+static-pod replacement, and checkpoint cleanup. Persisting only a timestamp would
+not resolve recovery of the intent. Reviewers must explicitly accept this Alpha
+scope or require that work before Alpha.
+<<[/UNRESOLVED]>>
+
+### Completion, resources and status
+
+The runtime reconciler returns pending while any observed container is non-exited,
+including unknown or created instances. Completed stop calls alone do not imply
+completion. Once observations show no remaining active containers, the kubelet
+stops the sandbox through the existing kill path, reads final runtime status,
+and checks that no containers remain running before unpreparing DRA resources
+and publishing final status. Only then may the worker transition to
+`TerminatedPod` and allow foreground cleanup and runtime removal. Existing status
+callbacks, such as eviction marking a pod Failed, may run before containers stop;
+API phase alone is not the authorization for resource removal.
+
+Pod status is refreshed during reconciliation, so replacement IDs and restart
+counts are observable through the API subject to status publication latency.
+Liveness and startup probes stop when termination begins; all probe workers are
+removed after the pod stops. The
+`kubelet_sidecar_restarts_during_termination_total` counter increments after a
+successful restart path and resets when kubelet restarts.
+
+### Lifecycle invariants and review requirements
+
+The implementation and tests must preserve these invariants:
+
+- No application-container restart, or sidecar restart after its turn or deadline.
+- Repeated observations and recovery of committed starts do not duplicate a live
+  sidecar instance.
+- A worker's deadline never extends; API deletion preserves it across kubelet
+  restart. Local recovery is limited as described above.
+- PLEG silence does not block reconciliation. Runtime errors retain resources
+  and schedule retries instead of reporting termination complete.
+- Stop response, timer expiry, and cancellation alone never release resources
+  or kill waiters. Observed termination and final cleanup checks are required.
+- Gate-disabled pods, pods without sidecars, and runtime-only cleanup retain
+  their existing lifecycle behavior.
+
+The unresolved compatibility and recovery decisions require KEP approver review.
+Unit tests and this document do not imply that review has occurred. The node test
+suite must also run against a supported node/runtime before release.
 
 ### Test Plan
 
@@ -335,76 +530,46 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-The test plan is currently in progress and will be reflected here as we make progress:
-https://docs.google.com/document/d/14En0jesyZFrDG8Epn1mYcWB0dSZqCLv-HwtIdMuov0o/edit?usp=sharing
+Tests accompanying [kubernetes/kubernetes#140133] exercise both the state machine
+and component boundaries. Fault-injection tests use a fake CRI; they do not
+replace execution of the node suite against a real runtime.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+The worker's pending result, timer, and resource-removal predicates must be tested
+with the actual pod cache. A fake cache that always returns fresh status cannot
+expose a PLEG wait that blocks the deadline.
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `pkg/kubelet/kuberuntime`: `2024/02/06` - `66.8%`
-
-The following unit tests were added for the Alpha implementation:
-
-`pkg/kubelet/kuberuntime/kuberuntime_termination_order_test.go`:
-- `TestAllPrereqsMet` — verifies the non-blocking `allPrereqsMet` helper used by the watcher
-  to decide whether a sidecar's SIGTERM turn has arrived.
-
-`pkg/kubelet/kuberuntime/kuberuntime_termination_restart_test.go`:
-- `TestWatchAndRestartSidecar_ExitsBeforeTurn` — gate enabled, sidecar exits before its turn;
-  asserts `CreateContainer` is called within one ticker cycle.
-- `TestWatchAndRestartSidecar_PrereqsMet_NoRestart` — gate enabled, prereqs already met;
-  asserts the watcher exits cleanly without restarting.
-- `TestKillContainers_GateDisabled_NoRestart` — gate disabled; asserts no restart occurs even
-  with `terminating=true`.
-- `TestKillContainers_NotTerminating_NoRestart` — gate enabled but `terminating=false`
-  (sandbox-replacement path); asserts no restart watcher is spawned.
-
-`pkg/kubelet/container/helpers_test.go`:
-- `TestShouldAllContainersRestart` — verifies that a pod-wide `RestartAllContainers` action is not triggered when the pod is in its termination phase (i.e. `DeletionTimestamp` is set), even if a container restart rule or the `v1.AllContainersRestarting` condition is present.
+| Invariant or failure | Test in `k8s.io/kubernetes` |
+| --- | --- |
+| Stalled PLEG; API deletion, eviction and static-pod removal; shorter grace | `pkg/kubelet/pod_workers_termination_test.go`: `TestTerminatingPodProgressesWithStalledPLEG` |
+| Pending work retains waiters and runtime resources | Same file: `TestTerminatingPodRequeuesWithoutCompleting` |
+| Deadline monotonicity and expired API deadline recovery | Same file: `TestTerminationDeadlineDoesNotReset` |
+| New worker reconstructs an expired API deadline | Same file: `TestTerminatingPodRecoversExpiredAPIDeadline` |
+| Runtime-only orphan cleanup never restarts sidecars | Same file: `TestTerminatingRuntimePodDoesNotRestartSidecars` |
+| Error backoff cannot delay the next attempt beyond remaining grace | Same file: `TestTerminationRetryCannotPassDeadline` |
+| Fresh runtime observation supersedes stale cache; DRA and final-status guard | `pkg/kubelet/kubelet_termination_test.go`: `TestSyncTerminatingPodObservesRuntimeBeforeCleanup` |
+| Runtime observation failure remains pending and bounded | Same file: `TestSyncTerminatingPodObservationFailureRetainsResources` |
+| Gate controls the lifecycle path | Same file: `TestSyncTerminatingPodGateControlsReconciliation` |
+| Lost create/start responses before or after side effects; new runtime manager | `pkg/kubelet/kuberuntime/kuberuntime_termination_restart_test.go`: `TestSyncTerminatingPodRecoversInterruptedStart` |
+| Stop completion or lost response is insufficient without an observation | Same file: `TestSyncTerminatingPodWaitsForObservedStop` |
+| Rejected stop is retried without renewing grace | Same file: `TestSyncTerminatingPodRetriesFailedStop` |
+| Shorter grace replaces an outstanding stop request | Same file: `TestSyncTerminatingPodShortensOutstandingStop` |
+| Partial start cannot leave a created container past expiry | Same file: `TestSyncTerminatingPodRemovesPartialStartAtDeadline` |
+| Earlier sidecar restarts while a later one drains; current instance stops in order | Same file: `TestSyncTerminatingPodOrdersMultipleSidecars` |
+| Long hooks do not block reconciliation or renew grace | Same file: `TestSyncTerminatingPodPreStopDoesNotBlockReconciliation`, `TestSyncTerminatingPodDeadlineCancelsHooks` |
+| Restart eligibility, deduplication, backoff and retry | Same file: `TestSyncTerminatingPodDoesNotStartIneligibleSidecars`, `TestSyncTerminatingPodRestartsAndDeduplicates`, `TestSyncTerminatingPodRestartBackoff`, `TestSyncTerminatingPodRetriesPartialStart` |
+| Unknown container is stopped at expiry despite missing spec | Same file: `TestSyncTerminatingPodDeadlineStopsUnknownContainer` |
+| No pod-wide restart during API deletion | `pkg/kubelet/container/helpers_test.go`: `TestShouldAllContainersRestart` |
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+The worker/cache and kubelet/runtime/resource-manager tests above run in package
+unit suites and exercise those component boundaries. No separate
+`test/integration` suite is claimed for this change. Real kubelet restart,
+API deletion and CRI process behavior are exercised by the node tests below.
 
 ##### e2e tests
 
@@ -420,6 +585,23 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 -->
 
+###### Alpha implementation tests
+
+`test/e2e_node/sidecar_termination_restart_test.go`, gated by
+`SidecarsRestartableDuringPodTermination`, contains these scenarios:
+
+- A sidecar exits during application shutdown, its restart count increases while
+  the application is still running, and the pod subsequently terminates.
+- A later deletion with shorter grace overrides an ongoing termination; CRI
+  observations confirm running containers disappear within the shortened budget.
+- Kubelet stops during termination, the original sidecar exits while it is down,
+  and the restarted kubelet replaces it and completes within the original API
+  deletion deadline (`Serial`, `Disruptive`).
+
+These scenarios require execution on a supported node. Compilation and package
+fault-injection tests do not establish containerd or CRI-O behavior, nor prove
+that the disruptive kubelet-restart scenario passes.
+
 ###### Existing tests
 
 - should respect termination grace period seconds
@@ -427,7 +609,14 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - should call the container's preStop hook and terminate it if its startup probe fails https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/container_lifecycle_test.go#L616
 - should call the container's preStop hook and terminate it if its liveness probe fails https://github.com/kubernetes/kubernetes/blob/fbb2e6293fb0c8c107ae48b8b8ae488325c59598/test/e2e_node/container_lifecycle_test.go#L683
 
-###### New tests
+###### Beta (planned)
+
+The Alpha node scenarios above cover restart and grace-period behavior. Beta
+adds probe, hook replay, and configuration-lifetime assertions on real runtimes.
+Probe scenarios depend on implementing probe reattachment. Hook execution already
+uses the Alpha lifecycle paths; end-to-end validation must cover replacement
+instances and kubelet restart, not assume exactly-once delivery. Service-account
+token work (#116481, #122568) remains tracked separately.
 
 Probes:
 - Readiness probes are still running while in preStop
@@ -442,12 +631,8 @@ Not fully started containers:
 - postStart hook CONTINUE EXECUTE even if container started termination
 - postStart hook will stop once pod passed it’s graceful termination period
 
-Pod with some containers terminated:
-- BUGFIX, SIDECAR: Container can be restarted when there are terminating containers in the Pod A container cannot restart when there is any terminating container in the same pod · Issue #121398
-
 Re-terminating the Pod:
-- When the Pod is terminating, another call to terminate the pod with the smaller grace period will override the grace period to terminate Pod faster
-- When the Pod is terminating, another call to terminate the pod with the greater grace period will override the grace period to allow longer termination
+- When the Pod is terminating, another request with greater grace must not extend the deadline
 - BUGFIX: Service account token gets invalidated while terminating pod is re-deleted · Issue #122568
 
 Pre-stop vs. SIGTERM traps:
@@ -530,31 +715,26 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature implemented behind `SidecarsRestartableDuringPodTermination` feature gate (disabled by default, v1.37).
-- Sidecar containers (restartable init containers) that exit prematurely during pod termination
-  are restarted by the kubelet, preserving the KEP-753 ordering guarantee within the grace period.
-- The watcher goroutine exits without restarting once the sidecar's ordered SIGTERM turn arrives
-  (`allPrereqsMet` returns true).
-- No restart is performed when `terminating=false` (sandbox-replacement path in `SyncPod`).
-- Pods with `terminationGracePeriodSeconds <= 1` are excluded.
-- Initial unit tests in place (see [Unit tests](#unit-tests)).
-
-> **Note:** Early drafts of this KEP planned to also enable liveness/readiness/startup probes and
-> `postStart`/`preStop` hooks for sidecars restarted during termination in Alpha. After further
-> analysis we determined that re-attaching probes mid-termination carries non-trivial risk: a
-> liveness probe failure on a just-restarted sidecar could trigger a restart loop that interferes
-> with the grace period budget. We therefore defer probe and hook support to Beta, where we can
-> validate the design with data from Alpha adopters and address the restart-loop risk explicitly.
+- Feature implemented behind `SidecarsRestartableDuringPodTermination`, disabled
+  by default, targeting v1.38.
+- KEP approvers accept the worker reconciliation contract and explicitly resolve
+  the deadline-compatibility and local-recovery scope decisions above.
+- The lifecycle invariants have passing package tests, including fault injection
+  at component boundaries and gate-disabled regression coverage.
+- Node restart, shorter-grace, and ordered shutdown scenarios execute successfully
+  against a supported runtime. Test results are linked during implementation
+  review; merely adding or compiling the tests is insufficient.
 
 #### Beta
 
-- Resolve alpha limitations:
-  - Re-attach liveness, readiness, and startup probes after a mid-termination restart.
-  - Invoke `preStop` hook before restarting a sidecar (ordered SIGTERM instead of SIGKILL).
-  - Re-resolve image pull secrets at restart time.
-- Enable container lifecycle hooks (`postStart`/`preStop`) for restarted sidecars.
-- e2e node tests added and passing in Testgrid without flakes for two consecutive releases.
-- Feedback from Alpha adopters addressed.
+- Resolve remaining Alpha limitations, including probe reattachment and its
+  interaction with restart backoff during termination.
+- Decide whether to persist local termination intent/deadlines based on the Alpha
+  recovery scope; test any durable recovery behavior before promising it.
+- Validate hook replay, replacement hooks, configuration lifetime, runtime
+  cancellation and ambiguous CRI outcomes on real nodes.
+- Node tests pass in Testgrid without flakes for two consecutive releases.
+- Feedback from Alpha adopters is addressed.
 
 #### GA
 
@@ -749,6 +929,10 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The `kubelet_sidecar_restarts_during_termination_total` counter (per node) is incremented every
+time a sidecar is restarted during pod termination. A non-zero and increasing value indicates
+the feature is enabled and actively restarting sidecars for terminating pods.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -762,9 +946,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
+- [X] API .status
+  - Fields: `initContainerStatuses[].containerID`, `restartCount`, and `state`
+  - Publication is asynchronous while the terminating pod still exists.
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -791,10 +975,9 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [X] Metrics
+  - Metric name: `kubelet_sidecar_restarts_during_termination_total`
+  - Components exposing the metric: kubelet
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -916,6 +1099,19 @@ Are there any tests that were run/should be run to understand performance charac
 and validate the declared limits?
 -->
 
+Terminating sidecar pods add direct runtime status reads on each reconciliation.
+Pending timer retries normally occur once per second; pod updates can trigger
+additional reconciliations. This trades additional CRI reads for independence
+from stalled PLEG and stale observations after partial starts. Runtime latency
+and concurrent terminating-pod load need measurement before Beta.
+
+Each pod retains one worker timer, per-instance operation records, and bounded
+hook/stop calls. Restart backoff limits repeated failing starts; deadline expiry
+forbids further starts. Replacements still consume normal pod resources, and the
+feature does not increase pod resource limits. A runtime that ignores
+cancellation can retain server-side work beyond a client timeout; real-runtime
+fault tests must cover this limitation.
+
 ### Troubleshooting
 
 <!--
@@ -963,7 +1159,11 @@ Major milestones might include:
 
 - 2024-01-30: `Summary` and `Motivation` sections merged
 - 2024-02-08: `Proposal` section merged, KEP marked as `implementable`
-- v1.37: Alpha release (`SidecarsRestartableDuringPodTermination` feature gate, disabled by default)
+- 2026-09-07: Proposed worker reconciliation design and lifecycle regression
+  tests in [kubernetes/kubernetes#140133], targeting v1.38 Alpha. KEP lifecycle
+  review and real-node validation remain release requirements.
+
+[kubernetes/kubernetes#140133]: https://github.com/kubernetes/kubernetes/pull/140133
 
 ## Drawbacks
 
