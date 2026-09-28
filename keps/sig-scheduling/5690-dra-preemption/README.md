@@ -351,7 +351,9 @@ single scheduling cycle, `dynamicresources` records two pieces of cross-cycle st
 * **Per preemptor pod (claim nomination):** the nominated node and the simulated `AllocationResult`
   for each of the preemptor's `ResourceClaim`s on that node;
 * **Per node (`nodeName`):** the UIDs of the victim `ResourceClaim`s on that node that the
-  simulation released and that are waiting for deallocation (`Status.Allocation != nil`).
+  simulation released and that are waiting for deallocation (`Status.Allocation != nil`). Conceptually,
+  deallocating claims are tracked at the scope of each claim's `Status.Allocation.NodeSelector`; in
+  Alpha, where only node-local devices are supported, this is always a single `nodeName`.
 
 When `DefaultPreemption` actuates the winning preemption candidate in `PostFilter`, it invokes
 `NominationExtensions.AddNominatedPod` with the scheduling cycle's `CycleState`, the winning
@@ -363,7 +365,11 @@ or already terminating, not shared claims still held by a non-preempted pod) and
 allocator for `nodeName` to compute and store the preemptor's simulated `AllocationResult`s in
 `draManager`. In subsequent scheduling cycles, `PreFilterExtensions.AddPod` looks up the nominated
 pod's `AllocationResult`s from `draManager` and simulates allocating them in the current cycle's
-`CycleState`.
+`CycleState`. Likewise, when the preemptor pod itself is evaluated on its `nominatedNodeName` during
+regular scheduling (`evaluateNominatedNode`), `dynamicresources.Filter` first checks whether its
+nominated `AllocationResult`s in `draManager` are feasible against the current allocated device state
+and uses them directly, falling back to a full allocator search on the node only if those nominated
+`AllocationResult`s are no longer feasible.
 
 A nomination's lifetime is bound 1-to-1 to the pod's `nominatedNodeName` in the scheduler's
 `PodNominator`. It is created by `NominationExtensions.AddNominatedPod` and discarded by
