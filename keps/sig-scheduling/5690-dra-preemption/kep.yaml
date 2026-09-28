@@ -10,7 +10,7 @@ reviewers:
   - "@pohly"
   - "@johnbelamaric"
 approvers:
-  - "@macsko" # SIG-Scheduling
+  - "@dom4ha" # SIG-Scheduling
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
