@@ -478,6 +478,17 @@ well as the body. The CRC runs over the stored bytes, which for a `deflate` fram
 so it is checked before inflation. It protects against accidental corruption only: anyone able to write
 etcd can recompute it, and only an AEAD provider beneath this layer protects against tampering.
 
+The first 9 bytes are fixed for every algorithm id, present and future: the discriminator, the magic,
+the algorithm byte and a CRC32C over every byte of the frame except its own four. Only bytes from
+offset 9 onward are defined by the algorithm, and their layout may differ freely between ids, so a
+future algorithm that needs more header (a wider length, flags, a stronger checksum alongside the CRC)
+places it there. A reader depends on nothing past offset 9 until it recognises the algorithm id. The
+fixed prefix is what lets an older reader verify the checksum before it knows the algorithm, so a newer
+frame fails as an unsupported algorithm behind a valid checksum, which is skew, rather than as a
+checksum mismatch, which would be reported as corruption. The prefix itself is therefore permanent.
+Tools that parse raw etcd values should follow the same order: read the prefix, verify the checksum,
+and report an unknown algorithm id as unreadable rather than guess at its layout.
+
 Framing costs 9 bytes for `stored` and 10-12 for `deflate`, at worst 1.17% of a 1 KiB object and 0.005%
 of a 256 KiB one. Below roughly a kilobyte that overhead stops being negligible while the gain stops
 being worth having: a Lease at 485 bytes compresses only 1.42x, too little to repay the CPU spent on
@@ -805,6 +816,8 @@ All of the following are required for **alpha**.
   assert each is reported as corruption; then assert a frame with a valid checksum is never reported as
   corruption, whatever else is wrong with it. A read abandoned while waiting for an inflation slot
   returns a plain context error, which must not be reported as corruption either.
+- A frame from a future algorithm, with a valid checksum and a header longer than today's, is reported
+  as an unsupported algorithm and never as corruption.
 - Inertness: with no configuration file the write path frames nothing and emits no metric samples, and
   a store built with no policy still reads back values framed earlier. This has to be asserted in the
   package that assembles the transformer chain, because the mistake being guarded against is a wiring
@@ -813,6 +826,8 @@ All of the following are required for **alpha**.
 - Configuration validation.
 - Concurrency under `-race`, since the compressor and decompressor state is pooled and shared across
   requests.
+- A compress and decompress benchmark over the in-tree fixtures, and over a dataset more representative
+  of real objects if implementation adds one, which becomes the basis for any CPU figure this KEP quotes.
 
 The LIST cost correction for API Priority and Fairness is beta work, so its tests arrive with it rather
 than at alpha: the observed plaintext-to-stored factor, including that it never falls below 1.0; the
@@ -950,6 +965,9 @@ Targeted at v1.38.
 - [ ] kube-apiserver fails startup when any entry has an algorithm other than `None` and
   `--min-compatibility-version` is below 1.38. Checking min-compatibility alone suffices, since it can
   never exceed the emulated version.
+- [ ] A benchmark of compression and decompression, reporting time and allocations per operation across
+  object sizes, built with Go 1.27. It runs over the in-tree fixtures at minimum; whether it also covers
+  a dataset more representative of real objects is decided during implementation.
 - [ ] A sig-auth review covering the compressibility side channel specifically, not the KEP generally.
   The residual and its threat model are in [Risks and Mitigations](#risks-and-mitigations). The review
   decides whether that residual is acceptable at alpha, whether per-resource opt-in and the absence of
