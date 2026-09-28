@@ -1789,8 +1789,8 @@ only from an explicit tag. `ResourcePoolStatusRequest` in `v1alpha3` carries
 no such tag, so on master it has only `APILifecycleIntroduced` — no generated
 deprecation or removal release. Retiring the alpha copy is therefore a
 deliberate choice this KEP has to make rather than a schedule it inherits,
-and the promotion is where it gets made: the plan below tags `v1alpha3` as
-deprecated in 1.39, which puts removal at 1.42.
+and the promotion is where it gets made: the plan below tags `v1alpha3`
+deprecated in 1.39 and removed in 1.42, both explicitly.
 
 Concretely:
 
@@ -1817,16 +1817,19 @@ Concretely:
 
   ```
   +k8s:prerelease-lifecycle-gen:deprecated=1.39
+  +k8s:prerelease-lifecycle-gen:removed=1.42
   +k8s:prerelease-lifecycle-gen:replacement=resource.k8s.io,v1beta2,ResourcePoolStatusRequest
   ```
 
-  The `deprecated` tag is required because the generator no longer derives
-  deprecation for alpha versions, and `WarningMessage` returns early unless
-  `APILifecycleDeprecated` is non-zero — a `replacement` tag on its own would
-  generate the method but never surface a warning. With `deprecated` set,
-  `removed` is then derived as deprecated + 3 (1.42); set it explicitly if a
-  different removal release is wanted. `discovery.k8s.io/v1beta1` and
-  `authentication.k8s.io/v1beta1` are the convention to follow.
+  All three are required, because nothing is derived for an alpha version.
+  `status.go` emits `deprecated` only when `isBetaVersion || hasDeprecated`
+  and `removed` only when `isBetaVersion || hasRemoved`, so neither appears
+  without an explicit tag — the generator's `alpha type - explicit deprecated
+  only` test asserts exactly that. And `WarningMessage` returns early unless
+  `APILifecycleDeprecated` is non-zero, so a `replacement` tag on its own
+  would generate the method but never surface a warning.
+  `discovery.k8s.io/v1beta1` and `authentication.k8s.io/v1beta1` are the
+  convention to follow.
 - **Promote the gate:**
   `DRAResourcePoolStatus: {Version: "1.39", Default: false, PreRelease: Beta}`.
   It stays default-off because `resource.k8s.io/v1beta2` is itself an
@@ -2178,11 +2181,12 @@ hours.
 
 No removals in either release, and no deprecation in 1.38. The 1.39
 promotion deprecates the `v1alpha3` endpoint — the plan tags it
-`deprecated=1.39`, which puts its removal at 1.42 — but the endpoint stays
-served throughout, so 1.38 clients keep working and the deprecation surfaces
-only as an apiserver warning pointing at `v1beta2`. Note that `v1alpha3`
-carries no removal marker today: on master the kind has only
-`APILifecycleIntroduced`, and the `test/integration/etcd/data.go` entry only
+`deprecated=1.39` and `removed=1.42`, both explicitly, since neither is
+derived for an alpha version — but the endpoint stays served throughout, so
+1.38 clients keep working and the deprecation surfaces only as an apiserver
+warning pointing at `v1beta2`. Note that `v1alpha3` carries no such marker
+today: on master the kind has only `APILifecycleIntroduced`, and the
+`test/integration/etcd/data.go` entry only
 `IntroducedVersion: "1.36"`. Both the deprecation and the eventual removal
 are choices this KEP makes, not inherited schedule.
 
