@@ -551,11 +551,17 @@ New Pods with an explicit `ReadOnly` or `Writable` mount mode can be created aga
 
 ###### Are there any tests for feature enablement/disablement?
 
-Tests will verify:
+Manual testing covered:
 
-- Feature gate disabled: the apiserver drops `cgroupOptions` from new Pods and preserves it on existing Pods
-- Feature gate enabled: API accepts and kubelet processes the field correctly
-- Runtime compatibility testing with and without feature support
+- Enabling `CgroupOptions` on kube-apiserver and kubelet, then
+  creating a Pod with `cgroupOptions.mountMode: Writable`. The container had a
+  writable `/sys/fs/cgroup` mount.
+- Disabling `CgroupOptions` on kube-apiserver. New Pods lost the field, while
+  existing Pods retained it.
+- Disabling `CgroupOptions` on kubelet and restarting kubelet. Existing Pods
+  with an explicit mount mode entered `Failed`, and kubelet stopped their
+  containers.
+- Re-enabling the feature. New Pods with explicit mount modes ran again.
 
 
 
