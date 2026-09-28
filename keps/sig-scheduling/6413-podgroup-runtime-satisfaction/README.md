@@ -10,7 +10,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Story 1: an operator asks whether a replica is healthy](#story-1-an-operator-asks-whether-a-replica-is-healthy)
+    - [Story 1: a user asks whether a replica is healthy](#story-1-a-user-asks-whether-a-replica-is-healthy)
     - [Story 2: a workload controller decides whether to recreate a group](#story-2-a-workload-controller-decides-whether-to-recreate-a-group)
     - [Story 3: a disruption budget counts group replicas](#story-3-a-disruption-budget-counts-group-replicas)
     - [Story 4: a dashboard shows degraded gangs](#story-4-a-dashboard-shows-degraded-gangs)
@@ -75,13 +75,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-A gang `PodGroup` carries exactly one condition, `PodGroupInitiallyScheduled`,
-and that condition is terminal by design: once it is `True` it never reverts,
-"even if pods are subsequently evicted and group constraints are no longer
-met". Nothing else in the API reports how many members the group currently
-has. A workload controller, a disruption controller or an operator asking "is
-this gang currently intact" has no answer to read, and each one re-derives it
-from the member pods instead.
+`PodGroup` status declares two condition types. `DisruptionTarget`, from
+[KEP-5710], marks a group that is about to be terminated by a disruption such
+as preemption. `PodGroupInitiallyScheduled` reports initial placement and is
+terminal by design: once it is `True` it never reverts, "even if pods are
+subsequently evicted and group constraints are no longer met". Neither reports
+how many members the group currently has. A workload controller, a disruption
+controller or a user asking "is this gang currently intact" has no answer to
+read, and each one re-derives it from the member pods instead.
 
 This KEP adds one condition, `PodGroupSatisfied`, reporting whether the group
 currently has at least `minCount` scheduled members. It transitions in both
@@ -91,12 +92,6 @@ scheduler cache already maintains, and it changes no scheduling behavior.
 `PodGroup` already carries a `[]metav1.Condition`, so this adds no field and
 no schema change. The whole feature is a new condition value written by
 kube-scheduler behind a feature gate.
-
-A second question, whether the owner of a gang should be able to choose how
-replacement members are admitted after the group has been placed, is
-deliberately **not** part of this KEP. It is recorded under
-[Future work](#future-work-a-recovery-policy-for-gangs) with the use cases
-that motivate it, so that the observability half can land on its own.
 
 ## Motivation
 
@@ -108,7 +103,9 @@ condition transitions to True, it serves as a terminal state and will never
 revert to False, even if pods are subsequently evicted and group constraints
 are no longer met." The scheduler enforces that with an explicit guard in
 `updatePodGroupCondition` (`pkg/scheduler/schedule_one_podgroup.go`) that
-refuses to regress the condition.
+refuses to regress the condition. The other declared condition,
+`DisruptionTarget` ([KEP-5710]), describes an impending disruption, not the
+group's current membership.
 
 [KEP-4671] is explicit that this is a known gap rather than a decision against
 live status. It records, as a possible future extension, "a more robust status
@@ -136,8 +133,10 @@ one derives it wrongly.
 guards on `pendingPodsInGroup` (`pkg/controllers/pod_controller.go`), which
 treats "any member is Pending" as "the group is still starting up, do not
 interfere". Under gang scheduling, Pending is also the steady state of a group
-waiting for capacity, so one signal now carries two opposite meanings. The
-native Workload integration in [kubernetes-sigs/lws#979] additionally lists
+waiting for capacity, so one signal now carries two opposite meanings
+([kubernetes-sigs/lws#1056] works through the consequence for
+`RecreateGroupAfterStart`). The native Workload integration, LWS KEP-666
+(merged in [kubernetes-sigs/lws#979]), additionally lists
 `PodGroup.status.conditions[type=PodGroupInitiallyScheduled]` as a surface
 users inspect, and reuses a replica's `PodGroup` across a leader restart. Once
 groups are reused, that condition reads `True` for a replica whose members are
@@ -180,27 +179,38 @@ agree during the window between assume and bind.
 - Changing what `minCount` means, or how initial placement works.
 - Changing the meaning or the terminal nature of
   `PodGroupInitiallyScheduled`.
-- Workload-aware handling of planned disruption, owned by [KEP-4563] and
-  `disruptionMode`.
-- Reporting satisfaction for `CompositePodGroup` hierarchies. Alpha scopes the
-  condition to leaf `PodGroup`s; see [Open Questions](#open-questions).
+- Workload-aware handling of planned disruption, owned by `disruptionMode`
+  ([KEP-5710]) and EvictionRequest ([KEP-4563]).
 
 ## Proposal
 
 Add a condition type `PodGroupSatisfied` to `PodGroup.status.conditions`.
 
-It is `True` when the number of scheduled members, counting assumed plus
-assigned members exactly as `permitPodGroup` does, is at least the effective
-`minCount`. It is `False` otherwise. Unlike `PodGroupInitiallyScheduled` it
-transitions in both directions for the life of the group.
+It is `True` when the number of scheduled members is at least the effective
+`minCount`, and `False` otherwise. A member counts as scheduled when
+kube-scheduler has assumed it onto a node or when it is assigned to one
+(`spec.nodeName` is set). An assumed member therefore counts before the bound
+Pod, with `spec.nodeName` set, is visible through the API, so `True` does not
+mean that every member has `spec.nodeName` set. This is the same count that
+the gang plugin checks against `minCount`; see
+[Condition semantics](#condition-semantics). Unlike
+`PodGroupInitiallyScheduled` the condition transitions in both directions for
+the life of the group.
 
 The condition is observational. No scheduler decision reads it.
 
+In alpha, kube-scheduler writes the condition only for leaf `PodGroup`s, the
+objects whose members are pods. A `CompositePodGroup` ([KEP-6012]) does not
+get the condition. What satisfaction means for a hierarchy, where
+`minGroupCount` counts child groups rather than pods, is an
+[open question](#open-questions), and resolving it is a
+[beta graduation criterion](#beta).
+
 ### User Stories
 
-#### Story 1: an operator asks whether a replica is healthy
+#### Story 1: a user asks whether a replica is healthy
 
-An operator runs a tensor-parallel model as a four-pod gang. A node is
+A user runs a tensor-parallel model as a four-pod gang. A node is
 drained and one worker is evicted. Today `kubectl describe podgroup` shows
 `PodGroupInitiallyScheduled=True` and nothing else, which is the same output
 as a fully healthy group. With this KEP the group also shows
@@ -238,8 +248,11 @@ transition metric this KEP adds, makes that a single query.
   condition needs a write path outside the cycle. See
   [Where the condition is computed and written](#where-the-condition-is-computed-and-written).
 - Members leave the cache on the pod delete event, not when a deletion
-  timestamp is set, so a terminating member still counts as scheduled until
-  it is gone. The condition inherits that definition. It is stated here
+  timestamp is set. The scheduler's pod informer excludes `Succeeded` and
+  `Failed` pods, so a member that reaches a terminal phase (for example after
+  a kubelet eviction) leaves at that point, while a gracefully terminating
+  member still counts as scheduled until it is gone. The condition inherits
+  that definition. It is stated here
   because a controller that recreates groups will observe the window, and
   because any other choice would make the condition disagree with the
   admission behavior it describes.
@@ -304,15 +317,18 @@ is scheduler-only.
 
 ### Condition semantics
 
-"Scheduled" means assumed plus assigned members, the same count
-`permitPodGroup` compares against `minCount`. The effective `minCount` is the
-gang policy's value.
+"Scheduled" means assumed plus assigned members: `ScheduledPodsCount()` on the
+group's state in the scheduler cache, which the scheduler passes to the gang
+plugin's `PlacementFeasible` as `PlacementProgress.Scheduled` to compare
+against `minCount`. The effective `minCount` is the gang policy's value.
 
 | Event | Result |
 |---|---|
 | Group created, no members scheduled | Condition absent until the first transition is computed. |
 | Scheduled count reaches `minCount` | `True`, reason `MinCountSatisfied`, message `N of M members scheduled`. Written alongside `PodGroupInitiallyScheduled=True` on initial placement. |
 | A member is deleted, evicted or preempted, dropping the count below `minCount` | `False`, reason `BelowMinCount`. |
+| A member reaches the `Succeeded` or `Failed` phase | The member leaves the count when its phase changes, not when the Pod is deleted, because the scheduler's pod informer excludes terminal pods. `False`, reason `BelowMinCount`, if that drops the count below `minCount`. |
+| The Node a member is bound to is deleted | No immediate change. The condition does not react to Node events: the member keeps its `spec.nodeName` and stays in the count until the pod garbage collector (PodGC) in kube-controller-manager finds the Pod bound to a Node that no longer exists, marks it `Failed` and deletes it. The condition is then recomputed. The transition is delayed by that cleanup, and the condition does not track Node health. |
 | A replacement member is scheduled, restoring the count | `True`, reason `MinCountSatisfied`. |
 | `minCount` raised above the current count | `False`, reason `BelowMinCount`, with no pod change. |
 | `minCount` lowered to or below the current count | `True`. |
@@ -336,9 +352,10 @@ The count already exists in the scheduler cache. The work is publishing it.
 2. A status writer in the scheduler consumes pending transitions and patches
    the condition through the same strategic merge patch path
    `updatePodGroupCondition` uses. With `SchedulerAsyncAPICalls` enabled the
-   patch goes through the asynchronous API-call queue ([KEP-5229]);
-   otherwise it is issued from a dedicated goroutine, never from an informer
-   event handler.
+   patch goes through the asynchronous API-call queue ([KEP-5229]), which
+   needs a new `PodGroup` status patch call type next to today's
+   `pod_status_patch` and `pod_binding`; otherwise it is issued from a
+   dedicated goroutine, never from an informer event handler.
 3. The existing in-cycle writer sets `PodGroupSatisfied=True` alongside
    `PodGroupInitiallyScheduled=True` when a gang is first placed, so the two
    conditions appear together rather than one lagging the other.
@@ -348,21 +365,53 @@ already distinguishes assumed from assigned members. A separate controller
 listing pods would disagree with the scheduler during the assume-to-bind
 window and would duplicate the cache; see [Alternatives](#alternatives).
 
+**Clusters with more than one scheduler.** Schedulers do not all see a group's
+members the same way. An unscheduled member enters a scheduler's group state
+only if that scheduler is responsible for it (its `spec.schedulerName` matches
+one of the scheduler's profiles; `responsibleForPod` in
+`pkg/scheduler/eventhandlers.go`), and only that scheduler assumes it. An
+assigned member enters every scheduler's cache regardless of
+`spec.schedulerName`. Each scheduler therefore counts all assigned members of
+a group but only the assumed members it placed itself. Two schedulers with the
+feature gate enabled can compute different values for the same group while
+one of them has assumed members that are not yet bound, and kube-scheduler can
+count assigned members of a group that another scheduler placed.
+
+Only the scheduler responsible for a group's members writes
+`PodGroupSatisfied` for that group. [KEP-4671] requires all members of a
+group to share `spec.schedulerName`, so each group has exactly one such
+scheduler. It is the only scheduler whose count includes the group's assumed
+members, and it is the one that already writes `PodGroupInitiallyScheduled`
+for the group. A scheduler can tell whether it is responsible from any member
+it sees, because every member carries its `spec.schedulerName`. Other
+schedulers, including kube-scheduler when another scheduler handles the
+group, do not write the condition, so a group placed by a scheduler that does
+not implement this KEP has no `PodGroupSatisfied` condition. A group whose
+members name different schedulers violates [KEP-4671], and kube-scheduler
+already fails the scheduling attempt of such a group when it can see the
+mismatch; the condition is not defined for it.
+
 ### Interaction with other Workload-Aware Scheduling features
 
 - **Gang scheduling ([KEP-4671]).** No behavior change. The condition
   describes the same relation the plugin enforces, without altering it, and
   does not touch `PodGroupInitiallyScheduled`.
-- **Workload-aware preemption ([KEP-5710]).** A group preempted as a whole
-  drops below `minCount` and reports `False`. Victim selection is unchanged.
+- **Workload-aware preemption ([KEP-5710]).** KEP-5710 defines the
+  `DisruptionTarget` condition, which marks a group that is about to be
+  terminated. `PodGroupSatisfied` is complementary: it turns `False` once the
+  preempted members have actually terminated. Victim selection is unchanged.
 - **Topology-aware workload scheduling ([KEP-5732]).** Unaffected; the
   condition counts members and says nothing about placement.
-- **CompositePodGroup ([KEP-6012]).** Alpha scopes the condition to leaf
-  `PodGroup`s. `minGroupCount` raises the same runtime question one level up,
-  which this KEP does not answer.
-- **EvictionRequest ([KEP-4563]) and `disruptionMode`.** Orthogonal. Those
-  govern whether members may be disrupted; this reports what happened after
-  they were.
+- **CompositePodGroup ([KEP-6012]).** Alpha writes the condition only for leaf
+  `PodGroup`s; see [Proposal](#proposal). Users learn this from the
+  kubernetes.io feature documentation, the API reference for `PodGroup`
+  conditions and the release note, which will each state that a
+  `CompositePodGroup` does not get the condition in alpha. `minGroupCount`
+  raises the same runtime question one level up, which is an
+  [open question](#open-questions) to resolve for beta.
+- **`disruptionMode` ([KEP-5710]) and EvictionRequest ([KEP-4563]).**
+  Orthogonal. Those govern whether members may be disrupted; this reports
+  what happened after they were.
 
 ### Consumers
 
@@ -370,9 +419,10 @@ window and would duplicate the cache; see [Alternatives](#alternatives).
 |---|---|
 | LeaderWorkerSet ([kubernetes-sigs/lws#979]) | A correct source for group health, replacing inference from Pod phase, and a correction to the observability guidance that currently points at the terminal condition |
 | Multi-pod PDB ([kubernetes/enhancements#5671]) | Replaces the eviction path's own `healthy_pods >= minCount` derivation with the scheduler's own count |
+| Job ([KEP-5547]) | Loss and restoration of gang satisfaction become observable for gang Jobs, without fixing [kubernetes/kubernetes#142330], where a replacement for one index stays unschedulable after another index completes; the mitigation there is in the Job controller |
 | JobSet ([kubernetes-sigs/jobset#1253]) | A signal for the deferred "recover one failed component" work |
 | StatefulSet ([KEP-6277]) and Deployment ([KEP-6276]) integrations | Group health in status for gang-enabled sets |
-| Operators and dashboards | A direct answer to "is this gang intact", with a transition timestamp |
+| Users and dashboards | A direct answer to "is this gang intact", with a transition timestamp |
 
 ### Test Plan
 
@@ -391,7 +441,8 @@ unit and integration coverage that this KEP extends.
   updated to assigned, and removed, and when `minCount` changes in either
   direction.
 - Status writer: coalescing of same-status updates, no write without a
-  transition, no write when the gate is off.
+  transition, no write when the gate is off, and no write for a group whose
+  members name a scheduler that this one is not responsible for.
 - Condition message formatting for counts and for `minCount` changes.
 
 ##### Integration tests
@@ -426,10 +477,13 @@ unit and integration coverage that this KEP extends.
 #### Beta
 
 - Gate on by default.
-- Transition metric in place, and the write-rate measurement in the
-  scalability section confirmed on a large cluster.
+- Transition and status update metrics in place, and the write-rate
+  measurement in the scalability section confirmed on a large cluster.
 - Feedback from at least two consumers.
-- Decisions recorded on `basic` policy groups and on CompositePodGroup scope.
+- Decision recorded on `basic` policy groups.
+- Semantics for `CompositePodGroup` hierarchies resolved, including whether a
+  `CompositePodGroup` gets an equivalent condition (see
+  [Open Questions](#open-questions)), and documented for users.
 - e2e test stable.
 
 #### GA
@@ -443,15 +497,18 @@ Enabling the gate starts writing the condition for existing gang groups at the
 next transition, or on scheduler start once the informer cache syncs.
 Disabling it stops the writes; a stale `PodGroupSatisfied` condition is left
 on the object, is ignored by the scheduler, and disappears when the group is
-deleted. No object needs migration in either direction.
+deleted. A cluster administrator who does not want to wait for that may remove
+the stale condition manually through the `status` subresource. No object needs
+migration in either direction.
 
 ### Version Skew Strategy
 
-Only kube-scheduler is involved, so there is no skew between components for
-this feature. Conditions are free-form `metav1.Condition` entries, so a
-scheduler with the gate on can write the condition against an older
-kube-apiserver. Consumers that predate the KEP ignore an unknown condition
-type.
+kube-scheduler is the only component with a code or feature gate change.
+kube-apiserver is still involved, because it stores and serves the condition,
+but it needs no change for this feature: conditions are free-form
+`metav1.Condition` entries, so a scheduler with the gate on can write the
+condition against an older kube-apiserver. Consumers that predate the KEP
+ignore an unknown condition type.
 
 ## Production Readiness Review Questionnaire
 
@@ -465,7 +522,10 @@ type.
 
 ###### Does enabling the feature change any default behavior?
 
-No. The condition is additive and no scheduling decision reads it.
+Yes. With the gate enabled, gang `PodGroup`s gain a new condition,
+`PodGroupSatisfied`, in `status.conditions`, so clients that inspect
+`PodGroup` conditions observe new API state. Scheduling decisions do not
+change, because no scheduler decision reads the condition.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -505,9 +565,18 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Gang `PodGroup` objects carry a `PodGroupSatisfied` condition.
+With `scheduler_podgroup_satisfaction_transitions_total` on kube-scheduler, an
+aggregate signal across all groups. The counter increases on every write that
+changes the status of a `PodGroupSatisfied` condition, including the first
+`True` written when a gang is placed, so a non-zero, increasing value shows
+that gang `PodGroup`s are exercising the feature. Checking an individual
+`PodGroup` is covered by the next question.
 
 ###### How can someone using this feature know that it is working for their instance?
+
+Inspect the `PodGroup`. Once its scheduled members reach `minCount`, a gang
+`PodGroup` carries `PodGroupSatisfied`, and the condition's status and message
+follow the current count.
 
 - [x] API .status
   - Condition name: `PodGroupSatisfied`
@@ -520,6 +589,12 @@ processing latency, comparable to existing pod status updates.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+- [x] Metrics
+  - Metric name: `scheduler_podgroup_satisfaction_status_updates_total`, which
+    counts every `podgroups/status` patch that kube-scheduler issues to write
+    `PodGroupSatisfied`, with a `result` label of `success` or `error`
+  - [Optional] Aggregation method: ratio of `error` results to all results
+  - Components exposing the metric: kube-scheduler
 - [x] Metrics
   - Metric name: `scheduler_podgroup_satisfaction_transitions_total`
   - Components exposing the metric: kube-scheduler
@@ -593,6 +668,7 @@ transition writer.
 - 2026-09-15: Scope narrowed to the condition after discussion on
   [kubernetes/kubernetes#136334]; the recovery policy moved to future work
   with its use cases.
+- 2026-09-22: KEP PR opened, targeting alpha in v1.39.
 
 ## Drawbacks
 
@@ -634,12 +710,13 @@ explicitly out of scope above. No decision is asked for in this KEP.
 
 The question is what happens to *replacement* members after a group has been
 placed. kube-scheduler admits them only when scheduled plus newly feasible
-members reach `minCount` again, at all three enforcement points in the gang
-plugin. Koordinator does the opposite, and states it plainly in its design:
-"when once Gang has been satisfied, all subsequent resource allocations are no
-longer constrained by Gang rules, and their performance is similar to ordinary
-pod." Both behaviors ship in production, and a `PodGroup` owner cannot choose
-between them.
+members reach `minCount` again, at both enforcement points in the gang plugin
+(`PreEnqueue` and `PlacementFeasible`). [Koordinator], a Kubernetes scheduling
+and QoS project with its own gang scheduler, makes this a per-gang setting,
+and its default, `once-satisfied`, does the opposite: once a gang has been
+satisfied, later allocations for it are no longer held to the gang rule
+([Koordinator gang scheduling proposal]). kube-scheduler has one fixed rule,
+and a `PodGroup` owner cannot choose another.
 
 ### Use cases
 
@@ -668,18 +745,26 @@ the reason the current behavior must remain the default. A synchronous
 data-parallel training job makes no progress below `minCount`, and a
 replacement that lands early only occupies an accelerator while waiting.
 
-**Production evidence on both sides.** Koordinator shipped once-satisfied as
-its only behavior and tracks it with a `ResourceSatisfied` flag exposed as
-`onceResourceSatisfied` in its debug API. kube-scheduler shipped the opposite
-as its only behavior. Neither community appears to have argued the other is
-wrong, which suggests the real user set is non-empty on both sides.
+**Prior art for configurable gang satisfaction.** Koordinator's gang match
+policy is set per gang with the `gang.scheduling.koordinator.sh/match-policy`
+annotation (alias `pod-group.scheduling.sigs.k8s.io/match-policy`) on the
+member Pods or on the gang's PodGroup custom resource, and takes one of three
+values. `only-waiting` counts only members waiting at Permit.
+`waiting-and-running` also counts bound members. `once-satisfied` stops
+applying the gang rule once the gang has been satisfied, which Koordinator
+tracks per gang and exposes as `onceResourceSatisfied` in its gang debug
+endpoint. A scheduler-level `DefaultMatchPolicy`, itself defaulting to
+`once-satisfied`, applies when the annotation is absent. kube-scheduler's
+fixed rule is closest to `waiting-and-running`. A production gang scheduler
+that makes the rule configurable, and defaults to the opposite of
+kube-scheduler's, is evidence that users exist on both sides.
 
 ### Shape, if it is pursued
 
 An optional `recoveryPolicy` on the gang scheduling policy with
 `RequireMinCount` (today's behavior, the default when unset) and
 `OnceSatisfied`. Under `OnceSatisfied`, once `PodGroupInitiallyScheduled` is
-`True`, the three enforcement points skip the count relation while every other
+`True`, both enforcement points skip the count relation while every other
 constraint, including topology, still applies. Switching on the durable
 condition rather than in-memory state means a scheduler restart does not
 forget that the group was satisfied once. Initial placement is all-or-nothing
@@ -708,13 +793,18 @@ identified consumer and is not proposed.
 [KEP-4563]: /keps/sig-node/4563-eviction-request-api/README.md
 [KEP-4671]: /keps/sig-scheduling/4671-gang-scheduling/README.md
 [KEP-5229]: /keps/sig-scheduling/5229-asynchronous-api-calls-during-scheduling/README.md
+[KEP-5547]: /keps/sig-apps/5547-integrate-workload-with-job/README.md
 [KEP-5710]: /keps/sig-scheduling/5710-workload-aware-preemption/README.md
 [KEP-5732]: /keps/sig-scheduling/5732-topology-aware-workload-scheduling/README.md
 [KEP-6012]: /keps/sig-scheduling/6012-composite-podgroup-api/README.md
 [KEP-6276]: https://github.com/kubernetes/enhancements/issues/6276
 [KEP-6277]: https://github.com/kubernetes/enhancements/issues/6277
 [kubernetes/kubernetes#136334]: https://github.com/kubernetes/kubernetes/issues/136334
+[kubernetes/kubernetes#142330]: https://github.com/kubernetes/kubernetes/issues/142330
 [kubernetes/enhancements#5671]: https://github.com/kubernetes/enhancements/pull/5671
 [kubernetes/enhancements#6349]: https://github.com/kubernetes/enhancements/pull/6349
 [kubernetes-sigs/lws#979]: https://github.com/kubernetes-sigs/lws/pull/979
+[kubernetes-sigs/lws#1056]: https://github.com/kubernetes-sigs/lws/issues/1056
 [kubernetes-sigs/jobset#1253]: https://github.com/kubernetes-sigs/jobset/pull/1253
+[Koordinator]: https://github.com/koordinator-sh/koordinator
+[Koordinator gang scheduling proposal]: https://github.com/koordinator-sh/koordinator/blob/main/docs/proposals/scheduling/20220901-gang-scheduling.md

@@ -48,3 +48,4 @@ disable-supported: true
 # The following PRR answers are required at beta release
 metrics:
   - scheduler_podgroup_satisfaction_transitions_total
+  - scheduler_podgroup_satisfaction_status_updates_total
