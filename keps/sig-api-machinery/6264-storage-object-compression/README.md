@@ -191,9 +191,11 @@ scale test in the [Test Plan](#test-plan) measures database size directly and cl
 
 ### Non-Goals
 
-- Using compression to exceed the object size limit. This is enforced rather than merely declared:
-  plaintext above the per-value ceiling is never framed, so such an object fails on write exactly as
-  it does today.
+- Using compression to exceed the object size limit. etcd limits the whole request, not only the value,
+  so framing stops 64 KiB below etcd's default `--max-request-bytes` of 1.5 MiB. That headroom covers the
+  key, the transaction and the largest encryption envelope; a KMS v2 envelope alone may carry 32 KiB of
+  annotations. Any value small enough to be framed is therefore small enough to be rewritten uncompressed
+  after compression is turned off, and a larger one stays unframed and fails exactly as it does today.
 - Compressing data in flight to clients. That is HTTP content negotiation, and already exists
   (KEP-2338).
 - Hiding plaintext length. Padding into size buckets would close the compressibility side channel
@@ -241,8 +243,9 @@ flag is effectively permanent once inherited by every generic-apiserver consumer
 
 There is no feature gate. The flag is the switch: unset, nothing is compressed, and a gate would only
 add a second lock on a knob that already requires editing kube-apiserver's arguments and restarting.
-The `v1alpha1` configuration API carries the alpha stability instead, and the flag's help text carries
-the downgrade warning a gate would otherwise have implied.
+The `v1alpha1` configuration API carries the alpha stability instead. The downgrade decision is carried
+by `--min-compatibility-version`: a policy that would write frames fails startup unless that version is
+at least 1.38, the first release that reads them.
 
 `secrets` is never selected by a wildcard. Compressing Secrets requires naming the resource
 explicitly, which is a deliberate enough act to serve as the acknowledgement; doing so logs a warning
@@ -259,6 +262,12 @@ rather than at the top level, it inherits the same ordered first-match-wins rule
 wildcard can carry one threshold while a named resource ahead of it carries another. Legal values run
 from 64 bytes to just below the per-value ceiling; outside that range startup fails rather than
 silently framing nothing or everything.
+
+At beta, each entry also gains `rewrite`, which decides whether a change of policy reaches existing
+values. `Eager`, the default and the only alpha behaviour, reports a value stale whenever its stored form
+disagrees with the policy, so an update or a storage version migration rewrites it. `OnWrite` reports
+nothing stale: new writes follow the policy and existing values keep their form until something writes
+them anyway. It is the lever for changing policy without a write burst, in either direction.
 
 The threshold gates writing only, and so does the policy. A value carries its own format, so any
 apiserver of this version or newer reads any value written by any other, whatever its configuration,
@@ -421,8 +430,8 @@ reading a hex dump can at least recognise what they are looking at.
 
 ### The at-rest byte format
 
-A framed value is a 5-byte fixed header (a 4-byte magic and one algorithm byte) followed by a body
-whose shape depends on the algorithm:
+A framed value is a 9-byte fixed header (a 4-byte magic, one algorithm byte and a 4-byte checksum)
+followed by a body whose shape depends on the algorithm:
 
 ```
 offset  size  value / meaning
@@ -430,11 +439,12 @@ offset  size  value / meaning
 0       1     0x00        discriminator; no storage serializer emits it
 1       3     6b 38 73    "k8s"; structure check
 4       1     algorithm   algStored (0x00) | algDeflate (0x01)
+5       4     CRC32C      Castagnoli, little-endian, over every byte except these four
 --- algStored ---
-5       n     plaintext, verbatim                    overhead: 5 bytes
+9       n     plaintext, verbatim                    overhead: 9 bytes
 --- algDeflate ---
-5       w     declared plaintext length, LEB128 (1-3 bytes)
-5+w     m     raw DEFLATE stream (RFC 1951)          overhead: 6-8 bytes
+9       w     declared plaintext length, LEB128 (1-3 bytes)
+9+w     m     raw DEFLATE stream (RFC 1951)          overhead: 10-12 bytes
 ```
 
 The magic is `0x00` followed by the ASCII `k8s`, so a decrypted frame is recognisable in a hex dump.
@@ -463,17 +473,24 @@ new id. The level is omitted because it is a writer-side choice the decoder neve
 stream decodes without knowing how it was produced, which is also what would let a per-resource level
 be added later without a format change.
 
-Framing costs 5 bytes for `stored` and 6-8 for `deflate`, at worst 0.78% of a 1 KiB object and 0.003%
+The checksum is verified before any other byte of the frame is interpreted, so it covers the header as
+well as the body. The CRC runs over the stored bytes, which for a `deflate` frame are the compressed ones,
+so it is checked before inflation. It protects against accidental corruption only: anyone able to write
+etcd can recompute it, and only an AEAD provider beneath this layer protects against tampering.
+
+Framing costs 9 bytes for `stored` and 10-12 for `deflate`, at worst 1.17% of a 1 KiB object and 0.005%
 of a 256 KiB one. Below roughly a kilobyte that overhead stops being negligible while the gain stops
 being worth having: a Lease at 485 bytes compresses only 1.42x, too little to repay the CPU spent on
 every read and write of it, and a genuinely incompressible object would simply grow. The floor keeps the
 overhead off those objects, since they are never framed.
 
 The floor is `minSize` on the matching configuration entry, 1 KiB by default, with a hard lower bound of
-64 bytes: framing already costs 8-12% at that size, and DEFLATE on inputs that small essentially always
-expands into the verbatim frame. The *ceiling* stays a compile-time constant, deliberately, since it is
-tied to etcd's per-value limit and letting an operator raise it would manufacture objects that can be
-read but never rewritten.
+64 bytes: framing already costs 14-19% at that size, and DEFLATE on inputs that small essentially always
+expands into the verbatim frame. The ceiling is a compile-time constant at alpha, 1.5 MiB minus
+64 KiB. A cluster whose etcd runs with a smaller `--max-request-bytes` breaks that guarantee, so at beta
+the configuration carries etcd's request limit and the ceiling is derived from it. It is never set
+directly, since a ceiling above what etcd accepts uncompressed would create objects that can be read but
+never rewritten.
 
 ### The ordering of compression and encryption
 
@@ -534,7 +551,9 @@ depends on that distinction.
 The same conditions that decide whether to frame a value on write also decide, on read, whether the
 value as stored still matches what the configuration would produce. When they disagree the read reports
 the value as stale, and the storage layer rewrites it on its next update. That is the migration
-mechanism, and using one rule at both points is what makes it terminate.
+mechanism, and using one rule at both points is what makes it terminate. Under `rewrite: OnWrite`
+(beta) no read reports a value stale, so the policy never causes a rewrite and there is no migration to
+terminate: a value changes form only when a client writes it.
 
 One tempting alternative makes framing depend on whether compression actually helped: "frame only if it
 shrinks, ties go bare." That rule is perfectly well-defined and deterministic. DEFLATE at a fixed level
@@ -556,7 +575,7 @@ without its stored bytes ever changing.
 Framing on length and policy alone, with the algorithm byte recording whether compression helped,
 removes the problem. "Is it framed?" and "should it be framed?" are then answerable from the same two
 cheap facts, so the comparison is exact, and a stale value converges in exactly one rewrite. The price
-is that an incompressible object at or above the threshold grows by the frame header, 5 bytes. That is
+is that an incompressible object at or above the threshold grows by the frame header, 9 bytes. That is
 the cost of a terminating migration.
 
 Because the threshold is one of those conditions, changing it is a migration. Lowering it makes every
@@ -596,8 +615,8 @@ semaphore protects process memory rather than any one resource; and because the 
 with no configuration file at all, the derived default would still apply in that case,
 which is safe but not tunable.
 
-The memory ceiling either way is `n × (40 KiB + MaxPlaintextBytes)`, approximately `n × 1.54 MiB`, or
-~591 MiB at the effective maximum of 384, and only if every concurrent inflation is simultaneously a
+The memory ceiling either way is `n × (40 KiB + MaxPlaintextBytes)`, approximately `n × 1.48 MiB`, or
+~567 MiB at the effective maximum of 384, and only if every concurrent inflation is simultaneously a
 maximum-size object. A count is the natural unit because that is what the semaphore admits, but that
 byte figure is what an administrator should size against.
 
@@ -625,12 +644,11 @@ structured way: flipping bit *i* of ciphertext block *n* flips exactly bit *i* o
 while randomising block *n*, giving an attacker a chosen-bit-edit primitive at the cost of destroying the
 preceding block. Upstream documents `aescbc` as not recommended for this reason.
 
-For the configurations that do not authenticate, compression changes the shape of undetected
-corruption. A bit flip is more likely to be noticed, because it usually breaks either the DEFLATE stream
-or the decode that follows, but a flip that does slip through corrupts far more than one byte, since a
-wrong back-reference corrupts everything downstream of it. Whether to close that with a checksum in the
-frame is an open question for reviewers rather than a decision this KEP makes; see
-[Open Questions](#open-questions).
+For the configurations that do not authenticate, the frame's own checksum is what catches corruption.
+It detects every corruption of up to three bits at any frame size, and any corruption confined to 32
+consecutive bits. Other corruption slips through with probability about 2⁻³². Under an AEAD provider
+the checksum is redundant, since corruption fails decryption first, but the format does not vary with
+the provider beneath it.
 
 ### API Priority and Fairness, and size accounting
 
@@ -665,11 +683,14 @@ still bounds total memory, so the consequence is unfair admission rather than un
 
 ### Error classification and version skew
 
-Two read failures are deliberately not treated as corruption: an unsupported algorithm, and a malformed
-frame. The first was written by a newer apiserver and is perfectly readable by one; the second is more
-likely a bug in this layer than damaged bytes. Reporting either as a `CorruptObjError` would authorise
-deletion through `DeleteOptions.ignoreStoreReadErrorWithClusterBreakingPotential` and let an operator
-destroy an undamaged object, so neither is classified that way and the read fails outright instead.
+A read failure in this layer falls into one of three classes, decided in this order. A checksum mismatch
+means the stored bytes were damaged. It is reported as a `CorruptObjError`, so the object can be removed
+through `DeleteOptions.ignoreStoreReadErrorWithClusterBreakingPotential` exactly as KEP-3926 intends.
+An unsupported algorithm behind a valid checksum was written by a newer apiserver and is perfectly
+readable by one. A malformed frame behind a valid checksum was produced by this layer, since nothing
+else writes a leading `0x00`, so it is a bug rather than damage. Neither of the last two is reported as
+corruption, because unsafe deletion would destroy an object a correct binary can read. Those reads fail
+outright instead.
 
 One consequence is that a LIST aborts on the first such value rather than skipping it, so a single bad
 value fails the whole list.
@@ -683,12 +704,12 @@ the header would depend on a stored object's bytes, one unreadable object would 
 connection that lists it.
 
 The mitigations instead are that the alpha algorithm set is exactly `stored` and `deflate`, so the error
-is unreachable within a supported skew window, and that any future algorithm must ship read support a
-release before any release writes it.
+is unreachable within a supported skew window, and that writing any future algorithm requires
+`--min-compatibility-version` at or above the first release that reads it.
 
 ### Observability
 
-This KEP adds six ALPHA metrics. `compression_operations_total{resource,operation,outcome}`
+This KEP adds seven ALPHA metrics. `compression_operations_total{resource,operation,outcome}`
 distinguishes values compressed from values stored verbatim from values not framed at all, so an
 operator can tell whether the size floor or the policy is the reason a resource is not being compressed.
 `compression_duration_seconds{operation}` exists because compression time is otherwise invisible: no
@@ -698,6 +719,12 @@ of enabling or disabling a resource, and goes quiet once a migration converges.
 `compression_inflation_wait_seconds` records time spent waiting to acquire an inflation slot. It is
 unlabelled, matching the process-wide scope of the semaphore it measures, and it exists because
 saturation of that cap is otherwise only visible as latency with no local explanation.
+
+`apiserver_storage_compression_last_config_info{apiserver_id_hash,hash}` reports a hash of the loaded
+configuration per apiserver, the same shape as `apiserver_encryption_config_controller_last_config_info`.
+Staleness is decided per apiserver, so replicas that disagree rewrite each other's work indefinitely, and
+a migration run before they agree converges nothing. Every replica reporting one hash is the check to
+make before creating a migration.
 
 `compression_unsupported_algorithm_total{resource}` is labelled and is not pre-initialised, so a child
 series is created only on first increment. A healthy cluster carries zero series for it, which is
@@ -739,22 +766,23 @@ to implement this enhancement.
 ##### Unit tests
 
 Writing a frame is a one-way commitment, so the unit tests are organised around the properties that
-keep it safe rather than around the code that implements it. Two error sentinels carry most of the
-weight and are worth naming first: a malformed-frame error, meaning the stored bytes claim to be a frame
-but do not parse, and an unsupported-algorithm error, meaning the frame parses but names an algorithm
-this binary does not implement, which is version skew rather than damage. The read path returns no
-third kind of error, and the storage layer relies on that to decide what is not corruption.
+keep it safe rather than around the code that implements it. Three error classes carry most of the
+weight: a checksum mismatch, meaning the stored bytes were damaged; a malformed frame, meaning the
+checksum is valid but the frame does not parse; and an unsupported algorithm, meaning the frame is intact
+but names an algorithm this binary does not implement. The read path returns no fourth kind, and the
+storage layer relies on that to decide what is corruption.
 
 All of the following are required for **alpha**.
 
-- Reader totality: a table over every rejection branch, covering a truncated or wrong magic, an unknown
+- Reader totality: a table over every rejection branch, covering a truncated header, a checksum
+  mismatch, a truncated or wrong magic, an unknown
   algorithm id, a declared length of zero, above the cap and at `1<<40`, a truncated varint, a corrupt
-  stream, and a stream shorter or longer than declared. Every failure is one of the two sentinels, and
+  stream, and a stream shorter or longer than declared. Every failure is one of the three classes, and
   nothing panics.
 - Round-trip over a matrix of lengths, from empty to above the ceiling, against compressible,
   incompressible and real serialized objects.
 - A fuzz target over the reader asserting the same properties on arbitrary input: the input is never
-  mutated, every error is one of the two sentinels, the output is nil on error, and its length never
+  mutated, every error is one of the three classes, the output is nil on error, and its length never
   exceeds the ceiling. Checked in as a native Go fuzz target with a seed corpus, so the unit job
   replays it, and registered with the kubernetes OSS-Fuzz build so it also runs in the daily fuzzing
   that project already does.
@@ -764,17 +792,19 @@ All of the following are required for **alpha**.
 - Write and read agreeing: a value written under a configuration is never reported stale under that
   same configuration, and a value framed under one configuration reads back under every other. This is
   what makes a migration converge in one rewrite instead of looping.
+- Staleness from the layers beneath is never masked: a value the encryption provider reports stale is
+  reported stale whatever its framing, and a value whose framing is stale is reported stale whatever the
+  provider says.
 - Bounded allocation, asserted on bytes allocated rather than on the error alone:
   - a declared length above the ceiling is refused before anything is allocated;
   - a frame declaring a legal size but carrying a stream that inflates well past it stops at the
     declared length rather than following the stream;
   - a stream that ends early, or runs past its declaration, is refused rather than yielding a short or
     truncated object.
-- Never corruption, which has two independent guards and needs both. Neither sentinel is classified as
-  a corrupt object, so nothing invites a delete; and separately the read path refuses to hand a
-  sentinel to the unsafe-deletion flow at all, so nothing permits one. A regression in either lets an
-  operator destroy an undamaged object. A read abandoned while waiting for an inflation slot returns a
-  plain context error rather than either sentinel, so it needs the same exclusion for the same reason.
+- Corruption is recoverable and nothing else is: flip every bit of a set of frames, one at a time, and
+  assert each is reported as corruption; then assert a frame with a valid checksum is never reported as
+  corruption, whatever else is wrong with it. A read abandoned while waiting for an inflation slot
+  returns a plain context error, which must not be reported as corruption either.
 - Inertness: with no configuration file the write path frames nothing and emits no metric samples, and
   a store built with no policy still reads back values framed earlier. This has to be asserted in the
   package that assembles the transformer chain, because the mistake being guarded against is a wiring
@@ -817,18 +847,34 @@ against the same backend. All are required for **alpha**.
   bytes stay framed until something rewrites them.
 - Enable, disable and re-enable across three restarts, checking the raw framing at each step.
 - A no-op update after a policy flip changes the resource version exactly once and then stops.
-- A planted frame carrying an unknown algorithm id fails the read, is not reported as corruption, and
-  is refused by unsafe deletion. A planted frame with a lying declared length does the same through the
-  other sentinel.
+- A planted frame with a valid checksum and an unknown algorithm id fails the read, is not reported as
+  corruption, and is refused by unsafe deletion. A planted frame with a valid checksum and a lying
+  declared length does the same as a malformed frame.
 - A frame written by this release, pinned as a literal at a fixed etcd path, so that future releases
   keep proving it still decodes. This is the regression anchor for the skew rule.
 - A malformed configuration file, and a `minSize` outside its legal range, each fail startup.
+- A bit flipped in a stored frame, under `aescbc` and under no encryption, fails the read as corrupt, and
+  unsafe deletion removes the object.
+- An object whose plaintext sits just under the ceiling is compressed, then deselected and rewritten,
+  and the uncompressed rewrite succeeds against etcd at its default request limit. An object just above
+  the ceiling behaves exactly as it does with compression off.
+- A policy that compresses anything fails startup with `--min-compatibility-version` below 1.38, and
+  starts at 1.38. A policy of only `None` entries starts at any version.
+- Key rotation under compression: a compressed value written under one key reads back stale once
+  another key becomes primary, and a migration re-encrypts it while keeping it compressed.
+- Two apiservers with different configurations report different hashes, and identical ones the same.
 
-One more belongs in `test/integration/storageversionmigrator` and is a **beta** item rather than an alpha
-one, since it is what exercises the documented pre-downgrade procedure: deselect a resource, restart,
+One more belongs in `test/integration/storageversionmigrator` and is required for **alpha**, since it
+exercises the documented pre-downgrade procedure: deselect a resource, restart,
 migrate, then assert that no stored value under that resource leads with the frame discriminator and
 that the number of values scanned equals the number created, so an empty scan cannot pass. Run it in
 both directions, since the staleness rule is symmetric.
+
+At beta, with `rewrite`: switch a compressed resource to `None` with `rewrite: OnWrite`, restart, then
+assert that reads report nothing stale, a migration leaves every resource version unchanged, the raw
+bytes stay framed, and a genuine update stores the object uncompressed. Run the mirror case, enabling
+`Deflate` with `OnWrite` over uncompressed values, and a mixed fleet where both apiservers use
+`OnWrite` with different policies, asserting the rewrite counter stays quiet.
 
 `TestDefaultStorageEncoding` and `TestEtcdStoragePath` serve as the default-inertness guard for the
 whole resource surface without being modified, since both decode raw etcd values and would fail if
@@ -880,13 +926,15 @@ graduates is the configuration API, `v1alpha1` at alpha and `v1` at GA, and with
 promise the file carries.
 
 One sequencing rule is hard. Decompression is unconditional and a written frame is a permanent, one-way
-commitment, so ordering protects downgrade rather than upgrade. No release may make frame-writing
-reachable by default, and every release in which it is reachable at all must state, in the release note
-and the flag help, that opting in forfeits downgrade to the previous minor for the selected resources
-until a migration has rewritten them uncompressed. At v1.38 that warning is doing real work, because
-nothing can teach v1.37 to inflate a frame.
+commitment, so ordering protects downgrade rather than upgrade. It is enforced rather than documented:
+kube-apiserver refuses to start with a policy that would write frames unless
+`--min-compatibility-version` is at least the first release that reads them. That flag is how a cluster
+declares the oldest control plane it must stay compatible with, and raising it is already how an
+operator gives up rollback for features with compatibility implications. The flag defaults to one minor
+below the emulated version, so on v1.38 it has to be raised explicitly before anything is compressed,
+while from v1.39 the default suffices.
 
-Any new algorithm must ship read support one release before any release may write it.
+Every future algorithm records the first release that reads it, and the same check applies to it.
 
 #### Alpha
 
@@ -895,17 +943,13 @@ Targeted at v1.38.
 - [ ] The flag is unset by default; writes are reachable only with a configuration file and are disabled
   by removing it; a malformed or contradictory configuration fails startup rather than silently doing
   nothing.
-- [ ] Open question 1, whether a frame carries a checksum, is decided. It must be settled before alpha
-  ships rather than at beta, because adding integrity afterwards requires a new algorithm id and a
-  release of read-before-write skew. If the answer is a checksum, a mismatch needs a classification
-  distinct from a format error, so that it stays eligible for the unsafe-deletion flow of KEP-3926.
-- [ ] Six metrics registered at ALPHA stability, matching the metrics list in `kep.yaml`.
-- [ ] No read failure this layer introduces is reported as a corrupt object, enforced both where the
-  error is classified and where the unsafe-deletion flow reads the object, so KEP-3926 cannot be turned
-  into a way to destroy an undamaged value.
-- [ ] The release note and the flag help carry the downgrade-forfeit warning above. If open question 1
-  is decided against a checksum, they also carry the caveat that a frame's only integrity protection is
-  the encryption provider's, which means none at all under AES-CBC or with encryption disabled.
+- [ ] Every single-bit corruption of a frame, in the header or the body, is reported as a corrupt object
+  and can be removed with unsafe deletion. A frame with a valid checksum is never reported as corrupt,
+  whatever else is wrong with it.
+- [ ] Seven metrics registered at ALPHA stability, matching the metrics list in `kep.yaml`.
+- [ ] kube-apiserver fails startup when any entry has an algorithm other than `None` and
+  `--min-compatibility-version` is below 1.38. Checking min-compatibility alone suffices, since it can
+  never exceed the emulated version.
 - [ ] A sig-auth review covering the compressibility side channel specifically, not the KEP generally.
   The residual and its threat model are in [Risks and Mitigations](#risks-and-mitigations). The review
   decides whether that residual is acceptable at alpha, whether per-resource opt-in and the absence of
@@ -922,16 +966,26 @@ Targeted at v1.39.
 - [ ] Open question 2 is resolved: whether the compression level becomes per-resource. It needs no format
   change, since the level is a writer-side choice the decoder never reads.
 - [ ] The configuration shape is finalised, either promoted to a beta API version or kept at v1alpha1 with
-  a stated reason, along with the size ceiling and the inflation concurrency limit.
+  a stated reason, along with the inflation concurrency limit.
 - [ ] Raw-etcd tooling can read a frame. This is the only dependency outside kubernetes/kubernetes:
   `auger` and similar tools parse etcd values directly and fail on a frame today. Beta needs a released
   `auger` that inflates the body, and documentation of which tools read the frame at which versions.
-- [ ] A downgrade procedure documented and exercised in the migration suite: deselect the resource,
-  restart, migrate, and only then downgrade, asserting afterwards that no stored value begins with the
-  frame discriminator.
+- [ ] The downgrade procedure documented for operators: deselect the resource, restart, migrate, and
+  only then downgrade.
 - [ ] The four scale runs in the [Test Plan](#test-plan) completed and their comparisons published.
 - [ ] The LIST cost correction for API Priority and Fairness implemented and tested, so a compressed
   resource no longer lets APF under-charge etcd-delegated LISTs by its compression ratio.
+- [ ] The default `minSize` chosen from the scale runs rather than from fixtures.
+- [ ] A configurable size ceiling for clusters whose etcd runs with a non-default `--max-request-bytes`.
+  The configuration carries etcd's request limit and the ceiling is derived from it, 64 KiB below, so it
+  can never exceed what etcd accepts uncompressed.
+- [ ] A way to stop compressing new writes without rewriting existing frames. A per-entry
+  `rewrite: OnWrite`, beside the default `rewrite: Eager`, reports nothing stale in either direction, so
+  values change form only when something writes them anyway. Combined with `algorithm: None` it is a
+  back-to-safety lever that triggers no writes. Combined with `Deflate` it enables compression without
+  the one-time burst.
+- [ ] A CI job with the feature on: a kind cluster running conformance with a `*.*` policy at the
+  default `minSize`, with and without encryption at rest, modelled on the existing KMS conformance job.
 - [ ] Operator documentation for each metric stating what a non-zero value means and the action to take:
   converged, skew or tampering, or investigate rather than roll back. No ratio or byte-count metric added.
 - [ ] Feedback gathered from alpha adopters on which resources they selected, how they drove the
@@ -953,7 +1007,9 @@ because notice is useless against data already at rest.
 "Removal" can therefore only mean removing the write path (the flag, the configuration type, the
 policy and the writer), and even that requires a migration first. Removing the writer removes the
 policy, which makes every framed value stale at once and rewrites it uncompressed on its next update.
-That terminates, but as an uncontrolled amplification burst on precisely the largest resources. Removal
+Under `rewrite: Eager` that is an uncontrolled amplification burst on precisely the largest resources;
+switching every entry to `None` with `rewrite: OnWrite` first avoids it, but then only a migration under
+`Eager` removes the remaining frames before the writer goes. Removal
 would therefore be announced first, with the write path and the `None` algorithm kept for at least two
 releases and for whatever deprecation window the configuration type's stability level requires, and
 migration to uncompressed documented as a prerequisite before the writer goes.
@@ -967,6 +1023,12 @@ Upgrade is a no-op. `--storage-compression-config` is unset, so an untouched clu
 byte-identical values after the upgrade. The decompression path is present regardless but stays inert:
 it finds no frames, records no metrics, and returns every value unchanged. There is no ordering requirement among apiservers, because a read is decided by
 the stored bytes rather than by the reading apiserver's configuration.
+
+On v1.38, compressing also requires `--min-compatibility-version=1.38`, because that flag defaults to
+1.37 there, and setting it forfeits rollback below v1.38. Both it and the configuration file are
+kube-apiserver flags read at startup, so they can be set in the same restart. An upgrade that keeps a
+lower min-compatibility version, for example v1.35 to v1.38 at 1.35, starts normally without a
+configuration file and refuses to start with one that compresses anything.
 
 Enabling a resource costs a one-time write amplification. Once a resource is selected, each of its
 objects between the configured floor and the ceiling is reported stale on read, which deliberately defeats
@@ -984,7 +1046,9 @@ operator can remove the resource from the configuration, exclude it ahead of a w
 the `None` algorithm, or drop the flag. Existing frames stay on disk until
 something rewrites them: the staleness verdict flips direction and they migrate back by the same
 mechanism, at the same amplification. Disabling makes the write path unreachable while the read path
-stays active; it does not shed a frame.
+stays active; it does not shed a frame. From beta, pairing `None` with `rewrite: OnWrite` stops new
+frames without rewriting any existing one. The pre-downgrade migration still needs `rewrite: Eager`,
+since under `OnWrite` a migration finds nothing stale and rewrites nothing.
 
 Graduating changes nothing observable. The flag is the only switch at every stage, so a cluster that
 does not set it sees no difference, and no upgrade can start compressing for a cluster that merely has a
@@ -1024,12 +1088,11 @@ configuration file itself, which no earlier release can parse.
 
 Across an N/N-1 boundary, an apiserver from the previous release has no decompression path, so a frame
 reaches its decoder and fails, taking the whole LIST with it. Hence the governing rule: no apiserver
-may write a frame until every apiserver backed by the same etcd can read one. Because read and write
-support ship together in the same release, that rule is discharged by operator sequencing rather than by
-a release boundary. Upgrade every apiserver, confirm the rollout, then add the configuration file.
-Writing requires one deliberate, restart-scoped act: pointing `--storage-compression-config` at a file
-that names a resource with an algorithm other than `None`. Reverting it stops new frames from being
-written but leaves every existing frame readable, because the read path never consults the policy.
+may write a frame until every apiserver backed by the same etcd can read one. The rule is enforced
+through `--min-compatibility-version`, which every apiserver backed by the same etcd already has to agree
+on: writing a frame requires it to be at least 1.38, which is the declaration that no peer or rollback
+target is older than that. Reverting the configuration stops new frames from being written but leaves
+every existing frame readable, because the read path never consults the policy.
 
 Mixed configuration across apiservers is the case an operator can actually create. Reads are
 unaffected: the read path is installed unconditionally and decides from the stored bytes, so a frame
@@ -1041,17 +1104,19 @@ indefinitely. Each rewrite converges for the apiserver that performed it, but th
 not, so the one-time amplification burst becomes permanent. No data is lost and nothing computes the
 wrong answer; the cost is sustained and pointless write traffic. Apiservers can disagree on two axes,
 which resources are selected and what `minSize` applies to them, and both produce this same symptom.
+Under `rewrite: OnWrite` on every apiserver the disagreement costs nothing extra: no value is reported
+stale, so each write simply takes the form of whichever apiserver served it.
 
 Keep the configuration identical on every apiserver backed by the same etcd, exactly as the encryption
 configuration already requires. The file is read once per process, so disagreement comes from a partial
-rollout, or from an in-place edit that only a later restart applies to one replica. No automated
-detection is proposed; the symptom is
-`apiserver_storage_compression_rewrites_needed_total` climbing in both directions at once and never
-going quiet.
+rollout, or from an in-place edit that only a later restart applies to one replica. Detect it with
+`apiserver_storage_compression_last_config_info`: every apiserver should report the same hash. The
+symptom otherwise is `apiserver_storage_compression_rewrites_needed_total` climbing in both directions
+at once and never going quiet.
 
 An unsupported algorithm cannot be reached within any supported skew at alpha, since only two
-algorithms exist and both are readable from the first supporting release. Any future algorithm must
-ship read support one release before any release may write it. Why that error is classified as skew
+algorithms exist and both are readable from the first supporting release. Writing any future algorithm
+requires `--min-compatibility-version` at or above the first release that reads it. Why that error is classified as skew
 rather than corruption, and why GOAWAY was rejected as a response to it, are in
 [Design Details](#error-classification-and-version-skew).
 
@@ -1061,24 +1126,8 @@ resources under its own keys, with its own configuration.
 
 ### Open Questions
 
-Question 1. How should a frame's integrity be protected, if at all? The measurement in
-[What authenticates a frame](#what-authenticates-a-frame) shows that for `aescbc` and for unencrypted
-clusters, compressing raises single-bit-flip detection from 4.50% to 72.08% but raises expected
-silently-corrupted bytes per flip from 0.955 to 51.6. Four options, offered for reviewer input rather
-than decided here:
-
-- Store a CRC32 of the plaintext in the frame. That costs four bytes, taking framing overhead to 9 bytes
-  for `stored` and 10-12 for `deflate`, and roughly 1% of compression CPU. Detection goes to about 100%.
-  A mismatch would need a classification distinct from a malformed frame, because a malformed frame is a
-  bug in this layer whereas a checksum mismatch is real corruption and should stay eligible for the
-  unsafe-deletion flow of KEP-3926.
-- Use gzip rather than raw DEFLATE. That gets a CRC32 for +18 bytes with no hand-rolled integrity code.
-  Larger, but a reasonable answer if reviewers would rather not review a custom frame.
-- Document that compression should be paired with an AEAD provider. Zero cost, but it protects
-  nobody who ignores it, and since encryption at rest is opt-in this leaves the exposure in place for
-  what is likely the majority of clusters.
-- Make the checksum configurable. Not recommended: it doubles the format matrix and makes a frame's
-  meaning depend on configuration.
+Question 1, how to protect a frame's integrity, is resolved: a CRC32C in the header, checked before
+anything else; see [The at-rest byte format](#the-at-rest-byte-format).
 
 Question 2. Should the DEFLATE level become per-resource at beta? A per-resource level is a plausible
 beta addition for large-object resources, and is out of scope for alpha because the level is a
@@ -1140,7 +1189,8 @@ the flag. The read path, no, and that asymmetry is what makes rollback safe: it 
 Rolling back does not uncompress anything. Frames revert to bare values only as something rewrites them,
 at the same amplification cost as enabling. Reverting the bytes, needed only before downgrading below
 the first decompress-capable release, requires a storage version migration per resource; see
-[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy). From beta, `rewrite: OnWrite` avoids that
+cost by leaving existing frames in place.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1177,14 +1227,15 @@ so those patches changed nothing and were counted as migrated regardless. Nothin
 run cannot be repeated, because its spec and its watermark are immutable and `Succeeded` cannot be unset,
 so the run reports success over a resource left half converged.
 
-The ordering is therefore not optional: roll the configuration out to every apiserver, confirm the
-rollout, then create the migration. An operator who changes it mid-migration has to treat that run's
+The ordering is therefore not optional: roll the configuration out to every apiserver, confirm they
+all report the same configuration hash, then create the migration. An operator who changes it mid-migration has to treat that run's
 result as meaningless for the resource and create another, which is accepted and runs after the first
 with a fresh watermark.
 
 Every remaining failure lands on the control plane. A configuration mistake fails startup rather than
 degrading: a malformed file, an unknown algorithm, an unreadable path, a `minSize` outside its legal
-range, or a selector already claimed by an earlier entry. A rolling update
+range, a selector already claimed by an earlier entry, or a compressing policy with
+`--min-compatibility-version` below 1.38. A rolling update
 therefore loses one replica at a time while the rest keep serving. Applying an unvalidated file to every
 replica at once is what turns that into an outage.
 
@@ -1259,10 +1310,11 @@ write-latency SLI rather than the compression histogram decides whether a resour
     `apiserver_storage_compression_format_errors_total`,
     `apiserver_storage_compression_unsupported_algorithm_total`,
     `apiserver_storage_compression_rewrites_needed_total`,
-    `apiserver_storage_compression_inflation_wait_seconds`
+    `apiserver_storage_compression_inflation_wait_seconds`,
+    `apiserver_storage_compression_last_config_info`
   - [Optional] Aggregation method: rate by resource and outcome; p99 by operation; any non-zero total on
     either error counter; rate by resource and direction for rewrites, watched for reaching and holding
-    zero; p99 of the inflation wait
+    zero; p99 of the inflation wait; one distinct configuration hash across apiservers
   - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
 
@@ -1303,7 +1355,7 @@ No.
 
 No change in counts, and no increase in size for almost every object: stored size decreases, with ratios
 in [Measured on production data](#measured-on-production-data). A small portion grows. A selected value
-above the configured floor that does not compress is stored in a verbatim frame, so it grows by five
+above the configured floor that does not compress is stored in a verbatim frame, so it grows by nine
 bytes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -1345,16 +1397,19 @@ no value to store or retrieve. The feature adds no failure mode of its own to ei
 
 ###### What are other known failure modes?
 
-- A malformed frame: stored bytes look framed but do not decode.
+- A checksum mismatch: the stored bytes were damaged.
+  - Detection: the read fails with a corrupt-object error and
+    `apiserver_storage_compression_format_errors_total` rises.
+  - Mitigations: restore from backup, or remove the object with unsafe deletion (KEP-3926). Under an
+    AEAD provider this cannot happen, since decryption fails first.
+  - Diagnostics: the storage key is logged.
+  - Testing: a bit flipped in a stored frame under `aescbc` and under no encryption.
+- A malformed frame behind a valid checksum: a bug in this layer.
   - Detection: `apiserver_storage_compression_format_errors_total` non-zero, and the whole LIST fails.
-  - Mitigations: none. What it means depends on the provider beneath. Under an authenticated encryption
-    provider like KMS v2 the ciphertext was verified before reaching this layer, so the fault is a bug
-    here and the fix is a code fix. Under `aescbc` or with no encryption the stored bytes are genuinely
-    damaged, and the only recovery is to restore from backup. Either way the object cannot be cleared
-    with unsafe deletion, which refuses this class of error.
+  - Mitigations: a code fix. The object is undamaged, so unsafe deletion refuses it.
   - Diagnostics: which check rejected the frame is logged at high verbosity, deliberately not exposed as
     a metric label.
-  - Testing: read-path fuzzing, plus aimed corruption under an unauthenticated provider.
+  - Testing: read-path fuzzing.
 - An unsupported algorithm: a newer apiserver wrote the frame.
   - Detection: `apiserver_storage_compression_unsupported_algorithm_total`, by resource.
   - Mitigations: upgrade the lagging apiserver, correlating peer versions first. Not a rollback and not a
@@ -1404,17 +1459,18 @@ Major milestones might include:
 - CPU lands on the request goroutine for every read and write of a selected resource, including
   watch-cache initialisation, and KEP-2338 is the precedent for getting that wrong. Enabling a resource
   also costs a one-time write-amplification burst, and an incompressible object above the floor grows by
-  five bytes for good.
+  nine bytes for good.
 
 ## Alternatives
 
 - Compressing anywhere other than inside the transformer chain: in etcd, in its storage engine, in the
   filesystem, or above the chain. All yield a ratio near 1.0 for the motivating case, since everything
   outside the chain sees only ciphertext.
-- gzip rather than raw DEFLATE. The same algorithm plus a checksum, for 18 bytes and no hand-rolled
-  integrity code, and still live under [Open Questions](#open-questions). Raw DEFLATE is the alpha choice
-  because the frame already carries a discriminator and a declared length, so only gzip's trailer would
-  add anything.
+- gzip, or any other checksum over the plaintext. A plaintext checksum is verified only after
+  inflation, so a flipped bit in the stream still surfaces as a malformed frame, which cannot be told
+  apart from a bug. Among checksums over the stored bytes, CRC32 IEEE and CRC32C both have hardware
+  support on modern CPUs, and CRC32C has the better detection guarantees. Adler-32, CRC64 and FNV have
+  no hardware support and run as pure Go, and xxHash would add a direct third-party dependency.
 - A compression dictionary shared across objects. The obvious way to help objects near the floor, and
   permanently rejected: shared state across values creates the cross-object oracle that
   [Risks and Mitigations](#risks-and-mitigations) relies on being impossible.
