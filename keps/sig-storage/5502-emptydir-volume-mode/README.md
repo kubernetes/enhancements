@@ -21,7 +21,7 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (target 1.37)](#alpha-target-137)
+    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -197,19 +197,11 @@ No prerequisite testing updates are required.
 
 ##### Unit tests
 
-Unit tests will cover:
-- Directory creation with `mode: 0750` results in mode `0750`
-- Directory creation with `mode: 01777` results in mode `01777`
-- Directory creation without `mode` defaults to `0777`
-- Mode is applied correctly for all emptyDir medium types (default, tmpfs, hugepages)
-- Validation rejects values outside `0000`-`01777`
-- Feature gate drop test: `mode` is stripped when the gate is disabled, preserved when enabled
-- Windows: setting `mode` does not cause an error (logs a warning, creates directory with default ACLs)
+Added in [kubernetes/kubernetes#140244](https://github.com/kubernetes/kubernetes/pull/140244):
 
-Coverage targets:
-- `pkg/volume/emptydir`
-- `pkg/apis/core/validation`
-- `pkg/api/pod`
+- [`pkg/volume/emptydir/empty_dir_test.go`](https://github.com/kubernetes/kubernetes/blob/a669441811304e23805e74690a8630f798688ef7/pkg/volume/emptydir/empty_dir_test.go): `TestEmptyDirVolumeMode`, `TestEmptyDirVolumeModeFeatureGateDisabled`
+- [`pkg/apis/core/validation/validation_test.go`](https://github.com/kubernetes/kubernetes/blob/a669441811304e23805e74690a8630f798688ef7/pkg/apis/core/validation/validation_test.go): `TestValidateEmptyDirVolumeMode`
+- [`pkg/api/pod/util_test.go`](https://github.com/kubernetes/kubernetes/blob/a669441811304e23805e74690a8630f798688ef7/pkg/api/pod/util_test.go): `TestDropEmptyDirVolumeMode`
 
 ##### Integration tests
 
@@ -217,14 +209,18 @@ No integration tests are planned. The feature is a simple permission change at d
 
 ##### e2e tests
 
-`e2e_node` tests will verify:
+Added in [a669441](https://github.com/kubernetes/kubernetes/blob/a669441811304e23805e74690a8630f798688ef7/test/e2e/common/storage/empty_dir.go),
+running continuously in CI on
+[TestGrid (kind-master-alpha-beta-features)](https://testgrid.k8s.io/sig-release-master-informing#kind-master-alpha-beta-features)
+(filter for `EmptyDirVolumeMode`):
+
 - A pod with emptyDir `mode: 0750` has the correct permissions (verified via `stat`)
 - A pod with emptyDir `mode: 01777` has the correct permissions including the sticky bit
 - Default behavior is preserved when `mode` is not set
 
 ### Graduation Criteria
 
-#### Alpha (target 1.37)
+#### Alpha
 
 - Feature implemented behind `EmptyDirVolumeMode` feature gate (disabled by default)
 - Kubelet applies `mode` when creating emptyDir volumes
@@ -296,11 +292,19 @@ Running workloads are not affected. The feature is opt-in, so only pods that exp
 
 ###### What specific metrics should inform a rollback?
 
-Increased pod startup failures or volume mount errors correlated with pods using the `mode` field.
+A spike in `volume_mount` failures in the `storage_operation_duration_seconds` kubelet metric for pods that set `mode`, or an increase in pod startup failures correlated with pods using the field.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be tested manually before beta.
+Yes. The upgrade->downgrade->upgrade path was manually tested using local-up cluster with CRI-O as the container runtime.
+
+**Gate ON - upgrade:** Deployed pods with emptyDir `mode: 0750`, `mode: 01777`, and a pod without `mode`. Verified: (1) `mode` is preserved in the pod spec via the API server, (2) `stat` shows `750` and `1777` on the respective mount paths, (3) the pod without `mode` gets the default `777`.
+
+**Gate OFF - downgrade:** Restarted the cluster with `EmptyDirVolumeMode=false`. Deployed a new pod with `mode: 0750`. Verified: (1) `mode` is stripped from the pod spec by the API server (field dropping), (2) `stat` shows `777` (default behavior restored).
+
+**Gate ON - re-upgrade:** Restarted the cluster with `EmptyDirVolumeMode=true`. Deployed a new pod with `mode: 0750`. Verified: (1) `mode` is preserved again, (2) `stat` shows `750`. Feature works correctly after being disabled and re-enabled.
+
+Unit tests (`TestDropEmptyDirVolumeMode` in `pkg/api/pod`) also verify that `mode` is stripped when the gate is disabled and preserved when enabled or when the field is already persisted on an existing pod.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -390,6 +394,7 @@ Check if affected pods use the `mode` field and review kubelet logs for errors.
 - 2025-08-25: KEP issue created (kubernetes/enhancements#5502)
 - 2026-01-30: Initial KEP draft with boolean `stickyBit` field
 - 2026-06-15: KEP redesigned to use `mode *int32` field, targeting alpha in v1.37
+- 2026-09-28: KEP updated for beta promotion targeting v1.38
 
 ## Drawbacks
 
