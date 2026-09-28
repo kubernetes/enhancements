@@ -67,7 +67,7 @@
 - [Alternatives](#alternatives)
   - [Fallback to pod-by-pod scheduling](#fallback-to-pod-by-pod-scheduling)
   - [Bring-your-own Workload](#bring-your-own-workload)
-  - [Reference-based discovery of the delegated PodGroup](#reference-based-discovery-of-the-delegated-podgroup)
+  - [Reference-based PodGroup discovery](#reference-based-podgroup-discovery)
   - [Deleting the Workload on suspend](#deleting-the-workload-on-suspend)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -216,12 +216,8 @@ always links to a `Workload` via a `PodGroupTemplate`:
 - Jobs created by `CronJob` are standalone (no parent-workload `OwnerReference`); the Job controller
   creates one `Workload` and one `PodGroup` per Job for them based on each Job's `spec.scheduling`.
 - Discovery and lifecycle are separate: 
-  * A root Job discovers its objects through API references (`Workload.spec.controllerRef`, 
-  `PodGroup.spec.podGroupTemplateRef`), which are unique per Job because the Job owns 
-  the `Workload`. 
-  * A delegated Job discovers the external `Workload` through `spec.controllerRef` and its own 
-  `PodGroup` by a deterministic name derived from the Job, since sibling Jobs sharing 
-  a template have identical references. 
+  * In every mode, the `Workload` is discovered through `spec.controllerRef` and the `PodGroup`
+  by a name derived from the Job, since sibling Jobs sharing a template have identical references.
   * ownerReferences govern garbage collection only and play no part in discovery. 
   * The controller mutates or deletes an object only when its controller `ownerReference` is 
   the Job.
@@ -530,9 +526,9 @@ outcome matches a standard Job, while a `Basic` `Workload`/`PodGroup` is still m
   [Suspend and Resume](#suspend-and-resume).
 
 - **Job blocked on unsupported scheduling objects.** The controller cannot safely determine which
-  scheduling constraints to apply when a root Job finds more than one `Workload` or `PodGroup`
-  referencing it, when a `Workload` has an unsupported shape, or when the object at a delegated
-  Job's deterministic `PodGroup` name does not reference the selected template. This can result
+  scheduling constraints to apply when a root Job finds more than one `Workload` referencing it,
+  when a `Workload` has an unsupported shape, or when the object at the Job's `PodGroup` name does
+  not reference the selected template. This can result
   from a change to controller-owned objects, a name collision, or a bug in a higher-level
   controller. The Job should not run in this case and must wait until the issue is resolved.
   * *Mitigation:* the controller blocks new pod creation and reports the problem through a
@@ -736,11 +732,10 @@ The scheduling reconcile path is invoked from the Job reconcile loop, gated on t
 management mode and lifecycle phase, as described in [Controller Workflow](#controller-workflow).
 The integration is designed to be idempotent and crash-safe:
 
-- **Discovery first:** the controller looks up an existing `Workload`/`PodGroup` before compiling, 
-  either via `spec.controllerRef` / `spec.podGroupTemplateRef` for a root Job or by deterministic 
-  name for a delegated `PodGroup`. A restart between creating the `Workload` and the `PodGroup` 
-  therefore does not produce duplicates, and a create that races with informer lag fails with 
-  `AlreadyExists` and is retried against the now-visible object.
+- **Discovery first:** the controller looks up an existing `Workload`/`PodGroup` before compiling. 
+  A restart between creating the `Workload` and the `PodGroup` therefore does not produce 
+  duplicates, and a create that races with informer lag fails with `AlreadyExists` and is 
+  retried against the now-visible object.
 - **Ordering:** `Workload` is created (or found) before the `PodGroup`, and both before pods, so
   references always resolve.
 - **Invalid `spec.scheduling`:** a compilation error from `BuildWorkload` is terminal for that spec.
@@ -804,10 +799,9 @@ flowchart TD
 
 #### Workload/PodGroup Management and Discovery
 
-Discovery follows spec fields from the scheduling objects back to the Job, except for the
-delegated `PodGroup`, which is found by name. It never uses `ownerReferences`, because a
-higher-level controller may create objects before the Job exists. `ownerReferences` only govern
-garbage collection and whether the Job controller may mutate or delete an object.
+In every mode, the `PodGroup` by name. Discovery never uses `ownerReferences`, because 
+a higher-level controller may create objects before the Job exists. `ownerReferences` 
+only govern garbage collection and whether the Job controller may mutate or delete an object.
 
 A `Workload` is considered the Workload for this Job object if:
 - it is in the Job's namespace
@@ -817,18 +811,17 @@ A `Workload` is considered the Workload for this Job object if:
 
 A `PodGroup` is considered the `PodGroup` for this Job if:
 - it is in the Job's namespace
-- in `manageBoth`, its `spec.podGroupTemplateRef` names the Job-owned `Workload` and template,
-  which no other Job can reference.
-- in `managePodGroupOnly`, its name is `GeneratePodGroupName(workloadName, templateName, job.UID)`.
-  Sibling Jobs selecting the same template (e.g. JobSet `ReplicatedJob` replicas) have identical
-  `spec.podGroupTemplateRef`s, so only the name tells them apart.
+- its name is `GeneratePodGroupName(workloadName, templateName, job.UID)`, see
+  [Naming Conventions](#naming-conventions). Sibling Jobs selecting the same template (e.g.
+  JobSet `ReplicatedJob` replicas) have identical `spec.podGroupTemplateRef`s, so only the name
+  tells them apart.
 
 The Job is blocked with `UnsupportedWorkloadStructure` if:
-- a root Job matches more than one `Workload` or `PodGroup`
+- a root Job matches more than one `Workload`
 - a root Job's `Workload` does not have exactly one template
-- in `manageBoth`, the matching `Workload` is an external one and the Job has no
-  `scheduling.k8s.io/group-template-name` annotation, or
-- a delegated Job's `PodGroup` name is taken by an object referencing a different template
+- in `manageBoth`, the matching `Workload` is not the one the Job controller creates for this Job,
+  i.e. its name differs from the Job's `Workload` name
+- the Job's `PodGroup` name does not reference the selected `Workload` and template
 
 The Job is blocked and retried with `WorkloadNotFound` or `PodGroupTemplateNotFound` while the
 external `Workload`, or the template named by `scheduling.k8s.io/group-template-name` in it, does
@@ -855,32 +848,31 @@ The controller discovers or creates `Workload` and `PodGroup` as follows:
 1. Determine the management mode:
    - In `manageNone`, the controller stops here and pods keep whatever `schedulingGroup` the pod
    template carries.
-   - In `managePodGroupOnly` (skip steps 3 and 4), the `Workload` is external and is never
-   adopted, recompiled, mutated, or deleted. If it or the named template does not exist yet, the
-   controller sets `SchedulingBlocked=True` and retries, and the creation window stays open.
+   - In `managePodGroupOnly` (skip step 4), the `Workload` is external and is never created, adopted,
+   recompiled, mutated, or deleted.
 2. If the Job already has pods (active or terminal pods owned by this Job), skip creation and only
    discover existing objects.
-3. Look up existing `Workload`(s) whose `spec.controllerRef` points to this Job.
-   - If none found, compile a `Workload` from the Job's `spec.scheduling` and create it with a
-   controller `ownerReference` and `spec.controllerRef` pointing to this Job.
-   - If more than one, or if the only one does not have exactly one `PodGroupTemplate`, block
-   (`UnsupportedWorkloadStructure`).
-   - If exactly one, that is the `Workload` for this Job. Its `ownerReferences` are not changed.
+3. Look up the `Workload`: 
+   - If none found in `manageBoth` compile a `Workload` from the Job's `spec.scheduling` and
+   create it with a controller `ownerReference` and `spec.controllerRef` pointing to this Job. 
+   - In `managePodGroupOnly`, select the template named by the annotation. If none found set 
+   `SchedulingBlocked=True` (reason `PodGroupTemplateNotFound`) and retry.
+   - If one of the `UnsupportedWorkloadStructure` cases above applies, block.
+   - Otherwise, that is the `Workload` for this Job. Its `ownerReferences` are not changed.
 4. When creating a new `Workload`, the controller derives the scheduling policy from the Job's
    `spec.scheduling` rather than from the Job's type. It maps `spec.scheduling` into the
    `workloadbuilder` library, which applies the defaulting rules (defaulting to `Basic`, defaulting
    `Gang.minCount` to `parallelism`) and compiles the `Workload`. This happens for every eligible
    Job, including those that default to `Basic`.
-5. Look up the `PodGroup` for the target `PodGroupTemplate` per the discovery rules above (by
-   `spec.podGroupTemplateRef` in `manageBoth`, by deterministic name in `managePodGroupOnly`).
+5. Look up the `PodGroup` for the target `PodGroupTemplate` by name.
    - If none found, instantiate a `PodGroup` from that `Workload` and template and create it under
-   its deterministic name with a controller `ownerReference` to the `Job` in both modes. When the
+   that name with a controller `ownerReference` to the `Job`. When the
    `scheduling.k8s.io/parent-compositepodgroup` annotation is present, link it to that parent
    `CompositePodGroup` instance. An `AlreadyExists` error (informer lag) requeues the Job and the
    next sync finds the object.
-   - If more than one (`manageBoth`), or if the object at the deterministic name references a
-   different `Workload` or template (`managePodGroupOnly`), block (`UnsupportedWorkloadStructure`).
-   - If exactly one, that is the `PodGroup` for this Job. Its `ownerReferences` are not changed.
+   - If the object at that name does not reference the selected `Workload` and template, block
+   (`UnsupportedWorkloadStructure`).
+   - Otherwise, that is the `PodGroup` for this Job. Its `ownerReferences` are not changed.
    `gang.minCount` is reconciled only when the Job is the controller owner, which is the case for
    every `PodGroup` the Job controller created.
 6. Execute the existing pod-management logic to create pods, including `schedulingGroup.podGroupName`
@@ -1128,10 +1120,10 @@ by setting `spec.template.spec.schedulingGroup.podGroupName`. In this case the c
 
 ### Naming Conventions
 
-Names are derived deterministically from the Job. For a root Job they are for human readability
-and logical linking only, since discovery uses API references. For a delegated Job the `PodGroup`
-name is how the controller discovers it, so that pattern cannot change in later releases without
-orphaning existing `PodGroup`s.
+Names are derived deterministically from the Job. The `PodGroup` name is how the controller
+discovers the `PodGroup` in every mode, and a root Job's `Workload` name tells the `Workload` the
+controller created apart from a pre-created one. Neither pattern can change in later releases
+without orphaning existing objects.
 
 Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blob/f42571572d241a2cdeffa3962c0ccf1f59180113/pkg/controller/deployment/sync.go#L560-L568), the naming convention is as follows:
 
@@ -1149,8 +1141,8 @@ Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blo
     get one `PodGroup` each. The parent is not part of the name, because the name describes which
     Job the object serves, not who owns the `Workload`.
   - The controller creates a single `PodGroup` per Job at a time. Recreating it from the same
-    Workload and template can reuse the deterministic name after the old object is gone. The new
-    API object is distinguished by its UID.
+    Workload and template can reuse the name after the old object is gone. The new API object is 
+    distinguished by its UID.
   - This replaces the alpha `GeneratePodGroupName(workloadName, templateName)`, which had no Job
     identity.
 
@@ -1229,8 +1221,10 @@ to implement this enhancement.
   - Shared delegated template: two sibling Jobs whose annotations name the same `PodGroupTemplate`
     each create and own their own `PodGroup`. Deleting one sibling deletes only its `PodGroup`, and
     a `gang.minCount` change on the template is synced onto both.
-  - Delegated `PodGroup` name collision: an unrelated `PodGroup` at the Job's deterministic name
-    blocks with `UnsupportedWorkloadStructure` until it is removed.
+  - `PodGroup` name collision: an unrelated `PodGroup` at the Job's `PodGroup` name blocks with
+    `UnsupportedWorkloadStructure` until it is removed, for both root and delegated Jobs.
+  - Pre-created `Workload` without the annotation: a root Job whose `spec.controllerRef` match has
+    a different name than the Job's `Workload` name blocks with `UnsupportedWorkloadStructure`.
   - Missing delegated dependency: a delegated Job whose external `Workload` or named
     `PodGroupTemplate` does not exist yet gets `SchedulingBlocked=True` (reason `WorkloadNotFound` /
     `PodGroupTemplateNotFound`) and no pods, also while suspended.
@@ -1247,7 +1241,7 @@ to implement this enhancement.
     Jobs with the same name but different UIDs.
   - Discovery and management are independent: a `PodGroup` is discovered regardless of its
     ownerReferences, but is mutated or deleted only if its controller ownerReference is the Job.
-  - Ambiguity and drift: two or more `Workload`s (or `PodGroup`s) matching the discovery rules for one Job,
+  - Ambiguity and drift: two or more `Workload`s matching the discovery rules for one Job,
     or a controller-owned `Workload` whose `PodGroupTemplates` count is not 1. Repairing the objects
     clears the condition and pod creation resumes with `schedulingGroup`.
   - Suspend/resume: the `PodGroup` delete is issued in the suspend sync and the `Workload` is
@@ -1357,8 +1351,8 @@ The second alpha replaced the automatic model with the user-facing API:
   repaired.
 - Missing delegated `Workload` and `PodGroupTemplate` dependencies are retried without closing
   the PodGroup creation window or creating ungrouped pods.
-- Scheduling objects are discovered by spec references, except the delegated `PodGroup`, which is
-  discovered by deterministic name. Every `PodGroup` the controller creates is owned by the Job.
+- The `Workload` is discovered by `spec.controllerRef` and the `PodGroup` by name, in every mode.
+  Every `PodGroup` the controller creates is owned by the Job.
 - Validation rejects `spec.scheduling` if it is set together with `spec.template.spec.schedulingGroup`,
   on create and on update, unless the old object already had both.
 - Re-enabling the gate never produces a half-grouped gang (`MixedSchedulingGroup`).
@@ -1394,6 +1388,10 @@ that has not started gets a `Workload`/`PodGroup` compiled from its `spec.schedu
 to `Basic`). Jobs that already started before the upgrade are left alone. Operators who do not want
 the scheduling objects can set `WorkloadWithJob=false` on kube-apiserver and kube-controller-manager;
 disabling `GenericWorkload` requires disabling `WorkloadWithJob` as well.
+
+The v1.37 `PodGroup` name has no Job identity (`<workload>-<template>`), so a Job that already has
+pods may not find its existing `PodGroup` after the upgrade, and its replacement pods are created
+without `schedulingGroup`. In-flight gang Jobs should finish or be recreated before upgrading.
 
 Clusters upgrading from the v1.36 alpha should note that indexed fully-parallel Jobs are no longer
 gang-scheduled automatically; since v1.37 gang scheduling requires `spec.scheduling.schedulingPolicy.gang`.
@@ -1712,8 +1710,9 @@ recovers, the same as for pod creation. Running pods are unaffected.
 - 2026-09-10: KEP updated for Beta (v1.38).
 - 2026-09-18: Beta design clarified blocking on invalid scheduling objects, retry-safe suspend/resume, 
 BYO clarification, and delayed delegated dependencies.
-- 2026-09-25: Delegated `PodGroup` discovered by deterministic name and controller-owned by the
-Job, so sibling Jobs sharing a `PodGroupTemplate` get one `PodGroup` each.
+- 2026-09-25: Delegated `PodGroup` discovered by name and controller-owned by the Job,
+- 2026-09-28: `PodGroup` discovered by name in every mode, so sibling Jobs sharing a 
+`PodGroupTemplate` get one `PodGroup` each.
 
 ## Drawbacks
 
@@ -1748,7 +1747,7 @@ continues to govern mutation and deletion. This is the supported BYO `Workload` 
 This is not a new entry point, the annotation path is the one [KEP-6089] already defines and the
 Job controller already honors, and no additional BYOW mechanism is planned.
 
-### Reference-based discovery of the delegated PodGroup
+### Reference-based PodGroup discovery
 
 The alpha discovered every `PodGroup` through `spec.podGroupTemplateRef` and a controller
 `ownerReference` to the Job. Two variants were rejected during the Beta review.
@@ -1760,8 +1759,8 @@ The alpha discovered every `PodGroup` through `spec.podGroupTemplateRef` and a c
   to form its own gang.
 
 A name derived from the Job is unique per Job and available before any object exists. Root Jobs
-keep reference-based discovery because they own the `Workload`, so their references are already
-unique.
+could keep reference-based discovery, since they own the `Workload`, but one rule for every mode
+is simpler and has fewer conditional paths.
 
 ### Deleting the Workload on suspend
 
