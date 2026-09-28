@@ -22,7 +22,7 @@
       - [Implementation Details](#implementation-details-1)
       - [Notes for implementation](#notes-for-implementation)
   - [Instrumentation](#instrumentation)
-    - [New Metrics (Pod-Level Specific)](#new-metrics-pod-level-specific)
+    - [New Metrics](#new-metrics)
     - [Extended Metrics (From KEP-1287)](#extended-metrics-from-kep-1287)
     - [Standardized Boolean Labels](#standardized-boolean-labels)
   - [Test Plan](#test-plan)
@@ -337,9 +337,8 @@ To accurately track actual pod-level resources during in-place pod resizing, sev
 changes are required that are analogous to the changes made for container-level
 in-place resizing:
 
-1. Configuration reading: In Alpha stage of
-   `InPlacePodLevelResourcesVerticalScaling`, re-read Pod-level resource config
-   in each sync loop. 
+1. Configuration reading: Re-read Pod-level resource config from cgroups in each
+   sync loop.
    
 2. Pod Status Update: Because the pod status is updated before the resize takes
    effect, the status will not immediately reflect the new resource values.  If a
@@ -349,33 +348,11 @@ in-place resizing:
    be explicitly triggered to update the pod status with the new resource
    allocation.
 
-3. [Scoped for Beta] Caching: Actual pod resource data may be cached in memory. This
-   cache, if implemented, must be refreshed after each successful pod resize or for
-   every cache-miss to ensure that subsequent reads by the kubelet retrieve the
-   latest information. The need for and implementation of this caching mechanism
-   will be evaluated in the beta phase. Performance benchmarking will be conducted
-   to determine if caching is required and, if so, what caching strategy is most
-   appropriate.
-
 #### Node Swap Support
 
-As defined in [KEP-2837 (Node Swap Support)](../2837-pod-level-resource-spec/README.md#node-swap-support), when `MemorySwap.SwapBehavior` is set to `LimitedSwap` on Linux nodes with cgroup v2:
+Consistent with [KEP-1287 (Swap)](../1287-in-place-update-pod-resources/README.md#swap), when swap is enabled and configured (`MemorySwap.SwapBehavior: LimitedSwap`), burstable pods and containers are allocated swap based on their memory requests (as defined in [KEP-2837 (Node Swap Support)](../2837-pod-level-resource-spec/README.md#node-swap-support)). Because in-place resizing of swap is not currently supported, resizing memory requests for pods or containers with swap enabled is forbidden for now and will be surfaced as resizes being marked `Infeasible` (`reason_detail="swap_limitation"`).
 
-* **Pod Cgroup `memory.swap.max`:** For an eligible `Burstable` pod (`PodMemoryRequest > 0` and `PodMemoryRequest != PodMemoryLimit`), the kubelet configures the pod's total swap budget on the Pod cgroup proportional to `PodMemoryRequest`:
-  ```
-  PodSwapLimit = (PodMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable
-  ```
-  If `PodMemoryRequest == PodMemoryLimit`, the pod is ineligible for swap and `memory.swap.max` is set to `0` (`NoSwap`) on both the Pod cgroup and all container cgroups.
-* **Container Cgroup `memory.swap.max` Inside an Eligible Pod:**
-  * Containers with neither `requests.memory` nor `limits.memory` set have `memory.swap.max` set to **`max`** when `pod.spec.resources.requests.memory` is set (bounded by the parent Pod cgroup's `PodSwapLimit`), or `0` (`NoSwap`) when pod-level memory resources are not set.
-  * Containers with `requests.memory < limits.memory` (or only `requests.memory` set) have `memory.swap.max` set proportional to `ContainerMemoryRequest` (hierarchically bounded by `PodSwapLimit`).
-  * Containers with `requests.memory == limits.memory` (explicit or defaulted when only `limits.memory` is set) have `memory.swap.max = 0` (`NoSwap`).
-
-This KEP does not introduce new swap resize policies or semantics; instead, it follows the **existing container-level IPPR swap behavior from [KEP-1287](../1287-in-place-update-pod-resources/README.md#swap)**:
-
-* **Rejected as `Infeasible` without `RestartContainer`:** Today, IPPR does not support live in-place resizing of swap (`memory.swap.max`) without restarting affected swappable containers. Any resize to `pod.spec.resources` or `container.resources` that changes swap allocation (or flips swap eligibility between `LimitedSwap` and `NoSwap`) when any affected swappable container specifies `resizePolicy: NotRequired` (the default) for `memory` is rejected by the Kubelet as **`Infeasible`** (`PodResizePending` with `Reason: Infeasible`, incrementing `kubelet_pod_infeasible_resizes_total{reason_detail="swap_limitation"}`).
-* **Admitted with `RestartContainer`:** When all affected swappable containers specify `resizePolicy: RestartContainer` for `memory`, the resize is admitted, the affected swappable containers are restarted, and the Pod and container `memory.swap.max` values are updated.
-* **No-op Swap Resizes:** Resizes that leave swap allocations unchanged—such as CPU-only resizes, resizes affecting only `NoSwap` containers (`requests.memory == limits.memory`), or memory limit changes where `PodMemoryRequest != PodMemoryLimit` and container `request != limit` continue to hold—proceed in-place without requiring a restart for swap.
+When the restriction on resizing containers with swap is relaxed in the future, pod-level resources will be included.
 
 #### Surfacing Pod Resource Requirements
 
@@ -483,20 +460,21 @@ providing a single place to update the pod resource calculation.
 
 ### Instrumentation
 
-The Kubelet will record the following metrics. These are categorized by whether they are new additions for Pod-level resources or existing metrics (from KEP-1287) that have been extended.
+The Kubelet will record the following metrics. These are categorized by whether they are new additions or existing metrics (from KEP-1287) that have been extended.
 
-#### New Metrics (Pod-Level Specific)
+#### New Metrics
 
 * **`kubelet_pod_requested_resizes_total`** *(Counter)*
-  * *Description:* Tracks the cumulative number of requested resizes at the pod level (`pod.spec.resources`). Analogous to `kubelet_container_requested_resizes_total`, each resource/requirement change in a single resize request is counted separately (e.g., a single resize modifying both CPU and memory requests and limits increments this counter 4 times).
+  * *Description:* Tracks the cumulative number of requested resizes, counted at the pod level (`pod.spec.resources`) or container level (`pod.spec.containers[*].resources` / `pod.spec.initContainers[*].resources`), distinguished by the `level` label. Each resource/requirement change in a single resize request is counted separately (e.g., a single pod-level resize modifying both CPU and memory requests and limits increments this counter 4 times with `level="pod"`). This metric supersedes `kubelet_container_requested_resizes_total` (which is deprecated and will be removed following the standard Kubernetes metric deprecation policy).
   * *Labels:*
+    * `level`: `pod` | `container`
     * `resource`: `cpu` | `memory`
     * `requirement`: `requests` | `limits`
     * `operation`: `add` | `remove` | `increase` | `decrease`
 
 #### Extended Metrics (From KEP-1287)
 
-The following existing pod-level resize metrics from KEP-1287 (`pkg/kubelet/metrics/metrics.go`) are extended with two orthogonal boolean labels so operators can distinguish container-level, pod-level, or combined (`true` + `true`) resizes:
+The following existing pod-level resize metrics from KEP-1287 (`pkg/kubelet/metrics/metrics.go`) are extended with two independent boolean labels (`container_resources` and `pod_resources`) so operators can distinguish container-only, pod-only, or mixed (`true` + `true`) resizes:
 
 1. **`kubelet_pod_resize_duration_milliseconds`** *(Histogram)*
    * *Description:* Tracks the duration in milliseconds of `doPodResizeAction` for actuating resizes.
@@ -528,14 +506,14 @@ The following existing pod-level resize metrics from KEP-1287 (`pkg/kubelet/metr
    * *Existing Labels:* `resolution` (`accepted` | `reverted` | `terminated`), `priority_bucket` (`system-critical` | `high` | `medium` | `normal` | `low` | `very-low` | `unknown`)
    * *Extended Labels:* `container_resources`, `pod_resources`
 
-*Note:* `kubelet_container_requested_resizes_total` (`resource`, `requirement`, `operation`) remains unchanged and is not extended with `container_resources` / `pod_resources` because it specifically tracks container-level resize requests.
+*Note on Deprecation of `kubelet_container_requested_resizes_total`:* Because `kubelet_container_requested_resizes_total` (`resource`, `requirement`, `operation`) is registered with `StabilityLevel: ALPHA` in `pkg/kubelet/metrics/metrics.go`, it can be deprecated directly under the [Kubernetes metrics stability policy](../../sig-instrumentation/1209-metrics-stability/kubernetes-control-plane-metrics-stability.md#deprecation-lifecycle). In v1.38, it will be marked deprecated (`DeprecatedVersion: "1.38"`) in favor of `kubelet_pod_requested_resizes_total` with `level="container"`, and both metrics will be recorded for container-level resize requests during the transition before `kubelet_container_requested_resizes_total` is hidden and removed in a subsequent release.
 
 #### Standardized Boolean Labels
 
-To ensure orthogonality across the extended pod-level lifecycle metrics above, the following boolean labels are applied:
+Unlike `kubelet_pod_requested_resizes_total` (which counts each individual resource/requirement change separately and can therefore use a single `level: pod | container` label), the 6 extended lifecycle and actuation metrics above are recorded **once per Pod resize operation**. Because a single Pod resize request (`PATCH pods/resize`) can simultaneously modify container-level resources, pod-level resources, **both** at once (`true` / `true`), or **neither** (e.g., when resizing only memory-backed volumes, `false` / `false`), a single `pod | container` label cannot represent all combinations. Therefore, two independent boolean labels are applied to the extended pod-level lifecycle metrics:
 
-* **`container_resources`**: `"true"` | `"false"`
-* **`pod_resources`**: `"true"` | `"false"`
+* **`container_resources`**: `"true"` | `"false"` (whether the resize modifies any `containers[*].resources` or `initContainers[*].resources`)
+* **`pod_resources`**: `"true"` | `"false"` (whether the resize modifies `pod.spec.resources`)
 
 ### Test Plan
 
@@ -547,15 +525,11 @@ necessary to implement this enhancement.
 
 `k8s.io/kubernetes/pkg/kubelet/cm`: `20250618` - 18.4
 - Added tests for pod-level cgroup configuration and resizing in `container_manager_linux_test.go` and `node_container_manager_linux_test.go`.
-- Validated cgroup v2 specific logic for pod-level resource limits and swap limits (`memory.swap.max`).
+- Validated cgroup v2 specific logic for pod-level resource limits.
 
 `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `20250618` - 69.1
 - Added unit tests in `kuberuntime_sandbox_test.go` to verify `UpdatePodSandboxResources` calls.
 - Updated `kuberuntime_pod_test.go` to test pod-level resource tracking in internal checkpoints.
-- Added unit tests for container restart action detection (`computePodResizeAction`) and Pod cgroup `memory.swap.max` updates when resizing pod-level memory requests under `LimitedSwap`.
-
-`k8s.io/kubernetes/pkg/kubelet/allocation`:
-- Added unit tests in `allocation_manager_test.go` verifying resize admission (`disallowResizeForSwappableContainers`) for pod-level memory resizes under `LimitedSwap` and `NoSwap` (rejecting as `Infeasible` when swappable containers specify `NotRequired`, and admitting when all swappable containers specify `RestartContainer`).
 
 `k8s.io/kubernetes/pkg/apis/core/validation` - `20250618` - 84.7
 - Added comprehensive validation tests for the new `Resources` field in `PodSpec` and `PodStatus` in `validation_test.go`.
@@ -593,9 +567,6 @@ Following scenarios are to be covered as part of GA graduation:
 
 * Validate the containers with no limits set are throttled on CPU when CPU usage reaches Pod level CPU limits.
 * Validate the containers with no limits set are OOMKilled when memory usage reaches Pod level memory limits.
-* Validate Pod-level memory resize under `LimitedSwap`:
-  * Resizing `spec.resources.requests.memory` when a swappable container specifies `resizePolicy: NotRequired` is rejected with `PodResizePending` (`Reason: Infeasible`).
-  * Resizing `spec.resources.requests.memory` when all swappable containers specify `resizePolicy: RestartContainer` succeeds, restarts only the swappable containers, and updates Pod cgroup `memory.swap.max`.
 
 ### Graduation Criteria
 
@@ -614,8 +585,6 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 #### Phase 2:  Beta (target 1.36) [DONE]
 * Pod Level Resources Feature moved to beta.
 * The semantic of `UpdatePodSandboxResources` is clarified. And there is a way for container runtime to reject the resize of Pod resources via this method or by other means
-* Actual pod resource data may be cached in memory, which will be refreshed after
-  each successful pod resize or for every cache-miss.
 * Coverage for upgrade->downgrade->upgrade scenarios.
 * Extend instrumentation from
   [KEP#1287](https://github.com/kubernetes/enhancements/blob/ef7e11d088086afd84d26c9249a4ca480df2d05a/keps/sig-node/1287-in-place-update-pod-resources/README.md)
@@ -626,10 +595,10 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 
 * No major bugs reported for 3 months.
 * `UpdatePodSandboxResources` is implemented by containerd & CRI-O. [DONE]
-* Resolve Pod Overhead double-counting when pod-level resources are specified ([kubernetes/kubernetes#139627](https://github.com/kubernetes/kubernetes/issues/139627)).
-* Resolve inconsistency in computing `PodQOSClass` for pod-level resources ([kubernetes/kubernetes#135082](https://github.com/kubernetes/kubernetes/issues/135082)). [DONE]
-* Clarify and resolve `Status.Resources` CPU request reporting and container request vs. limit validation with pod-level resources ([kubernetes/kubernetes#137628](https://github.com/kubernetes/kubernetes/issues/137628), [kubernetes/kubernetes#138473](https://github.com/kubernetes/kubernetes/issues/138473)).
-* Node Swap Support with In-Place Pod-Level Resources Resize.
+* Resolve Pod Overhead double-counting when pod-level resources are specified ([kubernetes/kubernetes#139627](https://github.com/kubernetes/kubernetes/issues/139627), [kubernetes/kubernetes#140481](https://github.com/kubernetes/kubernetes/pull/140481)).
+* Inconsistency in computing `PodQOSClass` for pod-level resources ([kubernetes/kubernetes#135082](https://github.com/kubernetes/kubernetes/issues/135082)) is resolved. [DONE]
+* Invalid CPU request in `Status.Resources` from cgroup v2 readback ([kubernetes/kubernetes#137628](https://github.com/kubernetes/kubernetes/issues/137628), [kubernetes/kubernetes#137660](https://github.com/kubernetes/kubernetes/pull/137660)) and pod-level limits defaulting when pod requests exceed aggregated container limits ([kubernetes/kubernetes#138473](https://github.com/kubernetes/kubernetes/issues/138473), [kubernetes/kubernetes#140514](https://github.com/kubernetes/kubernetes/pull/140514)) are resolved. [DONE]
+* Fix failing PLR In-Place Pod Resize E2E tests ([kubernetes/kubernetes#142268](https://github.com/kubernetes/kubernetes/issues/142268), [kubernetes/kubernetes#142290](https://github.com/kubernetes/kubernetes/pull/142290)).
 
 ### Upgrade / Downgrade Strategy
 
@@ -802,7 +771,7 @@ Comprehensive automated testing and E2E coverage have been fully implemented and
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No
+Yes. The alpha metric `kubelet_container_requested_resizes_total` is deprecated in favor of `kubelet_pod_requested_resizes_total` (which includes a `level` label with values `pod` or `container`), and will be hidden and removed following the standard Kubernetes metrics deprecation policy.
 
 ### Monitoring Requirements
 
@@ -869,12 +838,12 @@ Pick one more of these and delete the rest.
 - [X] Metrics
   - Metric name: `apiserver_request_total{resource="pods",subresource="resize"}`
     - [X] apiserver
-  - Metric name: `kubelet_container_requested_resizes_total`
+  - Metric name: `kubelet_container_requested_resizes_total` (deprecated in favor of `kubelet_pod_requested_resizes_total`)
     - [X] kubelet
     - Labels: `resource`, `requirement`, `operation`
   - Metric name: `kubelet_pod_requested_resizes_total`
     - [X] kubelet
-    - Labels: `resource`, `requirement`, `operation`
+    - Labels: `level`, `resource`, `requirement`, `operation`
   - Metric name: `kubelet_pod_resize_duration_milliseconds`
     - [X] kubelet
     - Labels: `success`, `container_resources`, `pod_resources`
@@ -1113,7 +1082,7 @@ For each of them, fill in the following information by copying the below templat
 - **2025-06-18:** KEP draft split from (KEP#2387)[https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2837-pod-level-resource-spec/README.md]
 - **2026-01-28:** KEP moved to beta for 1.36 release
 - **2026-06-10:** KEP moved to stable for 1.37 release
-- **2026-09-18:** Revised KEP for GA in 1.38 and added Node Swap Support.
+- **2026-09-18:** Revised KEP for GA in 1.38.
 
 ## Drawbacks
 
@@ -1134,12 +1103,16 @@ information to express the idea and why it was not acceptable.
 
 ## Future Work
 
+**In-Place Resize with Swap**
+
+Consistent with [KEP-1287](../1287-in-place-update-pod-resources/README.md#swap), resizing memory requests for pods or containers with swap enabled is currently disallowed (`Infeasible`). When that restriction is relaxed in the future, pod-level resources (`pod.spec.resources`) will be included.
+
 **VPA Integration**
 
 SIG Autoscaling is actively working on Vertical Pod Autoscaler (VPA) support for pod-level resources (see [AEP-7571](https://github.com/kubernetes/autoscaler/pull/9988)). Since these changes are non-trivial, they will require significant time to reach completion. Integration with VPA is planned but is not a GA blocker for this KEP because:
 - VPA is out-of-tree and has a separate release cycle from Kubernetes core.
 - VPA doesn’t break when pod-level resources are present. If VPA resizes container requests such that aggregated container requests exceed pod-level requests (or limits conflict with pod-level rules), validation will reject the update, keeping the core feature safe.
-- In-place resize support for VPA will be tracked separately in the VPA repository.
+- In-place resize support for VPA is being tracked separately in the VPA repository ([kubernetes/autoscaler#7571](https://github.com/kubernetes/autoscaler/issues/7571)).
 
 **Ephemeral containers with pod-level resources and IPPR**
 
