@@ -119,6 +119,9 @@ to 0, or with GID 0 (as the primary GID or as a supplemental group) with
 
 ## Proposal
 
+This KEP adds new pod conditions, warning events, and a metric to flag
+containers running as root without explicitly declaring that intent.
+
 This proposal includes several parts. It depends on KEP-3619 (Fine-grained
 SupplementalGroups control), which adds the running UID and GID to Pods'
 status. KEP-3619 is already stable (as of v1.35): the effective UID/GID and
@@ -425,7 +428,7 @@ gate toggled on via `tempSetCurrentKubeletConfig`. Covered cases:
 
 #### Alpha
 
-- Feature implemented behind the `InsecurePodWarnings` feature gate
+- Feature implemented behind the `PodImplicitRootWarnings` feature gate
 - Initial unit tests completed
 - e2e tests completed
 
@@ -449,10 +452,12 @@ behavior.
 ### Upgrade / Downgrade Strategy
 
 A kubelet from a version without this feature fails to start if
-`InsecurePodWarnings` is still set in its config, so the gate must be removed
-before downgrading to such a version; the old kubelet then runs exactly as
-before. Upgrading and (re-)enabling the gate needs no special steps beyond a
-normal kubelet restart.
+`PodImplicitRootWarnings` is still set in its config. It also does not own
+the `InsecureUserID`/`InsecureGroupID` conditions, so it leaves any it finds
+on existing pods. To downgrade, first disable the gate and restart the
+current kubelet, which clears the conditions on the next status sync, then
+downgrade. Upgrading and (re-)enabling the gate needs no special steps
+beyond a normal kubelet restart.
 
 ### Version Skew Strategy
 
@@ -493,7 +498,7 @@ _This section must be completed when targeting alpha to a release._
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `InsecurePodWarnings`
+  - Feature gate name: `PodImplicitRootWarnings`
   - Components depending on the feature gate: `kubelet`
 - [ ] Other
 
@@ -505,9 +510,11 @@ metric; nothing about how a pod runs changes.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling stops new conditions/events/metric from being generated; it
-does not affect running workloads. Already-set conditions on existing pod
-objects are left as-is until the pod is otherwise resynced/recreated.
+Yes. Disabling stops new conditions/events/metric from being generated, but
+does not affect running workloads. Kubelet owns `InsecureUserID`/
+`InsecureGroupID` regardless of feature gate state (on/off), so it keeps
+reconciling and clearing them on every status sync even after the gate is
+off. Thus, no stale values stay behind after rollback.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -521,7 +528,7 @@ on the next sync of each pod; nothing needs to be reconciled or backfilled.
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. Tests added in `test/e2e_node/pod_conditions_test.go` use
-`tempSetCurrentKubeletConfig` to toggle the `InsecurePodWarnings` feature gate
+`tempSetCurrentKubeletConfig` to toggle the `PodImplicitRootWarnings` feature gate
 on for their test context, and cover the pod conditions, event, and metric
 with the gate enabled. Unit tests added in `pkg/kubelet/status`,
 `pkg/kubelet`, and `pkg/securitycontext` cover the underlying logic with and
@@ -610,9 +617,14 @@ _For beta, this section is required: reviewers must answer these questions._
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No new API calls. Conditions/events are set as part of the existing kubelet
-pod status sync path, which already calls the API server. Metrics involve no
-API calls; they are only scraped from kubelet's `/metrics` endpoint.
+New pod conditions are set as part of the existing kubelet pod status sync
+path
+([`syncPod`](https://github.com/kubernetes/kubernetes/blob/4edc2cb5ff5d802298e15dd99229161fb1d033da/pkg/kubelet/status/status_manager.go#L1244)),
+which already calls the API server, so no new calls there. Events are new
+API calls: kubelet creates/updates them via a separate, rate-limited event
+recorder (1 event/pod/hour), the same way kubelet emits all its other
+events. Metrics involve no API calls; they are only scraped from kubelet's
+`/metrics` endpoint.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -624,9 +636,11 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes: two new `PodCondition` entries (`InsecureUserID`, `InsecureGroupID`) on
-implicitly-root pods, and `Event` objects (throttled to 1 event/pod/hour),
-both small and bounded per pod.
+Yes. Two new `PodCondition` entries (`InsecureUserID`, `InsecureGroupID`) are
+added on every pod once the feature gate is enabled, not just insecure ones,
+so every pod has a clear True/False signal. `Event` objects are only
+created for pods actually flagged as insecure (throttled to 1
+event/pod/hour). Both are small and bounded per pod.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
