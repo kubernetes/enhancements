@@ -836,7 +836,7 @@ gate, added in 1.37:
 
 | Gate | Introduced | Stage | Default | Dependencies |
 |------|-----------|-------|---------|--------------|
-| `DRAPartitionableDevicesType` | 1.37 | Alpha | off | `DynamicResourceAllocation`, `DRAPartitionableDevices`, `DRAResourcePoolStatus` |
+| `DRAPartitionableDevicesType` | 1.37 | Alpha | off | `DRAPartitionableDevices`, `DRAResourcePoolStatus` |
 
 A separate gate is needed because the field lives on `ResourceSlice`,
 which is served from the GA `resource.k8s.io/v1` group version — its
@@ -1452,9 +1452,9 @@ Implemented cases:
    `capacity[]`, with `allocatedDevices` capped at 1 per device.
 
 The suite runs a single `feature-enabled` matrix entry with
-`DynamicResourceAllocation`, `DRAResourcePoolStatus`,
-`DRAPartitionableDevices`, `DRAPartitionableDevicesType` and
-`DRAConsumableCapacity` all on. Storage-path coverage lives separately in
+`DRAResourcePoolStatus`, `DRAPartitionableDevices`,
+`DRAPartitionableDevicesType` and `DRAConsumableCapacity` all on.
+Storage-path coverage lives separately in
 `test/integration/etcd/data.go`.
 
 Not yet covered, and therefore listed under [Alpha (1.38)](#alpha-138): a
@@ -1782,22 +1782,15 @@ version is incoherent; there is no conventional `v1alpha3` → `v1` hop, so
 GA requires. `DeviceTaintRule` is the precedent to follow throughout — it was
 added to `v1beta2` at Beta in 1.36 and to `v1` at GA in 1.37.
 
-There is also a clock already running, set by `prerelease-lifecycle-gen`
-rather than by this KEP. Alpha kinds get their deprecation and removal
-releases derived automatically from `introduced` (+3 and +6), and
-`resource.k8s.io/v1alpha3` serves exactly two kinds:
-
-| Kind (v1alpha3) | Introduced | Deprecated | Removed |
-| --- | --- | --- | --- |
-| `DeviceTaintRule` | 1.33 | 1.36 | 1.39 |
-| `ResourcePoolStatusRequest` | 1.36 | 1.39 | **1.42** |
-
-Adding the type to `v1beta2` does not retire the `v1alpha3` copy — this KEP
-keeps it served for skew — so from 1.39 `ResourcePoolStatusRequest` is the
-only kind holding `resource.k8s.io/v1alpha3` open, until its own removal at
-1.42. What the 1.39 promotion buys is that a served successor exists well
-before then, so the `v1alpha3` copy can age out on its generated schedule
-without taking the feature with it. Promoting later compresses that margin.
+There is no externally imposed deadline on the `v1alpha3` copy. Since
+`kubernetes/kubernetes#138129` (1.38), `prerelease-lifecycle-gen` derives
+`deprecated` and `removed` only for beta group versions; alpha kinds get them
+only from an explicit tag. `ResourcePoolStatusRequest` in `v1alpha3` carries
+no such tag, so on master it has only `APILifecycleIntroduced` — no generated
+deprecation or removal release. Retiring the alpha copy is therefore a
+deliberate choice this KEP has to make rather than a schedule it inherits,
+and the promotion is where it gets made: the plan below tags `v1alpha3` as
+deprecated in 1.39, which puts removal at 1.42.
 
 Concretely:
 
@@ -1805,18 +1798,35 @@ Concretely:
   `resource.k8s.io/v1beta2`**, with
   `+k8s:prerelease-lifecycle-gen:introduced=1.39`, conversions to and from
   the internal type, and registration in `v1beta2Storage`
-  (`pkg/registry/resource/rest/storage_resource.go`). Move the storage
-  version override in `pkg/kubeapiserver/default_storage_factory_builder.go`
-  from `v1alpha3` to `v1beta2`. Keep `v1alpha3` served so 1.38 clients keep
-  working across the skew window.
-- **Mark the superseded `v1alpha3` type.** Add
-  `+k8s:prerelease-lifecycle-gen:replacement=resource.k8s.io,v1beta2,ResourcePoolStatusRequest`
-  to the `v1alpha3` kind (and its list type), so clients on the old version
-  get the standard replacement warning. `introduced`, `deprecated` and
-  `removed` are derived and need no edit. This is the convention for a
-  superseded version — `discovery.k8s.io/v1beta1` and
-  `authentication.k8s.io/v1beta1` are examples — and is the one
-  lifecycle-marker change the promotion requires.
+  (`pkg/registry/resource/rest/storage_resource.go`). Keep `v1alpha3` served
+  so 1.38 clients keep working across the skew window.
+- **Serve `v1beta2` but keep storing `v1alpha3` in 1.39**, leaving the
+  override in `pkg/kubeapiserver/default_storage_factory_builder.go` as it
+  is, and switch the storage version to `v1beta2` in 1.40. That file's own
+  comment describes exactly this case — "when a new version for a resource
+  gets introduced and a downgrade to an older apiserver that doesn't know the
+  new version still needs to be supported for one release" — and
+  `DeviceTaintRule`, the precedent this KEP follows, still stores `v1beta2`
+  on master despite reaching `v1` at GA in 1.37. Deferring the storage switch
+  keeps a 1.39 → 1.38 rollback able to decode stored objects, which removes
+  the "delete all requests before downgrading" step from the downgrade path
+  below.
+- **Mark the superseded `v1alpha3` type,** so clients on the old endpoint
+  are told where to go. This needs **two** tags on the `v1alpha3` kind and
+  its list type, not one:
+
+  ```
+  +k8s:prerelease-lifecycle-gen:deprecated=1.39
+  +k8s:prerelease-lifecycle-gen:replacement=resource.k8s.io,v1beta2,ResourcePoolStatusRequest
+  ```
+
+  The `deprecated` tag is required because the generator no longer derives
+  deprecation for alpha versions, and `WarningMessage` returns early unless
+  `APILifecycleDeprecated` is non-zero — a `replacement` tag on its own would
+  generate the method but never surface a warning. With `deprecated` set,
+  `removed` is then derived as deprecated + 3 (1.42); set it explicitly if a
+  different removal release is wanted. `discovery.k8s.io/v1beta1` and
+  `authentication.k8s.io/v1beta1` are the convention to follow.
 - **Promote the gate:**
   `DRAResourcePoolStatus: {Version: "1.39", Default: false, PreRelease: Beta}`.
   It stays default-off because `resource.k8s.io/v1beta2` is itself an
@@ -1834,11 +1844,9 @@ Concretely:
   feature that depends on a default-disabled one, and it likewise rejects a
   dependent whose stability level is higher than a dependency's. Both
   constraints are hard errors at registration, not warnings.
-  Beta/default-off satisfies both — the gate's
-  dependencies are `DynamicResourceAllocation` (GA, until the removal
-  described below drops it from the list), `DRAPartitionableDevices` (Beta)
-  and `DRAResourcePoolStatus` (Beta after this promotion), none of which sit
-  below Beta.
+  Beta/default-off satisfies both — the gate's dependencies are
+  `DRAPartitionableDevices` (Beta) and `DRAResourcePoolStatus` (Beta after
+  this promotion), neither of which sits below Beta.
 
   The two gates are coupled at runtime, not just at registration:
   `AddDependencies` is checked again when gates are set, and enabling a
@@ -1862,15 +1870,6 @@ Concretely:
   this moves with the gate rather than in 1.38 — the widened coverage and the
   histogram/SLO fix land in Alpha 1.38, and only the stability level changes
   here.
-- **Track the removal of `DynamicResourceAllocation`.** That gate is GA and
-  locked to default since 1.35 and is slated for complete removal in **1.38**
-  (`kubernetes/kubernetes#134459`) — during the Alpha cycle above, a release
-  ahead of this promotion. Both of this KEP's gates name it in
-  `defaultKubernetesFeatureGateDependencies`, and `AddDependencies` fails on a
-  dependency referencing an unknown feature, so those entries have to be
-  dropped in lockstep with the removal. Retargeting Beta to 1.39 helps here:
-  the dependency cleanup lands in 1.38 as part of the cross-cutting change —
-  18 gates name it — rather than colliding with the promotion.
 - **Settle the provisional caps.** `partitionSummary` and
   `shareableSummary.capacity` both carry `+k8s:maxItems=32`, flagged in
   Alpha as provisional. Confirm or change them before Beta locks the shape.
@@ -1889,8 +1888,8 @@ Concretely:
   typed `partitionSummary` path is only exercised by a driver that declares
   `PartitionTypeAttribute`, and CI cannot stand in for that.
 
-  The concrete target is `kubernetes-sigs/k8s-dra-driver-gpu`, where every
-  prerequisite is already in place:
+  The concrete target is `kubernetes-sigs/dra-driver-nvidia-gpu`, where most
+  of the groundwork is already in place:
 
   - MIG devices already carry a `profile` string attribute
     (`cmd/gpu-kubelet-plugin/mig.go`), so the grouping attribute is
@@ -1906,12 +1905,25 @@ Concretely:
     `resourceslice.Slice.PartitionTypeAttribute` is present in the vendored
     `k8s.io/dynamic-resource-allocation` at `v0.37.0`.
 
-  So the driver-side change is setting one field on the `Slice` at the two
+  Setting `PartitionTypeAttribute` on the `Slice` at the two
   `DriverResources` construction sites in `cmd/gpu-kubelet-plugin/driver.go`
-  (the split-slice and combined-slice models). Two caveats for whoever picks
-  it up: the partitionable code path is behind the driver's own `DynamicMIG`
-  feature gate, and the apiserver drops `PartitionTypeAttribute` unless
-  `DRAPartitionableDevicesType` is enabled — which is why that gate is
+  (the split-slice and combined-slice models) is necessary but **not
+  sufficient**. `validatePartitionTypeAttribute` requires *every*
+  counter-consuming device in the slice to carry the named attribute, and the
+  full-GPU device (`GpuInfo.PartGetDevice`) also declares `ConsumesCounters`
+  and sits in the same slice as the MIG devices, while `GpuInfo.Attributes()`
+  publishes no `profile` — only MIG devices do. Declaring
+  `gpu.nvidia.com/profile` as-is would fail validation with "device consumes
+  counters and `partitionTypeAttribute` names this attribute, so it must be
+  set", rejecting the slice and hiding those GPUs from the scheduler. The
+  driver therefore also has to give the full device a profile value (for
+  example `profile: full`). This applies whenever a full GPU is announced
+  alongside partitions — dynamic-MIG on Hopper and later, or MIG mode off;
+  the driver only omits the full GPU on Ampere with MIG already enabled.
+
+  Two further caveats: the partitionable code path is behind the driver's own
+  `DynamicMIG` feature gate, and the apiserver drops `PartitionTypeAttribute`
+  unless `DRAPartitionableDevicesType` is enabled — which is why that gate is
   promoted alongside `DRAResourcePoolStatus` above.
 
   Validating this needs a MIG-capable host, so it is a criterion to be
@@ -1923,15 +1935,20 @@ Concretely:
 
 - **Upgrade → downgrade → upgrade** exercised manually and documented in the
   PRR section. This belongs with the promotion rather than with the 1.38
-  work, because the transition being tested — `v1alpha3` storage read back
-  after the storage version moves to `v1beta2` — does not exist until the
-  group version is added.
+  work, because the transition being tested — serving a newly added
+  `v1beta2` endpoint alongside `v1alpha3` — does not exist until the group
+  version is added. The storage version itself does not move in 1.39, so
+  what the test has to prove is endpoint equivalence and a clean rollback,
+  not a storage migration.
 
 #### GA
 
 - Promote `ResourcePoolStatusRequest` into `resource.k8s.io/v1` and flip
   `DRAResourcePoolStatus` to GA default-on, mirroring the `DeviceTaintRule`
   path from `v1beta2` (Beta, 1.36) to `v1` (GA, 1.37)
+- Move the storage version to `v1beta2` in 1.40, one release after it is
+  first served, and retire the `v1alpha3` copy once no supported skew
+  window needs it
 - At least 2 releases as beta
 - Validated at scale (1000+ pools)
 - All GA endpoints hit by conformance tests
@@ -1947,44 +1964,51 @@ Concretely:
   and one that does keeps the same endpoint and the same flags.
 - No fields are added, removed or renamed, so a 1.37 client reading a 1.38
   object sees the same shape.
-- One 1.38 correction changes reported numbers and must be called out in the
+- Two 1.38 corrections are visible to clients and must be called out in the
   1.38 release notes, since Alpha clients may have scripted around the
-  current values: `unavailableDevices` — and therefore `availableDevices` —
-  stops double-counting devices that are both allocated and tainted. The
+  current behaviour. First, `unavailableDevices` — and therefore
+  `availableDevices` — stops double-counting devices that are both allocated
+  and tainted. Second, a request whose pool stays incomplete now reaches a
+  terminal state: the controller writes a partial status once retries are
+  exhausted, where today it returns before `UpdateStatus` and leaves `status`
+  unset until the 24-hour pending TTL removes the object. Clients that treat
+  "no status" as "still processing" will start seeing a populated status
+  carrying a `PoolIncomplete:` `validationError`. The
   `partiallyAvailableDevices` correction is documentation-only and changes no
   value.
 
 **Downgrade (1.38 → 1.37):**
 - Nothing to undo at the storage layer: both releases store the type at
   `v1alpha3`, so objects written by 1.38 are readable by a 1.37 apiserver.
-- The only visible difference is that `unavailableDevices` reverts to the
-  1.37 double-counting behaviour on requests processed after the downgrade.
-  Requests are one-shot and TTL-swept within 24 hours, so this self-corrects.
+- Two visible differences on requests processed after the downgrade:
+  `unavailableDevices` reverts to the 1.37 double-counting behaviour, and
+  requests whose pools are incomplete go back to never reaching a terminal
+  state, sitting with `status` unset until the pending TTL removes them.
+  Requests are one-shot and TTL-swept within 24 hours, so both self-correct;
+  objects that already carry a partial status written by 1.38 remain
+  readable, since no field shape changed.
 
 **Upgrade (Alpha 1.38 → Beta 1.39):**
 - The gate moves to Beta but stays default off, because
   `resource.k8s.io/v1beta2` is an off-by-default beta group version. A
   cluster that does not opt in sees no behavioural change.
 - `ResourcePoolStatusRequest` is served from both
-  `resource.k8s.io/v1alpha3` and `resource.k8s.io/v1beta2`, with the
-  storage version moving to `v1beta2`. Objects written by 1.38 in
-  `v1alpha3` remain readable and are rewritten at `v1beta2` on their next
-  write; because requests are short-lived and TTL-swept within 24 hours,
-  no storage migration is required in practice. Operators who want the
-  old endpoint can keep `--runtime-config=resource.k8s.io/v1alpha3=true`
-  alongside the new one.
+  `resource.k8s.io/v1alpha3` and `resource.k8s.io/v1beta2`, but continues to
+  be **stored** at `v1alpha3` in 1.39; the storage version moves to
+  `v1beta2` in 1.40. Nothing is rewritten on upgrade and no storage
+  migration is required. Operators who want the old endpoint can keep
+  `--runtime-config=resource.k8s.io/v1alpha3=true` alongside the new one.
 - No fields are added, removed or renamed at Beta beyond whatever the
   `validationError` decision produces.
 
 **Downgrade (1.39 → 1.38):**
-- Objects stored at `v1beta2` are not readable by a 1.38 apiserver. The
-  group version itself is not the problem — `resource.k8s.io/v1beta2`
-  already exists in 1.38 and serves ResourceSlice and DeviceTaintRule —
-  but the `ResourcePoolStatusRequest` *kind* is not registered in it
-  before 1.39, so the stored bytes fail to decode. Because requests are
-  ephemeral and carry no state anything else depends on, the practical
-  remedy is to delete any remaining `ResourcePoolStatusRequest` objects
-  before downgrading; users simply recreate them afterwards.
+- Because 1.39 keeps `v1alpha3` as the storage version (see the API
+  graduation plan above), objects written by 1.39 remain decodable by a 1.38
+  apiserver and no pre-downgrade cleanup is required. Clients that had moved
+  to the `v1beta2` endpoint fall back to `v1alpha3`, which 1.38 serves.
+- The cleanup step would only become necessary if the storage switch to
+  `v1beta2` were taken in the same release as the promotion; that is why it
+  is deferred to 1.40, one release after `v1beta2` first ships.
 - No other persistent state exists, so downgrade requires no data
   migration.
 
@@ -2050,15 +2074,14 @@ Concretely:
   - Components: kube-apiserver
 
 `DRAResourcePoolStatus` gates the API type, its storage, the controller and
-the controller's bootstrap ClusterRole. It depends on
-`DynamicResourceAllocation`.
+the controller's bootstrap ClusterRole. It has no feature-gate dependencies
+of its own.
 
 `DRAPartitionableDevicesType` gates `ResourceSlice.Spec.PartitionTypeAttribute`
 and `ResourcePoolStatusRequestSpec.DefaultPartitionTypeAttribute` — the two
 ways a grouping attribute reaches the controller. It depends on
-`DynamicResourceAllocation`, `DRAPartitionableDevices` and
-`DRAResourcePoolStatus`. Those dependencies are enforced: enabling
-`DRAPartitionableDevicesType` while any of them is disabled makes
+`DRAPartitionableDevices` and `DRAResourcePoolStatus`. Those dependencies are
+enforced: enabling `DRAPartitionableDevicesType` while either is disabled makes
 feature-gate validation fail at component start, rather than being silently
 ignored. Disabling it while `DRAResourcePoolStatus` is on simply means
 partitionable pools report no `partitionSummary`. It is enforced only in the
@@ -2107,10 +2130,9 @@ today. Adding one is an Alpha 1.38 requirement; see [Alpha (1.38)](#alpha-138).
   (`resource.k8s.io/v1beta2=true` from 1.39). The gate alone is not
   sufficient, since the version is off by default.
 - `DRAPartitionableDevicesType` enabled without its dependencies
-  (`DynamicResourceAllocation`, `DRAPartitionableDevices`,
-  `DRAResourcePoolStatus`). Feature-gate dependency validation rejects
-  this at component start, so the component fails to come up rather than
-  running in a half-configured state.
+  (`DRAPartitionableDevices`, `DRAResourcePoolStatus`). Feature-gate
+  dependency validation rejects this at component start, so the component
+  fails to come up rather than running in a half-configured state.
 - RBAC not configured for users. No default ClusterRole grants access, so
   every non-admin user needs an explicit grant.
 
@@ -2144,20 +2166,25 @@ Not yet, and it is not applicable in 1.38: that release keeps the type in
 version transition to exercise. This is a Beta requirement and will be
 exercised manually before the 1.39 promotion and documented here. The
 specific path to test is 1.38 → 1.39 → 1.38: create requests on 1.38
-(`v1alpha3`), upgrade and confirm they remain readable while new ones are
-stored at `v1beta2`, then downgrade and confirm the cluster is healthy after
-the remaining objects are deleted. There is no persistent state outside the
-request objects
-themselves, and they are TTL-swept within 24 hours, so the blast radius of
-the storage-version move is limited to objects created in the window.
+(`v1alpha3`), upgrade and confirm they are readable through both the
+`v1alpha3` and `v1beta2` endpoints, then downgrade and confirm the cluster
+is healthy with the objects still decodable — 1.39 keeps storing `v1alpha3`,
+so no pre-downgrade cleanup is needed. The equivalent test for the storage
+switch itself belongs to the 1.40 cycle. There is no persistent state
+outside the request objects themselves, and they are TTL-swept within 24
+hours.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No removals in 1.38 or 1.39. `resource.k8s.io/v1alpha3` remains served alongside
-`v1beta2` so 1.37 clients keep working. The alpha endpoint is already
-scheduled for removal in 1.42 (recorded as `RemovedVersion` in
-`test/integration/etcd/data.go`), which is well past the Beta promotion and
-is not part of it.
+No removals in either release, and no deprecation in 1.38. The 1.39
+promotion deprecates the `v1alpha3` endpoint — the plan tags it
+`deprecated=1.39`, which puts its removal at 1.42 — but the endpoint stays
+served throughout, so 1.38 clients keep working and the deprecation surfaces
+only as an apiserver warning pointing at `v1beta2`. Note that `v1alpha3`
+carries no removal marker today: on master the kind has only
+`APILifecycleIntroduced`, and the `test/integration/etcd/data.go` entry only
+`IntroducedVersion: "1.36"`. Both the deprecation and the eventual removal
+are choices this KEP makes, not inherited schedule.
 
 ### Monitoring Requirements
 
@@ -2355,10 +2382,13 @@ Requests cannot be created or read. No workload impact.
 - 1.38 (Alpha, planned): a third Alpha cycle, taken in place of the Beta
   promotion originally proposed for this release. The API stays at
   `resource.k8s.io/v1alpha3` and both gates stay Alpha, default off. The
-  cycle delivers the semantics corrections (`unavailableDevices` stops
-  counting allocated devices; the `partiallyAvailableDevices` doc comment is
-  corrected to describe the in-use count it actually reports — no field is
-  added or renamed), observability and operational hardening, the
+  cycle delivers the three semantics corrections (`unavailableDevices` stops
+  counting allocated devices; incomplete pools reach a terminal state by
+  writing a partial status once retries are exhausted, which also makes the
+  `PoolIncomplete:` `validationError` observable for the first time; and the
+  `partiallyAvailableDevices` doc comment is corrected to describe the in-use
+  count it actually reports — no field is added or renamed), observability
+  and operational hardening, the
   `kubectl describe` support, and the outstanding test coverage including
   scale validation. See "Alpha (1.38)" in Graduation Criteria.
 - 1.39 (Beta, planned): promote `ResourcePoolStatusRequest` into
