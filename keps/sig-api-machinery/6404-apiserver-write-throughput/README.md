@@ -12,6 +12,7 @@
   - [Serve All GETs from the Watch Cache](#serve-all-gets-from-the-watch-cache)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Watch Cache Lock Contention](#watch-cache-lock-contention)
+    - [Watch Cache Correctness](#watch-cache-correctness)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -124,6 +125,10 @@ We propose routing **all** `GET` requests through the watch cache:
 #### Watch Cache Lock Contention
 - **Risk:** Routing all `GET`s (including `GuaranteedUpdate` conflict `GET`s) through the watch cache could increase lock contention on the watch cache mutex.
 - **Mitigation:** Major watch cache refactors in v1.37 replaced copying under locks with lock-free reads over immutable B-tree snapshots. `GET` lookups only acquire a brief pointer to the latest snapshot.
+
+#### Watch Cache Correctness
+- **Risk:** Ensuring watch cache can provide same consistency guarantees as etcd has proven to be a risk in past efforts, there is a risk for subtile bugs that are very hard to detect with traditional testing.
+- **Mitigation:** We will introduce mode-based correctness and linearizability testing for k8s storage as proposed in https://github.com/kubernetes/kubernetes/issues/141652.
 
 ## Design Details
 
