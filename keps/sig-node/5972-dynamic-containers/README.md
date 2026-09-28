@@ -610,7 +610,9 @@ Yes. The Pod object's `status.containerStatuses` will grow as containers are add
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-TODO
+Not directly. Indirectly, high container churn could degrade API call latency under load (see
+[Container Status update API load](#container-status-update-api-load)) or runtime contention. This
+scales with usage, not enablement.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
