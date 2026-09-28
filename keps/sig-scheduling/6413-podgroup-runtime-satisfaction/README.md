@@ -729,9 +729,12 @@ group will not be impacted". Nothing in LWS or in its gang KEP
 that restart policy with a gang `PodGroup`. When one member is lost the
 promise holds, because three scheduled plus one feasible replacement reaches
 `minCount`. When a node carrying two members of the same group is drained and
-capacity exists for only one replacement, that replacement is withheld and the
-documented per-pod behavior silently becomes all-or-nothing. The user
-configured per-pod recovery and gang admission, and got neither.
+capacity exists for only one replacement, that replacement is withheld. The
+two remaining members keep running and nothing restarts them, but after the
+gang has been admitted once, the same `minCount` constraint still requires the
+group to get back to `minCount` at once, so it cannot recover one member at a
+time. The user configured per-pod recovery, and recovery instead waits until
+the whole shortfall can be placed.
 
 **Serving workloads that tolerate reduced capacity.** A data-parallel
 inference deployment gang-schedules to guarantee it starts with enough
