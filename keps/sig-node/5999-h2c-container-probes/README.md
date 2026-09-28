@@ -52,8 +52,8 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -61,10 +61,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
@@ -323,6 +323,8 @@ No prerequisite test updates are expected.
 
 ##### Integration tests
 
+Will be added in Beta:
+
 - Create a pod with `protocol: HTTP2` when `H2CContainerProbe` gate is on ->
   field is accepted and persisted.
 - Create a pod with `protocol: HTTP2` when `H2CContainerProbe` gate is off ->
@@ -337,6 +339,11 @@ No prerequisite test updates are expected.
   preserved on existing pod (backward compatibility).
 
 ##### e2e tests
+
+Added in [ab224c3](https://github.com/kubernetes/kubernetes/blob/ab224c36566989fac0a7dfb0e26f250b81566367/test/e2e/common/node/container_probe.go),
+running continuously in CI on
+[TestGrid (kind-master-alpha-beta-features)](https://testgrid.k8s.io/sig-release-master-informing#kind-master-alpha-beta-features)
+(filter for `H2CContainerProbe`/`HTTP2`):
 
 - Liveness probe with `protocol: HTTP2` against an h2c server succeeds ->
   container is **not** restarted (happy path, using agnhost `h2c-server`).
@@ -360,8 +367,19 @@ No prerequisite test updates are expected.
 
 #### Beta
 
-- No major bugs reported during alpha
-- Gather feedback from users
+- No major bugs reported during alpha; any bugs found during Beta hardening
+  are fixed and verified before graduation.
+- `H2CContainerProbe` feature gate defaults to `true`. This is opt-in
+  per-probe (only pods explicitly setting `protocol: HTTP2` are affected), so
+  enabling by default carries no behavior change for existing workloads.
+- e2e tests promoted and consistently flake-free in CI for at least two weeks.
+- A new, low-cardinality `kubelet_probe_protocol_total{protocol,result}`
+  metric (no pod/container/pod_uid labels) is added so usage and failure
+  rates for h2c probes can be observed independently of HTTP/1.1 probes,
+  without adding to `prober_probe_total`'s existing high cardinality.
+- The `scheme: HTTP`-only and empty-`host` restrictions on `protocol: HTTP2`
+  remain in place for Beta; revisit only if a concrete use case emerges.
+- Gather feedback from users running the feature in Alpha.
 
 #### GA
 
@@ -449,7 +467,10 @@ Yes. Unit tests in `pkg/apis/core/validation` and `pkg/kubelet/prober` cover:
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-
+Rollback (disabling the gate) causes the kubelet to silently probe over
+HTTP/1.1 instead of h2c. Pods whose server only speaks h2c will start
+failing their probe and restart. Pods not using `protocol: HTTP2` are
+unaffected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -463,40 +484,47 @@ No.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-
-
+Yes, gate enable/disable was tested on both kube-apiserver and kubelet:
+field admission/drop/preservation on the apiserver, and probe fallback +
+recovery on the kubelet. Binary-level version skew (old kubelet/new
+apiserver) has not yet been tested.
 
 ### Monitoring Requirements
 
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Operators can monitor the existing `prober_probe_total` metric. An increase in
-HTTP probe executions after enabling the gate, combined with pods whose specs
-set the `protocol` field, indicates the feature is in use. A dedicated label
-(e.g., `protocol="HTTP2"`) on `prober_probe_total` could be added in beta to
-make this easier to observe.
+Operators can monitor the new `kubelet_probe_protocol_total{protocol="HTTP2"}`
+metric (added in Beta), which tracks h2c probe usage and results without
+adding pod/container-level identifying labels, avoiding the cardinality
+concerns of adding this to `prober_probe_total` directly.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-
+Their pod stays healthy (no probe-triggered restarts) and
+`prober_probe_total` shows successful results for the pod's probe.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-
+h2c probe success rate should match HTTP/1.1 probe success rate for an
+equivalently healthy backend; no added probe latency.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 
 - [x] Metrics
   - Metric name: `prober_probe_total`
+  - Metric name: `kubelet_probe_protocol_total` (new in Beta)
   - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
+Originally proposed adding a `protocol` label directly to `prober_probe_total`,
+but that metric already carries `pod`, `pod_uid`, and `container` labels and
+is high-cardinality; adding another label would multiply that cardinality
+further . Instead, Beta adds a separate, low-cardinality `kubelet_probe_protocol_total{protocol,result}` metric with no per-pod identifying labels, aggregated at the node level.
 
-
-### Dependencies
+### Dependencies 
 
 
 ###### Does this feature depend on any specific services running in the cluster?
@@ -542,18 +570,29 @@ No. The feature uses the same one-connection-per-probe model as existing HTTP pr
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-
+No impact. Kubelet executes probes directly against the pod IP; it does
+not contact the API server or etcd to run a probe.
 
 ###### What are other known failure modes?
 
-
+Target server doesn't speak h2c: probe fails with a connection/protocol
+error, visible in pod events (`Liveness/Readiness probe failed`), and the
+container restarts per normal probe semantics.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check `prober_probe_total{result="failure"}` and pod events for the
+probe's error message; confirm the target container actually serves h2c
+on the probed port.
 
 
 ## Implementation History
 
 - 2026-04-07: KEP created
+- 2026-09-09: Beta manual testing on kind — feature-gate enable/disable
+  verified on kube-apiserver and kubelet (field admission/drop/preservation,
+  probe fallback and recovery), happy-path and failure-path probe scenarios
+  verified. 
 
 
 ## Drawbacks
