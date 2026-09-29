@@ -166,6 +166,29 @@ providers, allocation-aware policy options, and per-resource weight support
 via `numa-score-weights`. A score-aware merge optimization is planned for
 beta to improve performance on systems with many NUMA nodes.
 
+Both options are configured per node, in `topologyManagerPolicyOptions` in the
+kubelet configuration, and apply to every pod admitted on that node. There is
+no per-pod or per-container opt-in and no pod API surface: a workload cannot
+request a different strategy than the one its node is configured with. This
+matches how the existing Topology Manager policy options work and is discussed
+further in [Alternative 2](#alternative-2-pod-level-annotations).
+
+The unit the options are *applied to* is the one the Topology Manager already
+uses for hint merging, which `topologyManagerScope`
+([KEP-693](/keps/sig-node/693-topology-manager)) determines:
+
+- **`container` scope (the default):** hints are merged once per container, so
+  the strategy is evaluated per container, against allocation state that
+  already reflects the containers admitted before it.
+- **`pod` scope:** hints are merged once for the whole pod, so the strategy is
+  evaluated once per pod and all containers share the resulting NUMA affinity.
+
+This KEP introduces no new scoping concept and does not change which resources
+are aligned in either scope; it only changes which NUMA node is chosen among
+candidates that the existing logic already considers equivalent. The two scopes
+do, however, lead to different intra-pod placement, which is covered in
+[Interaction with Topology Manager Scope](#interaction-with-topology-manager-scope).
+
 ### User Stories
 
 #### Story 1: Balanced NUMA Utilization on Multi-Die Processors
