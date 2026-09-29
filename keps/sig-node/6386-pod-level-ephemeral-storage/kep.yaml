@@ -4,14 +4,13 @@ authors:
   - "@ndixita"
 owning-sig: sig-node
 participating-sigs:
-  - sig-node
-  - sig-scheduling
+  - sig-storage
 status: implementable
 creation-date: 2026-09-17
 reviewers:
   - "@mrunalp"
   - "@tallclair" # sig-node-assigned-reviewer
-  - "@alculquicondor"
+  - "@msau42"
 approvers:
   - "@dchen1107"
 see-also:
