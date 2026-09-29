@@ -1,0 +1,45 @@
+title: Leveraging certificate APIs in the platform
+kep-number: 6283
+authors:
+  - "@stlaz"
+owning-sig: sig-auth
+participating-sigs: []
+status: implementable
+creation-date: 2026-08-18
+reviewers:
+  - "@ahmedtd"
+approvers:
+  - "@deads2k"
+
+see-also:
+  - "/keps/sig-auth/3257-cluster-trust-bundles"
+  - "/keps/sig-auth/4317-pod-certificates"
+replaces: []
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: ""
+  stable: ""
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ClusterTrustBundleSelector
+    components:
+      - kube-apiserver
+  - name: KubeServingCertificatesSigner
+    components:
+      - kube-controller-manager
+  - name: KubeAPIServerWorkloadsTrust
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - TBD
