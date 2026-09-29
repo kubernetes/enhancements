@@ -44,6 +44,8 @@ feature-gates:
   - name: InPlaceNodeResourceResize
     components:
       - kubelet
+      - kube-apiserver
+      - kube-scheduler
 disable-supported: true
 
 # The following PRR answers are required at beta release
