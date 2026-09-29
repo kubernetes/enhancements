@@ -144,21 +144,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [ ] ~~e2e Tests for all Beta API Operations (endpoints)~~ no API endpoints
+  - [ ] ~~(R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)~~ not eligible: the e2e test needs a credential provider plugin and kubelet config on the node
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+  - [ ] ~~(R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)~~ no API endpoints
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+  - [x] Tasks: [Service account token for image pulls](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-credential-provider/#service-account-token-for-image-pulls), [Configure a kubelet credential provider](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-credential-provider/#configure-a-kubelet-credential-provider)
+  - [ ] Concepts: describe this feature and its [limitations](#notesconstraintscaveats-optional) on the [Images](https://kubernetes.io/docs/concepts/containers/images/#kubelet-credential-provider) page, in the v1.37 docs (`main`) and again for v1.38
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-This feature adds no new REST API endpoints, so the GA endpoint conformance requirements do
-not apply. The e2e test depends on a credential provider plugin binary and a kubelet
-credential provider configuration file existing on the node, neither of which a conformance
-test can assume, so the test is not promoted to conformance.
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -298,6 +295,20 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+The kubelet passes registry credentials to the container runtime once, when an image pull
+starts. There is no way to refresh them for a pull that is still in progress, or for image
+content fetched after the pull returns. This applies to every credential source, including
+image pull secrets, but those credentials are usually long-lived. Credentials obtained through
+this feature can be as short-lived as the service account token they are derived from, which
+has a 1 hour lifetime by default. As a result:
+
+- Streaming-based image registries, where image content is fetched lazily after the container
+  starts (for example [GKE Image streaming](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/image-streaming)),
+  are not compatible with this feature.
+- An image pull that takes longer than the lifetime of the credentials can fail.
+
+The user-facing documentation will call out both limitations.
 
 ### Risks and Mitigations
 
