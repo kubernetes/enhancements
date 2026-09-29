@@ -155,7 +155,10 @@ A 5000-node cluster startup triggers 5000 concurrent cloud API calls from `NodeG
 
 - **Backward Compatibility**: Drivers that do not adopt the new flow, and deployments with `AttachRequired=false`, continue using `NodeGetInfo` unchanged. No breaking changes to the existing flow.
 
-- **Kubernetes Scope**: This workflow requires VolumeAttachments and therefore applies only to deployments where `CSIDriver.Spec.AttachRequired` is not false (the default is true). Using `ControllerGetNodeInfo` with `AttachRequired=false` is outside the scope of this KEP. The CSI `PUBLISH_UNPUBLISH_VOLUME` capability is not required: external-attacher can manage VAs through its existing trivial handler when that capability is absent.
+- **Kubernetes Scope**: This workflow requires VolumeAttachments and therefore applies only to deployments where `CSIDriver.Spec.AttachRequired` is not false (the default is true). Using `ControllerGetNodeInfo` with `AttachRequired=false` is outside the scope of this KEP.
+We also requires CSI `PUBLISH_UNPUBLISH_VOLUME` capability, but only because lacking interesting use-case without `PUBLISH_UNPUBLISH_VOLUME`.
+This also reduces the testing burden.
+We should reconsider if a use-case appears.
 
 - **Node-local Limit Overrides**: Drivers are encouraged to use `published_volume_ids` to replace manual reservations for non-CSI attachments where possible.
 The new flow does not forward node-side overrides; settings still required need equivalent controller-side configuration, supplied through driver-provided deployment templates (e.g., Helm) or manually by the administrator.
@@ -261,6 +264,8 @@ CO avoids a race condition by recording all volume IDs processed during the `Con
 - `ControllerServiceCapability.RPC.GET_NODE_INFO`: indicates support for `ControllerGetNodeInfo`
 
 **Invariant**: If a driver advertises `NODE_INFO_FROM_CONTROLLER`, it MUST also advertise `GET_NODE_INFO`. This is enforced by the CSI spec. Without this invariant, a node could register with only a `node_id` in `CSINode.Spec.DriverRegistrations` and never have topology or allocatable populated, because the SP omits them once kubelet sets the flag.
+If a driver advertises `GET_NODE_INFO`, it MUST also advertise `PUBLISH_UNPUBLISH_VOLUME`.
+This is not a hard constraint from API, but a lack of interesting use-cases; can be reconsidered if a use-case appears.
 
 **Topology key consistency**: `ControllerGetNodeInfo` MUST return the same topology keys as the driver's `NodeGetInfo` would. Existing PersistentVolumes have `nodeAffinity` rules referencing these keys (e.g., `topology.ebs.csi.aws.com/zone`). Inconsistent keys would break scheduling for already-provisioned volumes.
 
@@ -309,6 +314,11 @@ When the `CSIControllerGetNodeInfo` feature gate is enabled, `CSINode.Spec.Drive
 4. Calculate effective `max_volumes_per_node` by comparing `published_volume_ids` from SP response against `VolumeAttachment` objects
 5. For initial registration, write the topology values as Node labels, preserving the existing kubelet topology collision checks (Needs new RBAC permission)
 6. Create the `CSINode.Spec.Drivers` entry with the topology keys and calculated capacity, or update existing entry's capacity (Needs new RBAC permission)
+
+If the driver has a `DriverRegistrations`, report events on `CSINode` when:
+- `ControllerGetNodeInfo` failed;
+- Driver does not advertise `GET_NODE_INFO`;
+- Driver advertise `GET_NODE_INFO` but not `PUBLISH_UNPUBLISH_VOLUME`.
 
 The CSINode update uses the `resourceVersion` from the snapshot passed to `ControllerGetNodeInfo`.
 On a CSINode update conflict, discard the RPC result and wait for next CSINode update event from informer.
@@ -539,7 +549,6 @@ We should not put an incomplete entry into `spec.drivers` and add a new `ready: 
 - End-to-end workflow with CSI driver supporting the controller-side flow
 - Backward compatibility with drivers not supporting the controller-side flow
 - `AttachRequired=false` retains `NodeGetInfo` without external-attacher even when the feature gate and `NODE_INFO_FROM_CONTROLLER` capability are enabled
-- Controller-side registration and volume accounting with `AttachRequired=true` and no `PUBLISH_UNPUBLISH_VOLUME` capability, using the trivial VA handler
 - Topology-aware scheduling with controller-side topology
 - Capacity update after volume limit reached
 
