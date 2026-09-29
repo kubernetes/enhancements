@@ -16,11 +16,12 @@ see-also:
 - "/keps/sig-node/2535-ensure-secret-pulled-images"
 creation-date: "2024-09-09"
 status: implementable
-stage: beta
-latest-milestone: "v1.37"
+stage: stable
+latest-milestone: "v1.38"
 milestone:
   alpha: "v1.33"
   beta: "v1.34"
+  stable: "v1.38"
 feature-gates:
 - name: KubeletServiceAccountTokenForCredentialProviders
   components:
