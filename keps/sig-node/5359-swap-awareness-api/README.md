@@ -16,6 +16,7 @@
   - [Node Configuration](#node-configuration)
   - [Proposed Design: Limits-Only Model](#proposed-design-limits-only-model)
   - [Swap limit semantics](#swap-limit-semantics)
+    - [Relationship between <code>limits.swap</code> and <code>limits.memory</code>](#relationship-between-limitsswap-and-limitsmemory)
   - [NodeInfo Exposure](#nodeinfo-exposure)
   - [User Experience Examples](#user-experience-examples)
     - [Use Case 1: Swap-Disabled Workload](#use-case-1-swap-disabled-workload)
@@ -309,6 +310,22 @@ seamless coexistence between the two node modes:
     </tr>
   </tbody>
 </table>
+
+#### Relationship between `limits.swap` and `limits.memory`
+
+Kubernetes swap support requires cgroup v2, where `limits.memory` (`memory.max`)
+and `limits.swap` (`memory.swap.max`) are independent, additive limits:
+- `limits.memory` configures `memory.max` (the maximum physical RAM the cgroup can consume).
+- `limits.swap` configures `memory.swap.max` (the maximum swap space the cgroup can consume **in addition to** physical RAM).
+
+Below combinations of `limits.memory` and `limits.swap` (`>= 0`) are valid at both container and pod levels (subject to `container.limits.<resource> <= pod.limits.<resource>` when both pod-level and container-level limits are specified for the same resource):
+
+| `limits.memory` vs. `limits.swap` | cgroup v2 Settings (`memory.max`, `memory.swap.max`) | Semantics & Runtime Behavior |
+| :--- | :--- | :--- |
+| **`limits.memory` unset** (e.g., `swap: "1Gi"`) | `memory.max = max` (or pod-level `limits.memory` if set), `memory.swap.max = 1Gi` | Physical RAM is not capped by a container memory limit (`memory.max` is not set by Kubernetes), while swap usage is capped at `limits.swap`. Anonymous pages can still be swapped out (up to `1Gi`) when reclaim is triggered by pod-level `memory.max`, MemoryQoS (`memory.high`), or node-level memory pressure. |
+| **`limits.memory < limits.swap`** (e.g., `memory: "1Gi"`, `swap: "4Gi"`) | `memory.max = 1Gi`, `memory.swap.max = 4Gi` | The workload can use up to `1Gi` of physical RAM **plus** up to `4Gi` of swap (`5Gi` combined memory + swap before OOM). Useful for workloads with a small hot working set and a large cold anonymous footprint, or when configuring a large swap ceiling. |
+| **`limits.memory == limits.swap`** (e.g., `memory: "2Gi"`, `swap: "2Gi"`) | `memory.max = 2Gi`, `memory.swap.max = 2Gi` | The workload can use up to `2Gi` of physical RAM **plus** up to `2Gi` of swap (`4Gi` combined). Unlike cgroup v1 / Docker `--memory-swap` (where `memory == memory-swap` meant no swap), `limits.swap` is strictly the swap-only limit (`memory.swap.max`). |
+| **`limits.memory > limits.swap`** (e.g., `memory: "2Gi"`, `swap: "1Gi"`) | `memory.max = 2Gi`, `memory.swap.max = 1Gi` | The workload can use up to `2Gi` of physical RAM **plus** up to `1Gi` of swap (`3Gi` combined). Useful when providing a bounded swap safety net smaller than the workload's RAM limit. |
 
 **Note on user experience:** If a pod with `resources.limits.swap` set is
 scheduled on a node where the kubelet is configured with `NoSwap`, the pod will
