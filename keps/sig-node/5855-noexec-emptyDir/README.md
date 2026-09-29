@@ -62,7 +62,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -334,6 +334,8 @@ No integration tests are planned.
 
 - **control test**: Verifies that a volume mounted without `bindMountOptions` allows normal execution.
 
+**Current status and plan:** The e2e_node tests described above are not yet added. Neither CRI-O nor containerd has released `mount_options` support yet, so no CI jobs are currently running these tests against a supporting runtime. Before the kubernetes/kubernetes PR that promotes the feature gate to beta is merged: (1) CRI-O and containerd will implement and release `mount_options` support, (2) the e2e_node tests will be added to kubernetes/kubernetes, (3) node e2e jobs will be set up in test-infra for both CRI-O and containerd using runtime versions with `mount_options` support, and (4) these tests must be passing in CI for both runtimes.
+
 ##### Manual validation
 
 End-to-end validation was performed on an OpenShift GCP cluster (v1.35) with custom-built kubelet and CRI-O binaries. The full pipeline - kubelet to CRI protobuf (`mount_options`, field 11) to CRI-O to runc to kernel - was confirmed working:
@@ -349,15 +351,17 @@ End-to-end validation was performed on an OpenShift GCP cluster (v1.35) with cus
 
 - Feature implemented behind `VolumeBindMountOptions` feature gate (disabled by default)
 - Kubelet passes `bindMountOptions` through CRI `Mount.mount_options` to the container runtime
-- Unit tests and initial `e2e_node` tests completed
+- Unit tests completed
 
 #### Beta
 
 - Feature enabled by default
 - CRI-O and containerd implement `mount_options` support and advertise via `runtimeFeatures`
-- E2E testing for both containerd and CRI-O
+- Node e2e jobs for both CRI-O and containerd are set up in test-infra with runtime versions that include `mount_options` support
+- E2E tests for `bindMountOptions` are passing in CI for both runtimes
+- The kubernetes/kubernetes PR that promotes the feature gate to beta is gated on both runtimes having released support and CI jobs being green
 - Downgrade and upgrade testing completed
-- Address feedback and bugs reported during Alpha
+- Address feedback and bugs reported during Alpha (no bug reports or negative feedback were received during v1.37)
 
 #### GA
 
@@ -374,7 +378,7 @@ End-to-end validation was performed on an OpenShift GCP cluster (v1.35) with cus
 - **kube-apiserver**: Strips `bindMountOptions` from new pod specs via field dropping (unless already persisted with the field).
 - **kubelet**: Rejects pods that have `bindMountOptions` set. In practice, if the API server gate is also disabled, the field is already stripped before reaching the kubelet.
 
-Running pods are not affected by downgrade; their volumes are already mounted. Only newly created pods are affected.
+Running pods that do not use `bindMountOptions` are not affected by downgrade. However, pods with `bindMountOptions` set will be rejected on the next kubelet restart, because the kubelet re-runs admission for all non-terminal pods and the `NodeDeclaredFeatures` handler will reject them with `PodFeatureUnsupported`. To avoid this, remove `bindMountOptions` from affected pod specs before disabling the gate or downgrading the runtime.
 
 ### Version Skew Strategy
 
@@ -426,36 +430,37 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Bind options are applied only at container creation time, and only when the pod spec explicitly sets `bindMountOptions`. During an HA rollout where some API servers have the gate enabled and others do not, the field may be accepted by one API server and stripped by another; this is standard feature-gate behavior and resolves once all API servers are updated.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+**Kubelet restart impact on running workloads:** On restart, the kubelet re-runs admission for all non-terminal pods (`HandlePodAdditions` -> `allocationManager.AddPod`). The `NodeDeclaredFeatures` admission handler does not distinguish between new pods and already-running ones. If the runtime is downgraded to a version without `mount_options` support, or the `VolumeBindMountOptions` feature gate is disabled, the kubelet will no longer declare `VolumeBindMountOptions` in `node.status.declaredFeatures`. On the next kubelet restart, pods with `bindMountOptions` set will fail re-admission with reason `PodFeatureUnsupported` and be marked Failed. This was verified manually: a pod running with `bindMountOptions` was marked Failed with `PodFeatureUnsupported` after restarting the kubelet with a CRI-O version that does not support `mount_options`. To avoid this, remove `bindMountOptions` from affected pod specs before downgrading the runtime or disabling the gate.
+
+Pods that do not use `bindMountOptions` are not affected by rollback.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+No single metric is specific to `bindMountOptions`. Operators should watch for correlated spikes in the following metrics alongside pod events for pods using the field:
+
+- `scheduler_unschedulable_pods{plugin="NodeDeclaredFeatures"}`: pods cannot be scheduled because no node declares `VolumeBindMountOptions` support (e.g. the runtime was downgraded or the gate was disabled).
+- `kubelet_admission_rejections_total{reason="PodFeatureUnsupported"}`: the kubelet is rejecting pods that require `VolumeBindMountOptions` but the node does not declare it. This applies to pods that bypass the scheduler (static pods, pods with `nodeName` set) and to already-running pods after a kubelet restart following a runtime downgrade.
+- `kubelet_runtime_operations_errors_total{operation_type=~"create_container|start_container"}` / `kubelet_started_containers_errors_total`: a spike correlated with pods using `bindMountOptions` may indicate the runtime is failing to apply bind mount flags during container creation.
+
+None of these metrics are feature-specific. The practical signal is correlating metric spikes with pod events for pods that use `bindMountOptions`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Yes. The upgrade->downgrade->upgrade path was manually tested using `hack/local-up-cluster.sh` with CRI-O as the container runtime. The test used `PRESERVE_ETCD=true` with a persistent etcd directory across cluster restarts.
+
+**Phase 1 (gate ON):** Deployed pods with `bindMountOptions: [noexec, nosuid, nodev]` on both disk-backed and tmpfs emptyDir volumes. Verified: (1) `bindMountOptions` is preserved in the pod spec via the API server, (2) `/proc/self/mountinfo` shows `nosuid,nodev,noexec` flags on the volume mount, (3) executing a script on the mount fails with "Operation not permitted", (4) a control pod without `bindMountOptions` allows execution normally.
+
+**Phase 2 (gate OFF - downgrade):** Restarted the cluster with `VolumeBindMountOptions=false`. Deployed new pods with the same manifests. Verified: (1) `bindMountOptions` is stripped from new pod specs by the API server (field dropping), (2) `/proc/self/mountinfo` does not show `noexec,nosuid,nodev` flags, (3) execution succeeds on the mount (default behavior restored).
+
+**Phase 3 (gate ON - re-upgrade):** Restarted the cluster with `VolumeBindMountOptions=true`. Deployed new pods. Verified: (1) `bindMountOptions` is preserved again, (2) mount flags are enforced again, (3) execution is blocked again. Feature works correctly after being disabled and re-enabled.
+
+Unit tests (`TestDropVolumeBindMountOptions` in `pkg/api/pod`) also verify that `bindMountOptions` is stripped when the gate is disabled and preserved when enabled or when the field is already persisted on an existing pod.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -468,67 +473,33 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Check if any pods use `bindMountOptions`:
+
+```bash
+kubectl get pods -A -o yaml | grep bindMountOptions
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Exec into the pod and check mount flags with `cat /proc/self/mountinfo | grep /path/to/mount`. The output should show `noexec`, `nosuid`, and/or `nodev` flags matching the requested `bindMountOptions`. Additionally, attempting to execute a script on a `noexec` mount should fail with "Permission denied" or "Operation not permitted".
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+No impact on existing SLOs. The change adds a few string values to the CRI mount message and OCI spec. The container runtime already performs a bind + remount for every mount; the only difference is that additional flags are included in the remount syscall.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `kubelet_admission_rejections_total{reason="PodFeatureUnsupported"}` (existing metric, indicates pods rejected because the runtime does not support `mount_options`)
+  - Metric name: `scheduler_unschedulable_pods{plugin="NodeDeclaredFeatures"}` (existing metric, indicates pods unschedulable because no node declares `VolumeBindMountOptions`)
+  - Metric name: `kubelet_runtime_operations_errors_total{operation_type=~"create_container|start_container"}` (existing metric, indicates container creation/start failures which may include bind mount option application failures)
+  - Metric name: `kubelet_started_containers_errors_total` (existing metric, indicates container start errors by error code)
+  - Components exposing the metric: kubelet, kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No feature-specific metric was added. The existing metrics listed above are general-purpose and cannot be filtered to pods using `bindMountOptions` specifically, but since the feature is opt-in and the failure modes produce distinct pod events (`PodFeatureUnsupported`, `FailedScheduling`), correlating metric spikes with pod events is sufficient to identify feature-related issues.
 
 ### Dependencies
 
@@ -587,39 +558,43 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature runs in the kubelet and container runtime. After the pod spec is retrieved from the API server, bind options are applied locally during container creation. If the API server or etcd becomes unavailable, it does not affect the bind option enforcement on already-created containers.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Container runtime does not support `mount_options` (scheduler path)
+  - Detection: Pods with `bindMountOptions` remain Pending. Pod events show a `FailedScheduling` warning: "node(s) didn't match Pod's required features". The scheduler's `NodeDeclaredFeatures` plugin filters out nodes that do not declare `VolumeBindMountOptions`. The metric `scheduler_unschedulable_pods{plugin="NodeDeclaredFeatures"}` increments.
+  - Mitigations: Upgrade the container runtime to a version that supports `mount_options`, or remove `bindMountOptions` from the affected pod specs.
+  - Diagnostics: `kubectl describe pod` shows the `FailedScheduling` event with details about which features are missing.
+  - Testing: Verified manually with a CRI-O build that does not advertise `mount_options` support; the pod remained Pending with the expected event.
+
+- Container runtime does not support `mount_options` (kubelet admission path)
+  - Detection: Pods that bypass the scheduler (static pods, pods with `nodeName` set) are rejected by kubelet admission with reason `PodFeatureUnsupported`: "Pod requires node features that are not available: VolumeBindMountOptions". The metric `kubelet_admission_rejections_total{reason="PodFeatureUnsupported"}` increments.
+  - Mitigations: Upgrade the container runtime to a version that supports `mount_options`, or remove `bindMountOptions` from the affected pod specs.
+  - Diagnostics: Pod events show the `PodFeatureUnsupported` warning. Kubelet logs at default verbosity include the rejection reason.
+  - Testing: Verified manually by deploying a pod with `nodeName` set on a node whose CRI-O does not advertise `mount_options` support; the pod was rejected with the expected event and metric.
+
+- Runtime downgraded or feature gate disabled with existing pods using `bindMountOptions`
+  - Detection: After kubelet restart, previously running pods with `bindMountOptions` are marked Failed with `PodFeatureUnsupported`. The kubelet re-runs admission for all non-terminal pods on restart (`HandlePodAdditions` -> `allocationManager.AddPod`), and the `NodeDeclaredFeatures` handler does not distinguish between new and already-running pods.
+  - Mitigations: Before downgrading the runtime or disabling the feature gate, remove `bindMountOptions` from all affected pod specs. Alternatively, delete and recreate the pods without `bindMountOptions`.
+  - Diagnostics: Pod events show `PodFeatureUnsupported`. The metric `kubelet_admission_rejections_total{reason="PodFeatureUnsupported"}` increments.
+  - Testing: Verified manually: a pod running with `bindMountOptions` was marked Failed with `PodFeatureUnsupported` after restarting the kubelet with a CRI-O build that does not support `mount_options`.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Disable the `VolumeBindMountOptions` feature gate on the kubelet and kube-apiserver and restart both components. This will cause the API server to strip `bindMountOptions` from new pods and restore default mount behavior.
 
 ## Implementation History
 
 - 2026-01-30: KEP created
+- 2026-06-15: KEP PR merged ([kubernetes/enhancements#5856](https://github.com/kubernetes/enhancements/pull/5856))
+- 2026-07-23: Alpha implementation merged in v1.37 ([kubernetes/kubernetes#140013](https://github.com/kubernetes/kubernetes/pull/140013))
+- 2026-08-04: Alpha documentation merged ([kubernetes/website#56321](https://github.com/kubernetes/website/pull/56321))
+- 2026-09-07: v1.37 feature blog PR merged ([kubernetes/website#56457](https://github.com/kubernetes/website/pull/56457))
+- 2026-09-16: v1.37 feature blog published ([Hardening Container Storage](https://kubernetes.io/blog/2026/09/16/kubernetes-v1-37-hardening-container-storage/))
+- 2026-09-25: KEP updated for beta targeting v1.38
 
 ## Drawbacks
 
