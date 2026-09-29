@@ -4,11 +4,11 @@ authors:
   - "@pravk03"
 owning-sig: sig-scheduling
 participating-sigs:
-  - sig-scheduling
   - sig-node
+  - sig-autoscaling
 
 creation-date: "2025-12-22"
-reviewers: 
+reviewers:
   - '@johnbelamaric'
   - '@kad'
   - '@ffromani'
@@ -17,21 +17,24 @@ reviewers:
   - '@macsko'
   - '@dchen1107'
   - '@sergeykanzhelev'
+  - '@tallclair'
+  - '@jackfrancis'
+  - '@towca'
 approvers:
   - '@johnbelamaric'
   - '@kad'
   - '@dchen1107'
   - '@dom4ha'
   - '@macsko'
-  - '@dchen1107'
+  - '@tallclair'
   - '@sergeykanzhelev'
 status: implementable
-stage: alpha
-latest-milestone: "v1.37"
+stage: beta
+latest-milestone: "v1.38"
 milestone:
   alpha: "v1.36"
   beta: "v1.38"
-  stable: "v1.39"
+  stable: "v1.41"
 
 feature-gates:
   - name: DRANodeAllocatableResources
@@ -39,6 +42,12 @@ feature-gates:
       - kube-scheduler
       - kube-apiserver
       - kubelet
+      - kube-controller-manager
 disable-supported: true
-
-metrics: []
+metrics:
+  - scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}
+  - scheduler_plugin_execution_duration_seconds{plugin="NodeResourcesFit"}
+  - scheduler_unschedulable_pods{plugin="DynamicResources"}
+  - scheduler_unschedulable_pods{plugin="NodeResourcesFit"}
+  - scheduler_pending_pods
+  - kubelet_admission_rejections_total
