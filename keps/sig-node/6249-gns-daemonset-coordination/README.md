@@ -839,10 +839,11 @@ open; the list exists so reviewers can see where each answer came from.*
    kubelet-written state from administrator-written or stale state and
    rejected: API conventions reserve `reason` for explanation, not control
    flow (see [Alternatives](#alternatives)). Instead, [Upgrade / Downgrade
-   Strategy](#upgrade--downgrade-strategy) makes kubelet-first enablement,
-   reader-first disablement, and a preflight listing of nodes carrying the
-   condition hard requirements, and the reader-only enablement test exercises
-   the writer-agnostic behavior directly. Decided at PRR review.
+   Strategy](#upgrade--downgrade-strategy) asks for a preflight listing of
+   nodes carrying the condition, with kubelet-first enablement only when that
+   listing is non-empty, and the reader-only enablement test exercises the
+   writer-agnostic behavior directly. A heartbeat rule that makes enablement
+   order-agnostic is a [beta item](#beta). Decided at PRR review.
 8. **Startup clear of `DrainInProgress` uses the shutdown state file.** The
    kubelet records whether it wrote `DrainInProgress` and clears it at startup
    only when that record is present, so a drain another writer started
@@ -970,6 +971,13 @@ writer and reader KEPs graduate together.*
   kubelet never returns without waiting for an administrator or Node deletion,
   once there is a signal that says a shutdown has finished; with a distinct
   reason.
+- **Order-agnostic rollout.** The reader ignores a `True` condition whose
+  `lastHeartbeatTime` is older than the node's `Ready` heartbeat. A live
+  kubelet with the gate refreshes both on every status update; a live kubelet
+  without the gate refreshes only `Ready`, so a stale condition on it is
+  ignored; a dead kubelet refreshes neither, so suppression stays, which is
+  harmless. With that rule the preflight and the enablement order above become
+  unnecessary. Raised at PRR review, 2026-09-29.
 - e2e coverage in [`test/e2e_node/`][test/e2e_node/]; version-skew matrix
   documented and tested.
 - **Windows e2e.** Condition publish verified against a real SCM preshutdown
@@ -984,21 +992,29 @@ writer and reader KEPs graduate together.*
 
 ### Upgrade / Downgrade Strategy
 
-- **Upgrade order (required).** Enable the kubelet gate on all nodes first and
-  the kube-controller-manager gate last. The reader is writer-agnostic, so
-  enabling it first would act on any pre-existing conditions; kubelet-first
-  guarantees that the only conditions the reader sees on enablement are ones a
-  kubelet wrote during an actual shutdown. No migration of existing objects; a
-  node that is not shutting down carries no kubelet-written condition.
-- **Preflight (required).** Before enabling the reader, list nodes already
-  carrying the condition:
+The order of enablement matters only if some nodes already carry
+`GracefulNodeShutdownInProgress=True` before the reader is turned on. In v1.37
+nothing in core writes that condition, so on a cluster that has never run this
+feature, and where no administrator has set the condition by hand, the gate can
+be enabled on the kubelet and kube-controller-manager in any order. The
+preflight below is how to tell which case a cluster is in.
+
+- **Preflight.** Before enabling the reader, list nodes already carrying the
+  condition:
   `kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="GracefulNodeShutdownInProgress")].status}{"\n"}{end}' | grep " True"`.
-  A listed node that is `Ready` and not shutting down carries stale state. If
-  its kubelet is running with the gate, the kubelet corrects it on its next
-  status update; otherwise clear it by hand before enabling the reader. A
-  listed node whose kubelet is gone will be suppressed once the reader is on,
-  which is harmless because nothing runs there.
-- **Downgrade / disable order (required).** Disable the kube-controller-manager
+  If nothing is listed, enable the gates in any order. A listed node that is
+  `Ready` and not shutting down carries stale state: if its kubelet is running
+  with the gate, the kubelet corrects it on its next status update; otherwise
+  clear it before enabling the reader. A listed node whose kubelet is gone will
+  be suppressed once the reader is on, which is harmless because nothing runs
+  there; such nodes are normally deleted by the cloud controller or the
+  autoscaler, and deletion clears them.
+- **Upgrade order (only if the preflight lists nodes).** Enable the kubelet gate
+  on all nodes first and the kube-controller-manager gate last. Every live
+  kubelet with the gate corrects its own node on its next status update, so by
+  the time the reader is on, the only `True` values left are on nodes that are
+  shutting down or whose kubelet is gone.
+- **Downgrade / disable order.** Disable the kube-controller-manager
   gate first, then the kubelet gate or version. Reader-first guarantees that a
   condition a downgraded kubelet can no longer clear has no effect. Conditions
   left `True` on a node mid-shutdown at the moment of disablement are cleared
@@ -1087,12 +1103,14 @@ enabled cluster therefore cannot block an upgrade.
 The reader is writer-agnostic — it keys on `type` and `status` only, per API
 conventions — so a node that already carries `GracefulNodeShutdownInProgress`
 `True` when the reader is enabled is suppressed immediately, whoever wrote it.
-For stale state that is not wanted, which is why rollout ordering and the
-preflight check in [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-are requirements: kubelets before the reader on the way up, reader off first on
-the way down, and a listing of nodes carrying the condition before the reader
-is enabled. On a node whose kubelet runs with the gate, the kubelet also
-corrects the condition on its next status update.
+For stale state that is not wanted, which is why [Upgrade / Downgrade
+Strategy](#upgrade--downgrade-strategy) asks for a preflight listing before the
+reader is enabled. On a cluster where nothing has written the condition, which
+is every cluster today, the listing is empty and the gates can be enabled in
+any order. Where it is not empty, kubelets go first, and every live kubelet
+with the gate corrects its own node on its next status update, so no node needs
+hand-clearing except one whose kubelet is gone, and those are normally deleted
+by the cloud controller or the autoscaler.
 
 Control-plane components run as static Pods are DaemonSet-independent and
 unaffected. Control-plane components run as DaemonSets — some platforms do
