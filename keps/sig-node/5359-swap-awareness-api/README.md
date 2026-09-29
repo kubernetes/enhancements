@@ -201,11 +201,41 @@ kubeletConfiguration:
 Swap limits are configured using `resources.limits.swap` for a cleaner resource
 model, supported at both the container level (`containers[*].resources.limits.swap`)
 and the explicit pod level (`pod.spec.resources.limits.swap`). This avoids the
-ambiguity of swap requests. To enforce this, API-level validation will be added
-to forbid non-zero values for `requests.swap` at both container and pod levels,
-and `limits.swap` will not be defaulted into `requests.swap` or affect Pod QoS
-class determination.
+ambiguity of swap requests. To enforce this safely across the Pod API without
+breaking callers that assume `ResourceRequirements` entries are allocatable/requestable:
 
+-  **`requests.swap` is forbidden:** API validation rejects any `requests.swap`
+    entry (including `"0"`) at both container and pod levels (`"swap may only be
+    specified in limits, not requests"`).
+
+<<[UNRESOLVED requests.swap API feedback from @liggitt ]>>
+The exact API mechanism for handling `requests.swap` and `Limits -> Requests`
+defaulting in `SetDefaults_Pod` is under active discussion with API reviewers
+and will be finalized as a follow-up prior to Beta graduation. For Alpha, the
+proposed approach is:
+
+-  **`limitOnlyResources` Classification:**
+    `swap` belongs to a dedicated `limitOnlyResources` set (`IsLimitOnlyResource`)
+    representing a kernel cgroup upper bound (`memory.swap.max`) rather than
+    pre-reserved node capacity.
+    - **No `limits -> requests` defaulting:** `SetDefaults_Pod` skips
+      `IsLimitOnlyResource` keys in both container/initContainer defaulting and
+      pod-level `defaultPodRequests` / `defaultHugePagePodLimits`. Auto-populating
+      `requests.swap` from `limits.swap` has scheduling implications and fail on 
+      nodes without allocatable swap, while also triggering unintended pod-level
+      CPU/memory request materialization in `defaultPodRequests` (`KEP-2837`).
+    - **Disjoint from Accountable Resource Sets & QoS:** `swap` is kept disjoint
+      from `supportedQoSComputeResources` (`{cpu, memory}`),
+      `supportedPodLevelResources` (`{cpu, memory, hugepages-*}`), and
+      `standardContainerResources` (`{cpu, memory, ephemeral-storage, hugepages-*}`).
+      Just as `Guaranteed` pods in Kubernetes today can have
+      `requests.ephemeral-storage != limits.ephemeral-storage` while remaining
+      `Guaranteed` (since QoS is strictly a function of `{cpu, memory}`), setting
+      `limits.swap` on a `Guaranteed` pod preserves its `Guaranteed` QoS class
+      and static CPU/memory pinning eligibility, and leaves `PodRequests`,
+      `PodLimits`, `IsPodLevelResourcesSet`, `IsPodLevelLimitsSet`, and `LimitRange`
+      invariants unchanged for existing callers.
+<<[/UNRESOLVED]>>
 -  **Explicit Pod-Level Swap Configuration:** When `pod.spec.resources.limits.swap`
     is explicitly specified on a pod (`PodSwapLimit`), it sets the pod-level
     cgroup swap limit (`memory.swap.max`). Following the
@@ -455,6 +485,7 @@ tests may be added to cover any gaps that are discovered in the future.
 
 ### Beta
 
+-  Resolve `requests.swap` and `limitOnlyResources` API design feedback with API reviewers.
 -  API controlled swap functionality is running behind feature flag for at least one release.
 -  No major bugs reported and user feedback is positive.
 
