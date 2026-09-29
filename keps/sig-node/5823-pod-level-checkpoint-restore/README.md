@@ -489,8 +489,8 @@ message CheckpointPodResponse {
     // the digest covers its files (for example a digest over a manifest listing
     // each file's digest), and must be able to recompute it on restore. The
     // kubelet treats it as opaque and records it in
-    // PodCheckpoint.status.checkpointDigest. May be empty in alpha; required
-    // for Beta (see Checkpoint archive integrity).
+    // PodCheckpoint.status.checkpointDigest. May be empty if the runtime does
+    // not report a digest. See Checkpoint archive integrity.
     string checkpoint_digest = 1;
 }
 ```
@@ -747,7 +747,7 @@ type PodCheckpointList struct {
 // PodCheckpointSpec describes which Pod to checkpoint and how.
 type PodCheckpointSpec struct {
 	// sourcePod identifies the running Pod to checkpoint. The Pod must exist in
-	// the same namespace as this PodCheckpoint. Required in alpha (validation
+	// the same namespace as this PodCheckpoint. Required (validation
 	// rejects an unset reference); it is marked optional in the schema so a
 	// future selector-based or controller-populated mode (for example
 	// checkpointing a ReplicaSet replica without naming one) can relax it
@@ -799,7 +799,7 @@ type PodReference struct {
 	UID *types.UID `json:"uid,omitempty"`
 }
 
-// Note: alpha leaves the source Pod running after a checkpoint; the CRI
+// Note: the source Pod remains running after a checkpoint; the CRI
 // CheckpointPod contract always resumes the containers. The user-facing choice
 // (a postCheckpointState field on PodCheckpointSpec) and the matching CRI field
 // are intentionally not added yet; they will be introduced together with the
@@ -830,8 +830,8 @@ type PodCheckpointStatus struct {
 	// discriminated union keyed by type so checkpoint storage can grow to other
 	// backends (object storage, a PersistentVolumeClaim) by adding members,
 	// without an incompatible change. The kubelet sets it when the checkpoint is
-	// Ready; in alpha the only backend is the node that took the checkpoint
-	// (NodeLocal). See Checkpoint Storage Location.
+	// Ready. The NodeLocal backend stores the data on the node that took the
+	// checkpoint. See Checkpoint Storage Location.
 	// +optional
 	CheckpointLocation *CheckpointSource `json:"checkpointLocation,omitempty"`
 
@@ -840,8 +840,8 @@ type PodCheckpointStatus struct {
 	// checkpointLocation. On restore the kubelet passes it to the runtime, which
 	// fails the restore if the data no longer matches. It is written only by the
 	// kubelet, through the status subresource, and cannot be changed once set.
-	// May be empty in alpha if the runtime does not report a digest; required for
-	// Beta. See Checkpoint archive integrity.
+	// May be empty if the runtime does not report a digest.
+	// See Checkpoint archive integrity.
 	// +optional
 	CheckpointDigest string `json:"checkpointDigest,omitempty"`
 
@@ -900,7 +900,7 @@ type PodCheckpointContainerStatus struct {
 // as new members (and new type values) without an incompatible change.
 // +union
 type CheckpointSource struct {
-	// type indicates which backend holds the checkpoint data. In alpha the only
+	// type indicates which backend holds the checkpoint data. The only supported
 	// value is "NodeLocal".
 	// +unionDiscriminator
 	Type CheckpointSourceType `json:"type"`
@@ -917,7 +917,7 @@ type CheckpointSourceType string
 
 const (
 	// CheckpointSourceTypeNodeLocal stores the checkpoint on the node that took
-	// it. It is the only backend implemented in alpha.
+	// it.
 	CheckpointSourceTypeNodeLocal CheckpointSourceType = "NodeLocal"
 )
 
@@ -1236,7 +1236,8 @@ at admission. The kubelet runs the equality check again before the CRI restore a
    directly. It checks that the Pod's spec matches the spec in `status.checkpointedPodTemplate`,
    rejecting a mismatch and reporting the field that differs. And it checks every key in
    `spec.restoreFrom.options` against the allow-list on the Pod's RuntimeClass (see
-   [Runtime Options](#runtime-options)).
+   [Runtime Options](#runtime-options)). A future API field could express this required node
+   binding directly. Its design can be handled as follow-up work, potentially in a separate KEP.
 
    The equality check ignores the fields the restore flow introduces: `spec.restoreFrom` (the
    trigger the source Pod never had) and the node placement it adds (the injected node affinity, and
