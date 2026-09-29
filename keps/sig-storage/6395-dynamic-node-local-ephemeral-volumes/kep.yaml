@@ -1,0 +1,36 @@
+title: Dynamic Node-Local Ephemeral Volumes
+kep-number: 6395
+authors:
+  - "@natasha41575"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-node
+status: implementable
+creation-date: "2026-09-21"
+reviewers:
+  - tallclair
+  - msau42
+approvers:
+  - tallclair
+  - msau42
+
+see-also:
+  - "/keps/sig-node/5972-dynamic-containers"
+  - "/keps/sig-node/1287-in-place-update-pod-resources"
+replaces:
+
+stage: alpha
+latest-milestone: "v1.38"
+milestone:
+  alpha: "v1.38"
+  beta: TBD
+  stable: TBD
+
+feature-gates:
+  - name: DynamicNodeLocalEphemeralVolumes
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+metrics:
