@@ -79,24 +79,23 @@ This KEP proposes extending Pod-Level Resource Specifications to support `epheme
 
 Kubernetes workloads often consist of multiple containers collaborating within a Pod. While container-level resource specifications allow granular control per container, estimating and allocating `ephemeral-storage` for each individual container in a multi-container Pod is challenging:
 
-1. **Simplified Resource Management (Pod-Scoped Shared Storage)**: Unlike CPU and memory, ephemeral storage includes disk-backed `emptyDir` volumes (`medium: ""`) that are defined at the Pod level and shared across multiple containers. With only container-level specifications, users cannot naturally attribute shared `emptyDir` storage to the Pod as a whole and are forced to arbitrarily assign or split the storage request across individual containers, or meticulously configure limits on every sidecar container to bound total Pod disk usage.
-2. **Better Resource Utilization (Dynamic Sharing vs. Peak Over-Allocation)**: When multiple containers in a Pod experience independent or staggered peaks in ephemeral storage usage (such as temporary scratch files, build artifacts, or logs written at different stages), allocating container-level requests and limits based on each container's individual peak leads to over-provisioning. For example, if two containers each peak at `10Gi` at different times but their combined usage never exceeds `15Gi`, container-level specifications require allocating `20Gi`, whereas a shared Pod-level specification requires only `15Gi`.
+1. **Pod-Scoped Shared Storage (`emptyDir`)**: Unlike CPU and memory, ephemeral storage includes disk-backed `emptyDir` volumes (`medium: ""`) that are defined at the Pod level and shared across multiple containers. With only container-level specifications, users cannot naturally attribute shared `emptyDir` storage to the Pod as a whole and are forced to arbitrarily assign or split the storage request and limit across individual containers.
+2. **Avoiding Unintended Whole-Pod Limits from Injected Sidecars**: Kubelet's Pod-level ephemeral storage eviction (`podEphemeralStorageLimitEviction`) calculates a Pod's total ephemeral storage limit by summing the declared container-level limits across the Pod. If an injected sidecar declares an `ephemeral-storage` limit while the primary application containers omit it, the sidecar's limit unintentionally becomes the effective ephemeral storage limit for the entire Pod (bounding the main containers and any shared `emptyDir` volumes). Allowing `ephemeral-storage` to be specified directly at the Pod level avoids this pitfall.
+3. **Shared Pod-Level Limit Without Per-Container Limit Over-Allocation**: Kubelet enforces container-level `ephemeral-storage` limits against each individual container's writable layer and logs (`containerEphemeralStorageLimitEviction`), in addition to enforcing the sum of container limits against the Pod's total usage. When multiple containers experience staggered peaks in ephemeral storage usage (e.g., two containers each peaking at `10Gi` at different times while combined usage never exceeds `15Gi`), setting `10Gi` container-level limits on each container results in an aggregated `20Gi` Pod limit (and a `20Gi` defaulted Pod request if requests are not separately specified), whereas a Pod-level specification allows bounding and reserving `15Gi` for the Pod as a whole.
 
-Supporting `ephemeral-storage` requests and limits at the Pod level (`pod.spec.resources`) complements existing container-level settings by allowing containers within a Pod to dynamically share a unified ephemeral storage pool while bounding the Pod's total disk consumption.
+Supporting `ephemeral-storage` requests and limits at the Pod level (`pod.spec.resources`) complements existing container-level settings by allowing containers within a Pod to share a unified ephemeral storage budget while bounding the Pod's total disk consumption.
 
 ### Goals
 
-1. Extend the Pod API to allow specifying `ephemeral-storage` requests and limits at the Pod level (`pod.spec.resources`), gated by the `PodLevelResourcesEphemeralStorage` feature gate.
-2. Make Pod-level `ephemeral-storage` compatible with existing container-level `ephemeral-storage` specifications, `emptyDir.sizeLimit`, `ResourceQuota`, and `LimitRanger`.
-3. Enable the scheduler and Kubelet eviction manager to account for and enforce Pod-level `ephemeral-storage` requests and limits across container writable layers, container logs, and disk-backed `emptyDir` volumes.
+1. Relax Pod API validation and update defaulting to allow specifying `ephemeral-storage` requests and limits at the Pod level (`pod.spec.resources`), gated by the `PodLevelResourcesEphemeralStorage` feature gate.
+2. Update Pod resource helpers (`k8s.io/component-helpers/resource` and `pkg/apis/core/helper`) and `LimitRanger` to support Pod-level `ephemeral-storage` alongside existing container-level `ephemeral-storage` specifications, `emptyDir.sizeLimit`, and `ResourceQuota`.
+3. Wire `PodLevelResourcesEphemeralStorage` into `kube-scheduler` and Kubelet's eviction manager (via `resourcehelper.PodRequests` and `resourcehelper.PodLimits`) so Pod-level `ephemeral-storage` requests and limits are accounted for and enforced.
 
 ### Non-Goals
 
-1. **No Pod-Level `volumeMounts`**: Filesystem mounting remains strictly container-scoped (`containers[*].volumeMounts`); this KEP deals purely with ephemeral storage resource requests and limits.
-2. **No Changes to `emptyDir.medium: Memory`**: RAM-backed `tmpfs` volumes continue to be accounted against and enforced by cgroup `memory` limits, not `ephemeral-storage`.
-3. **No Dynamic Volume Resizing**: Dynamically resizing running `emptyDir` volumes or Pod-level ephemeral storage allocations at runtime is out of scope.
-4. **No Persistent Volumes**: PersistentVolumeClaims (PVCs), `hostPath`, and CSI volumes are completely unaffected by this KEP.
-5. **No Changes to Pod QoS Class Calculation**: As with container-level `ephemeral-storage`, Pod-level `ephemeral-storage` does not participate in Pod QoS class determination (`Guaranteed`, `Burstable`, `BestEffort`).
+1. **No Changes to Ephemeral Storage Accounting**: Any changes to how `ephemeral-storage` usage is measured or which storage types are accounted against it (container writable layers, container logs, and disk-backed `emptyDir` volumes; excluding memory-backed `tmpfs` `emptyDir` volumes, PVCs, `hostPath`, and CSI volumes) are out of scope.
+2. **No In-Place Resizing of `ephemeral-storage`**: In-place resizing of container-level or Pod-level `ephemeral-storage` requests and limits at runtime is out of scope.
+3. **No Changes to Pod QoS Class Calculation**: As with container-level `ephemeral-storage`, Pod-level `ephemeral-storage` does not participate in Pod QoS class determination (`Guaranteed`, `Burstable`, `BestEffort`).
 
 ## Proposal
 
@@ -198,28 +197,23 @@ spec:
 
 Pod-level `ephemeral-storage` follows the same validation, defaulting, and precedence rules defined in [KEP-2837](/keps/sig-node/2837-pod-level-resource-spec/README.md#proposed-validation--defaulting-rules) for CPU and memory:
 
-* **Pod-level Resources Priority**: If pod-level `ephemeral-storage` requests or limits are explicitly set, they take precedence over container-level settings.
+* **Pod-level and Container-level Coexistence**:
+  - When Pod-level `ephemeral-storage` requests or limits are set, Pod-level resource calculations (`PodRequests` and `PodLimits`, used for scheduling, `ResourceQuota`, disk-pressure eviction ranking, and total Pod limit eviction) use the Pod-level value directly instead of summing container-level values.
+  - At runtime, each container is constrained to the lesser of the Pod-level limit and its container-level limit: if a container specifies a container-level `ephemeral-storage` limit, Kubelet continues to enforce that limit against the container's individual writable layer and logs (`containerEphemeralStorageLimitEviction`), while enforcing the Pod-level limit against the aggregate ephemeral storage usage of the Pod (`podEphemeralStorageLimitEviction`).
 * **Validation Rules**:
-  - The aggregated container requests cannot be greater than the pod-level request or limit.
-  - The aggregate container-level limits can exceed pod-level limits, but the total resource consumption across all containers in a pod will always remain within the pod-level limit. While the total container limits can exceed pod-level requests or limits, no single container limit can exceed the pod-level limit.
-* **Container-level Defaulting**:
-  - [Existing Rule] If the container-level request is not set, but the container-level limit is set, then the container-level request defaults to the container-level limit.
-* **Pod-level Defaulting**:
-  - Pod-level defaulting logic only kicks in when at least one request or limit for any supported pod-level resource is specified in `pod.spec.resources`.
-  - If pod-level requests or limits are not set, they will be derived from the individual container requests and limits within the pod.
-  - If a pod-level request is not defined, but a pod-level limit is specified and no container requests are set, Kubernetes is unable to derive the pod-level request from the container requests unless at least one container has a request defined. In this case, the pod-level request defaults to the pod-level limit.
+  - The aggregated container-level `ephemeral-storage` requests cannot exceed the Pod-level request or limit.
+  - The sum of container-level `ephemeral-storage` limits may exceed the Pod-level limit, but no single container-level limit can exceed the Pod-level limit.
+* **Defaulting Rules**:
+  - Container-level and Pod-level defaulting for `ephemeral-storage` follow the exact same rules as CPU and memory defined in [KEP-2837](/keps/sig-node/2837-pod-level-resource-spec/README.md#proposed-validation--defaulting-rules).
+  - `emptyDir.sizeLimit` does not participate in Pod-level `ephemeral-storage` defaulting; it remains strictly a per-volume limit enforced at runtime.
 
 ### Scheduler Changes
 
-The scheduler determines a pod's `ephemeral-storage` requirements in the following order of preference:
-
-1. **Directly from Pod-Level Resources (`pod.spec.resources`)**: If pod-level `ephemeral-storage` requests are specified, the scheduler uses the pod-level request as the sole indicator of the pod's ephemeral storage needs across all init, sidecar, and regular containers (plus pod overhead, if specified).
-2. **Indirectly from Container-Level Resources**: If pod-level `ephemeral-storage` requests are not specified, the scheduler derives the pod's ephemeral storage needs by aggregating the requests across all containers in the pod.
-3. **Both Pod-Level and Container-Level Specified**: If both are specified, the scheduler prioritizes the pod-level request for node filtering and scoring decisions.
+`kube-scheduler` already computes pod resource requests via `resourcehelper.PodRequests`. Once `ephemeral-storage` is added to the supported pod-level resources in `resourcehelper` (gated by `PodLevelResourcesEphemeralStorage`), `kube-scheduler` will automatically use `pod.spec.resources.requests[ephemeral-storage]` when specified and fall back to aggregated container requests otherwise.
 
 ### Eviction Manager
 
-For ephemeral storage eviction and disk pressure signals, the eviction manager checks the pod's ephemeral storage usage and compares it with the pod's `ephemeral-storage` requests and limits. Previously, it aggregated container-level `ephemeral-storage` requests and limits to calculate the pod's effective values. When pod-level `ephemeral-storage` requests or limits are specified, the eviction manager uses the pod-level values directly instead of aggregating container-level values; otherwise, it falls back to aggregating container-level values.
+Like container-level `ephemeral-storage` today, pod-level `ephemeral-storage` is enforced reactively by Kubelet's eviction manager during its periodic housekeeping loop (rather than via proactive kernel/cgroup write limits). For ephemeral storage eviction and disk pressure signals, the eviction manager already uses `resourcehelper.PodLimits` and `resourcehelper.PodRequests` to compare the pod's ephemeral storage usage against its effective requests and limits: when pod-level `ephemeral-storage` requests or limits are specified, it uses the pod-level values directly instead of aggregating container-level values; otherwise, it falls back to aggregating container-level values.
 
 ### ResourceQuota & LimitRanger
 
@@ -312,10 +306,11 @@ N/A.
 
 ### Version Skew Strategy
 
-* **`kube-apiserver` vs. `kube-scheduler`**:
-  - `kube-scheduler` should have `PodLevelResourcesEphemeralStorage` enabled before or concurrently with `kube-apiserver` so that scheduler fit decisions account for `pod.spec.resources.requests[ephemeral-storage]`.
-* **`kube-apiserver` vs. `kubelet`**:
-  - If a Pod specifying `pod.spec.resources.limits[ephemeral-storage]` is scheduled onto an older `kubelet` (up to $n-3$) where `PodLevelResourcesEphemeralStorage` is disabled, the older Kubelet will only enforce container-level limits (if specified) and `emptyDir.sizeLimit`. Operators should ensure target node pools have `PodLevelResourcesEphemeralStorage` enabled on Kubelet before relying on Pod-level ephemeral storage limits.
+Pod-level `ephemeral-storage` specification is an opt-in feature. For this feature to work correctly, `PodLevelResourcesEphemeralStorage` must be enabled in all parts of the cluster (`kube-scheduler`, `kube-apiserver`, `kubelet`).
+
+When the feature gate is disabled on the control plane, but enabled on `kubelet`, users will not be able to create Pods with `ephemeral-storage` in `pod.spec.resources`.
+
+When the feature gate is enabled on the control plane, but disabled on `kubelet`, `NodeDeclaredFeatures` ([KEP-5328](/keps/sig-node/5328-node-declared-features/README.md)) ensures `kube-scheduler` only schedules Pods with Pod-level `ephemeral-storage` onto nodes that declare `PodLevelResourcesEphemeralStorage` in `node.status.declaredFeatures`, and `kubelet` will reject those Pods at admission if scheduled onto a node where the feature gate is disabled.
 
 ## Production Readiness Review Questionnaire
 
@@ -332,25 +327,21 @@ N/A.
 
 ###### Does enabling the feature change any default behavior?
 
-No. This feature is guarded by the `PodLevelResourcesEphemeralStorage` feature gate and requires explicitly specifying `ephemeral-storage` under the Pod-level `resources` stanza (`pod.spec.resources`). Existing default behavior does not change if the feature is not used.
+For Pods that do not specify `pod.spec.resources`, enabling `PodLevelResourcesEphemeralStorage` does not change any default behavior.
+
+For Pods that specify `pod.spec.resources` (e.g., for `cpu` or `memory`) and also specify container-level `ephemeral-storage`, enabling `PodLevelResourcesEphemeralStorage` will cause `DefaultPodLevelResources` to also default `ephemeral-storage` in `pod.spec.resources` (`requests[ephemeral-storage]` to the aggregated container requests, and `limits[ephemeral-storage]` to the aggregated container limits if all containers specify an `ephemeral-storage` limit). Because the defaulted Pod-level values match the aggregated container values, scheduling and runtime eviction behavior for these Pods remains unchanged.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes (`disable-supported: true`). Any new Pods created after disabling the feature will not be permitted to specify `ephemeral-storage` in `pod.spec.resources`. Disabling the feature does not affect existing Pods that do not use Pod-level `ephemeral-storage`.
-
-* For Pods that were created with Pod-level `ephemeral-storage`, disabling the feature gate can result in a temporary discrepancy between how different components calculate resource usage and the actual resource consumption of those workloads:
-  - **`ResourceQuota` discrepancy**: If a `ResourceQuota` object exists in a namespace with Pods using Pod-level `ephemeral-storage`, and the feature gate is then disabled, those existing Pods continue to run. However, the `ResourceQuota` controller reverts to aggregating container-level `ephemeral-storage` specifications instead of Pod-level specifications when calculating namespace quota usage. This may lead to a temporary mismatch until the Pods are recreated or updated.
-  - **Eviction & Scheduling fallback**: If the feature is disabled while Pods that specified *only* Pod-level `ephemeral-storage` (and no container-level `ephemeral-storage`) are running, `kube-scheduler` and `kubelet` will interpret these Pods as having `0` requested/limited `ephemeral-storage`. On Kubelet, this disables Pod-level ephemeral storage limit eviction and removes their disk-pressure eviction ranking protection (`rankDiskPressureFunc` sees `request = 0`).
-
-To resolve these discrepancies after a rollback, administrators can delete and recreate the affected Pods using container-level resource specifications.
+Yes (`disable-supported: true`). When the feature gate is disabled:
+* New Pods are not permitted to specify `ephemeral-storage` in `pod.spec.resources`.
+* For existing Pods that were created with Pod-level `ephemeral-storage`, `resourcehelper.PodRequests` and `resourcehelper.PodLimits` ignore `ephemeral-storage` in `pod.spec.resources` and only consider container-level `ephemeral-storage` specifications.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 If `PodLevelResourcesEphemeralStorage` is re-enabled after being previously disabled:
 * Any new Pods will again be able to specify `ephemeral-storage` in `pod.spec.resources`.
-* Pods that were created but not yet started will be evaluated based on their Pod-level resource specification.
-* Pods that are already running will immediately resume having their `pod.spec.resources.limits[ephemeral-storage]` enforced by Kubelet's Eviction Manager, and `ResourceQuota` / `kube-scheduler` will resume accounting for their Pod-level `ephemeral-storage` requests and limits.
-* To ensure completely consistent resource accounting across all components, it is recommended to recreate Pods that were created during the rollback window.
+* For existing Pods with Pod-level `ephemeral-storage`, `resourcehelper.PodRequests` and `resourcehelper.PodLimits` will immediately resume using `pod.spec.resources` for `ephemeral-storage` across `ResourceQuota`, `kube-scheduler`, and `kubelet`'s Eviction Manager.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -364,9 +355,7 @@ Yes, unit and integration tests cover feature gate toggling:
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Because this feature is opt-in and requires setting new fields in `pod.spec.resources`, cluster rollouts will not impact existing workloads. For new workloads opting into Pod-level `ephemeral-storage` during a mixed-version rolling upgrade (where `kube-apiserver` has the gate enabled while some `kubelet` instances still have it disabled), Pods scheduled onto un-upgraded nodes will not have their Pod-level ephemeral storage limit enforced until those nodes are upgraded.
-
-Rollbacks are non-disruptive to running workloads and complete cleanly once affected Pods are recreated.
+Rollouts and rollbacks do not impact existing workloads. During mixed-version rollouts, `NodeDeclaredFeatures` ([KEP-5328](/keps/sig-node/5328-node-declared-features/README.md)) ensures Pods using Pod-level `ephemeral-storage` are only scheduled onto nodes with the feature enabled.
 
 ###### What specific metrics should inform a rollback?
 

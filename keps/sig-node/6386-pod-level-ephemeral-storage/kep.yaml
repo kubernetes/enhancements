@@ -6,7 +6,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-scheduling
-status: provisional
+status: implementable
 creation-date: 2026-09-17
 reviewers:
   - "@mrunalp"
