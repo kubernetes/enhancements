@@ -118,11 +118,13 @@ post-scheduling disruptions". No issue or KEP has picked that up, and
 
 The information itself is not missing, only unexposed. The scheduler cache
 keeps a `podGroupState` per known group
-(`pkg/scheduler/backend/cache/podgroupstate.go`), updated from the pod event
-handlers through `AddPodGroupMember`, `UpdatePodGroupMember` and
-`RemovePodGroupMember`. `ScheduledPodsCount()` on that state is exactly the
-number the gang plugin compares against `minCount` when admitting members.
-Nothing publishes it.
+(`pkg/scheduler/backend/cache/podgroupstate.go`). Unscheduled members enter it
+through `AddPodGroupMember`, `UpdatePodGroupMember` and
+`RemovePodGroupMember`, assumed members through `AssumePod` and `ForgetPod`,
+and assigned members through the cache's `AddPod`, `UpdatePod` and
+`RemovePod`. `ScheduledPodsCount()` on that state is exactly the number the
+gang plugin compares against `minCount` when admitting members. Nothing
+publishes it.
 
 ### What controllers do today
 
@@ -372,9 +374,12 @@ and `minCount` dropping.
 may be refreshed on same-status writes, and implementations should coalesce
 those.
 
-In alpha the condition is written for `PodGroup`s with a gang scheduling
-policy. Whether to write it for `basic` policy groups, where the effective
-`minCount` is 1, is an open question.
+The condition is written only for `PodGroup`s with a gang scheduling policy.
+For a `basic` policy the effective `minCount` is 1, so the condition would
+only say that at least one member is scheduled, and `basic` groups can far
+outnumber gang ones: with the Job integration ([KEP-5547]), a Job that omits
+`spec.scheduling` gets the `basic` policy. Writing the condition for them would
+multiply status writes for little information.
 
 ### Where the condition is computed and written
 
@@ -535,7 +540,6 @@ unit and integration coverage that this KEP extends.
   measurement in the scalability section confirmed on a large cluster,
   including backfill after the gate is enabled.
 - Feedback from at least two consumers.
-- Decision recorded on `basic` policy groups.
 - Semantics for `CompositePodGroup` hierarchies resolved, including whether a
   `CompositePodGroup` gets an equivalent condition (see
   [Open Questions](#open-questions)), and documented for users.
@@ -851,15 +855,16 @@ identified consumer and is not proposed.
 
 ## Open Questions
 
-1. Should the condition be written for `basic` policy groups, where the
-   effective `minCount` is 1, or only for gang policies?
+1. *Resolved:* the condition is written only for gang policies, not for
+   `basic` policy groups; see [Condition semantics](#condition-semantics).
+   This can be revisited if a consumer needs it for `basic` groups.
 2. Is the count in the condition message sufficient, or should a follow-up add
    a `scheduledMembers` status field? A message is not machine-readable, and a
    consumer that wants the number has to parse it or count pods anyway.
-3. Should a member with a deletion timestamp still count as scheduled? Keeping
-   it matches the admission behavior the condition describes; dropping it
-   would report degradation earlier, which is what a controller reacting to
-   node failure would want.
+3. *Resolved:* a member with a deletion timestamp keeps counting as scheduled
+   until it is gone or reaches a terminal phase, which matches the count the
+   gang plugin uses. A consumer that wants an earlier signal can watch the
+   members' `deletionTimestamp` or their `DisruptionTarget` conditions.
 4. Does `CompositePodGroup` need an equivalent condition for `minGroupCount`,
    and should that be this KEP's beta scope or a separate one?
 5. Naming: `PodGroupSatisfied` versus something that does not invite confusion
