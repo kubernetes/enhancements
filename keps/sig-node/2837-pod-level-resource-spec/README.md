@@ -33,6 +33,10 @@
     - [Eviction Manager](#eviction-manager)
     - [Pod Overhead](#pod-overhead)
     - [Hugepages](#hugepages)
+    - [Node Swap Support](#node-swap-support)
+      - [Basic Principle](#basic-principle)
+      - [Summary Table of Cgroup Settings](#summary-table-of-cgroup-settings)
+      - [Swap Behavior by Case](#swap-behavior-by-case)
     - [[Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)](#scoped-for-beta-in-136-fix-for-pod-level-limits-default-logic-issue-136120)
     - [[Scoped for Beta in 1.36] Fix for Kubelet QoS Class Determination (Issue 135082)](#scoped-for-beta-in-136-fix-for-kubelet-qos-class-determination-issue-135082)
     - [[Scoped for Beta] Cluster Autoscaler](#scoped-for-beta-cluster-autoscaler)
@@ -42,11 +46,6 @@
   - [Instrumentation](#instrumentation)
     - [Feature Adoption](#feature-adoption)
       - [<code>kubelet_pod_level_resources_admission_total</code>](#kubelet_pod_level_resources_admission_total)
-    - [The Kubelet (Execution Phase)](#the-kubelet-execution-phase)
-      - [<code>kubelet_oom_kills_total</code>](#kubelet_oom_kills_total)
-      - [<code>kubelet_cpu_cfs_throttled_seconds_total</code>](#kubelet_cpu_cfs_throttled_seconds_total)
-    - [Kube-State-Metrics (KSM)](#kube-state-metrics-ksm)
-      - [<code>kube_pod_level_resource_spec</code>](#kube_pod_level_resource_spec)
     - [Regression Monitoring (Existing Metrics)](#regression-monitoring-existing-metrics)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
@@ -55,7 +54,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Phase 1: Alpha (target 1.32)](#phase-1-alpha-target-132)
     - [Phase 2:  Beta (target 1.34)](#phase-2--beta-target-134)
-    - [GA (stable)](#ga-stable)
+    - [GA (stable) (target 1.38)](#ga-stable-target-138)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -1189,6 +1188,123 @@ resources.
 
 Containers will still need to mount an emptyDir volume to access the huge page filesystem (typically /dev/hugepages).  This is the standard way for containers to interact with huge pages, and this will not change. 
 
+#### Node Swap Support
+
+Node Swap Support ([KEP-2400](https://kep.k8s.io/2400)) enables Kubernetes workloads on Linux nodes with cgroup v2 to utilize swap memory when configured via `MemorySwap.SwapBehavior` in the KubeletConfiguration (`NoSwap` or `LimitedSwap`).
+
+##### Basic Principle
+
+When `MemorySwap.SwapBehavior` is set to `LimitedSwap`:
+
+1. **Pod Swap Eligibility Rules:**
+   A pod is eligible for swap if and only if:
+   * The pod's QoS class is `Burstable` (and it is not a critical pod),
+   * The pod has a non-empty memory request (`PodMemoryRequest > 0`), and
+   * The pod's memory request does not equal its memory limit (`PodMemoryRequest != PodMemoryLimit`).
+
+   If `PodMemoryRequest == PodMemoryLimit` (i.e., a `Guaranteed` pod, or a `Burstable` pod where CPU has `request < limit` while memory has `PodMemoryRequest == PodMemoryLimit`), the pod is **ineligible for swap**: `memory.swap.max` is set to **`0` (`NoSwap`)** on both the Pod-level cgroup and all container cgroups in the pod.
+
+2. **Pod-Level Cgroup (`memory.swap.max`):**
+   * For any swap-eligible pod, the **Pod-level swap cgroup (`memory.swap.max`) is set directly from the pod-level memory request (`PodMemoryRequest`)** using the standard KEP-2400 proportional formula:
+     ```
+     PodSwapLimit = (PodMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable
+     ```
+
+3. **Container-Level Cgroup (`memory.swap.max`) Inside an Eligible Pod:**
+   * **Container has neither `requests.memory` nor `limits.memory` set:**
+     * **When pod-level memory request (`pod.spec.resources.requests.memory`) is set** (and the pod is eligible for swap due to `PodMemoryRequest != PodMemoryLimit`): the container cgroup's `memory.swap.max` is set to **`max`**, allowing it to use swap up to the parent Pod-level cgroup ceiling (`PodSwapLimit`).
+     * **When pod-level memory resources (`pod.spec.resources`) are not set:** current KEP-2400 rules apply and swap is **not** enabled for this container (`memory.swap.max = 0` / `NoSwap`).
+   * **Container has `requests.memory < limits.memory` (or only `requests.memory` set):**
+     * The container gets swap enabled with its container-level `memory.swap.max` set proportional to its own container-level memory request:
+       ```
+       ContainerSwapLimit = (ContainerMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable
+       ```
+       (and bounded by the parent Pod-level cgroup's `PodSwapLimit`).
+   * **Container has `requests.memory == limits.memory` (explicit or defaulted from `limits.memory`):**
+     * Because `request == limit` makes the container guaranteed at the container level, it gets **no swap** (`memory.swap.max = 0` / `NoSwap`), while the Pod-level swap cgroup remains set proportional to the pod-level memory request (`PodMemoryRequest`).
+
+##### Summary Table of Cgroup Settings
+
+The table below summarizes the resulting Pod and container cgroup `memory.swap.max` values under `LimitedSwap`:
+
+| Pod Swap Eligibility | Pod-Level Memory Request (`pod.spec.resources.requests.memory`) | Container Memory Specification (After Defaulting) | Pod Cgroup `memory.swap.max` | Container Cgroup `memory.swap.max` | Resulting Behavior |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Eligible Pod** (`Burstable`, `PodMemoryRequest > 0`, `PodMemoryRequest != PodMemoryLimit`) | **Set** | Neither `requests.memory` nor `limits.memory` set | `PodSwapLimit = (PodMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable` | **`max`** | Container swap is enabled and set to `max`; swap usage is bounded by the parent Pod cgroup's `PodSwapLimit`. |
+| **Eligible Pod** (`Burstable`, `PodMemoryRequest > 0`, `PodMemoryRequest != PodMemoryLimit`) | **Not Set** | Neither `requests.memory` nor `limits.memory` set | `PodSwapLimit = (PodMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable` | **`0` (`NoSwap`)** | Current KEP-2400 rules apply when pod-level values are not set: container without request/limit does not get swap enabled. |
+| **Eligible Pod** (`Burstable`, `PodMemoryRequest > 0`, `PodMemoryRequest != PodMemoryLimit`) | **Set or Not Set** | `requests.memory < limits.memory` (or only `requests.memory` set) | `PodSwapLimit = (PodMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable` | `ContainerSwapLimit = (ContainerMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable` | Container swap is enabled and capped by its own container-level memory request (and bounded by the parent Pod cgroup's `PodSwapLimit`). |
+| **Eligible Pod** (`Burstable`, `PodMemoryRequest > 0`, `PodMemoryRequest != PodMemoryLimit`) | **Set or Not Set** | `requests.memory == limits.memory` (explicit or defaulted when only `limits.memory` is set) | `PodSwapLimit = (PodMemoryRequest / NodeTotalMemory) * TotalPodsSwapAvailable` | **`0` (`NoSwap`)** | Container explicitly opts out of swap (`request == limit`); container gets no swap while Pod cgroup swap remains proportional to `PodMemoryRequest`. |
+| **Ineligible Pod** (`PodMemoryRequest == PodMemoryLimit`, `Guaranteed`, `BestEffort`, or critical pod) | **Any** | Any (including `requests.memory < limits.memory`) | **`0` (`NoSwap`)** | **`0` (`NoSwap`)** | Pod-level swap is disabled because `PodMemoryRequest == PodMemoryLimit`; all containers in the pod also get `0` (`NoSwap`). |
+
+##### Swap Behavior by Case
+
+Assume a Linux node configured with `MemorySwap.SwapBehavior: LimitedSwap` where `SwapLimit(req) = (req / NodeTotalMemory) * TotalPodsSwapAvailable`.
+
+###### Case 1: Pod-Level Resources Only (No Container Requests/Limits)
+
+* **Example:**
+  * Pod: `requests.memory: 2Gi`, `limits.memory: 4Gi`
+  * Containers `c1` & `c2`: no memory request or limit set.
+* **Behavior:**
+  * The pod is `Burstable` and eligible for swap (`PodMemoryRequest (2Gi) != PodMemoryLimit (4Gi)`).
+  * **Pod Cgroup `memory.swap.max`:** Set proportional to the `2Gi` pod-level memory request (`SwapLimit(2Gi)`).
+  * **Container `c1` & `c2` Cgroup `memory.swap.max`:** Both `c1` and `c2` get `memory.swap.max` set to **`max`** because pod-level memory request is set (`PodMemoryRequest != PodMemoryLimit`), allowing them to dynamically share the parent Pod cgroup's swap budget.
+
+###### Case 2: Mixed Pod (`Sum of Container Requests < Pod Request`)
+
+* **Example:**
+  * Pod: `requests.memory: 4Gi`, `limits.memory: 8Gi`
+  * Container `c1`: `requests.memory: 2Gi`, `limits.memory: 3Gi`
+  * Containers `c2` & `c3`: no memory request or limit set.
+* **Behavior:**
+  * **Pod Cgroup `memory.swap.max`:** Set proportional to the `4Gi` pod-level memory request (`SwapLimit(4Gi)`).
+  * **Container `c1` Cgroup `memory.swap.max`:** Gets swap enabled with `memory.swap.max` set proportional to `c1`'s `2Gi` memory request (`SwapLimit(2Gi)`).
+  * **Containers `c2` & `c3` Cgroup `memory.swap.max`:** Both get `memory.swap.max` set to **`max`** because pod-level memory request is set (bounded by the parent Pod cgroup's `SwapLimit(4Gi)`).
+
+###### Case 3: Mixed Pod (`Sum of Container Requests == Pod Request`)
+
+* **Example:**
+  * Pod: `requests.memory: 4Gi`, `limits.memory: 8Gi`
+  * Container `c1`: `requests.memory: 4Gi`, `limits.memory: 6Gi`
+  * Container `c2`: no memory request or limit set.
+* **Behavior:**
+  * **Pod Cgroup `memory.swap.max`:** Set proportional to the `4Gi` pod-level memory request (`SwapLimit(4Gi)`).
+  * **Container `c1` Cgroup `memory.swap.max`:** Gets swap enabled with `memory.swap.max` set proportional to `c1`'s `4Gi` container-level memory request (`SwapLimit(4Gi)`).
+  * **Container `c2` Cgroup `memory.swap.max`:** Gets `memory.swap.max` set to **`max`** because pod-level memory request is set (bounded by the parent Pod cgroup's `SwapLimit(4Gi)`).
+
+###### Case 4: Container Explicit Opt-Out Inside an Eligible Pod (`request == limit`)
+
+* **Example:**
+  * Pod: `requests.memory: 6Gi`, `limits.memory: 10Gi`
+  * Container `c1`: `requests.memory: 2Gi`, `limits.memory: 2Gi` (explicit opt-out, `request == limit`)
+  * Container `c2`: no memory request or limit set.
+* **Behavior:**
+  * **Pod Cgroup `memory.swap.max`:** Set proportional to the full `6Gi` pod-level memory request (`SwapLimit(6Gi)`).
+  * **Container `c1` Cgroup `memory.swap.max`:** Gets **no swap** (`memory.swap.max = 0` / `NoSwap`), as `request == limit` makes it a guaranteed container at the container level.
+  * **Container `c2` Cgroup `memory.swap.max`:** Gets `memory.swap.max` set to **`max`** because pod-level memory request is set (bounded by the parent Pod cgroup's `SwapLimit(6Gi)`).
+
+###### Case 5: Container Lifecycle Types (Regular Containers, Sidecars, and Init Containers)
+
+* **Example:**
+  * Sidecar container (`initContainers` with `restartPolicy: Always`) `c1` with `requests.memory: 1Gi`, `limits.memory: 2Gi` (alongside other regular or init containers with or without requests/limits) in an eligible pod.
+* **Behavior:**
+  * The **exact same rule applies uniformly to all container lifecycle types**—regular containers (`pod.spec.containers`), restartable sidecar containers (`initContainers` with `restartPolicy: Always`), and non-restartable init containers (`initContainers` without `restartPolicy: Always`):
+    * If the pod is eligible (`Burstable` with `PodMemoryRequest > 0` and `PodMemoryRequest != PodMemoryLimit`), swap is enabled on the pod and the Pod cgroup's `memory.swap.max` is set proportional to `PodMemoryRequest`.
+    * Any container (including sidecar `c1` with `req: 1Gi, lim: 2Gi`) with `request < limit` gets container-level swap proportional to its own memory request (`SwapLimit(1Gi)`).
+    * Any container without `requests.memory` or `limits.memory` gets `memory.swap.max` set to **`max`** (bounded by the Pod cgroup's swap limit) if pod-level memory request (`pod.spec.resources.requests.memory`) is set, or **`0` (`NoSwap`)** under current rules if pod-level memory values are not set.
+    * Any container with `request == limit` gets **`0` (`NoSwap`)**.
+    * *(Note: Ephemeral debug containers in `pod.spec.ephemeralContainers` cannot specify resource requests or limits and always receive `0` (`NoSwap`) per KEP-2400.)*
+
+###### Case 6: Pod-Level Swap Ineligibility (Bug Fix / Breaking Change from Beta)
+
+* **Scenario:**
+  * Pod memory request equals Pod memory limit (`PodMemoryRequest == PodMemoryLimit`—either a `Guaranteed` pod, or a `Burstable` pod where CPU has `request < limit` while memory has `PodMemoryRequest == PodMemoryLimit`), and a container inside the pod specifies `requests.memory < limits.memory`.
+* **Behavior:**
+  * **Pod Cgroup `memory.swap.max`:** Set to **`0` (`NoSwap`)**, disabling swap for the entire pod.
+  * **Container Cgroup `memory.swap.max`:** Set to **`0` (`NoSwap`)** for all containers in the pod (even for the container with `requests.memory < limits.memory`).
+* **Bug Fix & Breaking Change from Beta (`1.34`–`1.37`):**
+  * Pod-Level Resources did not previously have swap support in Beta, and kubelet swap calculation only inspected whether the pod QoS was `Burstable` and whether the individual container had `requests.memory != limits.memory` (without checking pod-level `PodMemoryRequest == PodMemoryLimit` or configuring `memory.swap.max` on the Pod cgroup). As a result, a container with `requests.memory < limits.memory` in a pod with `PodMemoryRequest == PodMemoryLimit` (and burstable CPU) inadvertently had swap enabled.
+  * This behavior was a bug that we plan to fix as part of adding swap support for Pod-Level Resources. While disabling pod-level and container-level swap whenever `PodMemoryRequest == PodMemoryLimit` is a **breaking change from Beta**, it is justified because the previous behavior was a bug and Pod-Level Resources did not support swap earlier. Fixing it ensures that pod-level memory guarantees (`PodMemoryRequest == PodMemoryLimit`, where 100% of the pod's memory limit is backed by physical RAM) are respected at the Pod cgroup level.
+
 #### [Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)
 
 The `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36) addresses a bug in current defaulting logic which only implements defaulting for Pod-level requests. However, per the Rows 10 and 12 of the resource matrix, if Pod-level limits are unset but all containers have limits defined, the Pod-level limits should be defaulted to the sum of the container limits. This fix implements the missing logic to ensure consistency between the KEP and the implementation.
@@ -1283,57 +1399,21 @@ sig-autoscaling: [#7571](https://github.com/kubernetes/autoscaler/issues/7571)
 
 ### Instrumentation
 
-This section outlines the final list of metrics for the Pod-Level Resources feature, excluding Resource Manager extensions. These metrics are designed to provide deep observability into admission control, scheduling efficiency, and Kubelet-level execution.
+This section outlines the final list of metrics for the Pod-Level Resources feature, excluding Resource Manager extensions.
 
 #### Feature Adoption
-These metrics track feature adoption, user intent, and validation friction within the control plane.
+This metric tracks feature adoption and resource configuration strategies upon Kubelet admission.
 
 ##### `kubelet_pod_level_resources_admission_total`
-Total number of pods processed during Kubelet admission, categorized by resource configuration strategy.
+Total number of pods admitted during Kubelet admission, categorized by resource configuration mode and QoS class.
 
 **Note:** This metric is **ALPHA** and temporary. It is intended to track feature adoption while the feature is new and is scheduled to be removed 2-3 releases after the Pod-Level Resources feature reaches General Availability (GA).
 
 Labels: 
-- `config_mode` - Possible values: `container_level`, `pod_level_only`, `pod_and_container_level`.
-- `status` - Possible values: `admitted`, `rejected`.
-- `qos_class` - Possible values: `guaranteed`, `burstable`, `best_effort`.
+- `config_mode` - Possible values: `pod_and_container_level` (both pod-level and container-level resources are set), `pod_level` (only pod-level resources are set), `container_level` (only container-level resources are set), `""` (neither pod-level nor container-level resources are set / BestEffort QoS).
+- `qos_class` - Possible values: `guaranteed`, `burstable`, `besteffort`.
 
 This metric is recorded as a counter.
-
-#### The Kubelet (Execution Phase)
-Tracks operation failures and resource enforcement during the container lifecycle. Labels are kept low-cardinality to ensure node stability.
-
-##### `kubelet_oom_kills_total`
-Total number of OOM kills triggered. This generic metric uses labels to distinguish between pod-level and container-level events.
-
-Labels:
-- `scope` - Possible values: `pod` (kills triggered specifically because the shared pod-level memory pool was exhausted), `container` (standard container-level OOM kills).
-- `resource` - Always `memory`.
-
-This metric is recorded as a counter.
-
-##### `kubelet_cpu_cfs_throttled_seconds_total`
-Total time in seconds that containers were throttled due to exceeding CPU limits.
-
-Labels:
-- `scope` - Possible values: `pod` (throttling caused by the shared pod-level ceiling), `container` (throttling caused by an individual container's limit).
-
-This metric is recorded as a counter.
-
-#### Kube-State-Metrics (KSM)
-Exposed by the cluster-level state collector. This is the primary source for high-cardinality metadata used in observability joins.
-
-##### `kube_pod_level_resource_spec`
-Exposes the numeric values of the pod-level resources specified in the PodSpec.
-
-Labels:
-- `namespace`: The namespace of the pod.
-- `pod`: The name of the pod.
-- `uid`: The Kubernetes UID of the pod.
-- `node`: The node where the pod is running.
-- `resource`: The resource type (`cpu`, `memory`).
-- `type`: The spec type (`request`, `limit`).
-- `unit`: The unit of measurement (`core`, `bytes`).
 
 #### Regression Monitoring (Existing Metrics)
 While not new, the following metrics must be monitored to ensure no regressions in scheduling or node stability occur after adopting pod-level resource specifications.
@@ -1353,7 +1433,8 @@ necessary to implement this enhancement.
 This feature will touch multiple components. For alpha, unit tests coverage for following packages needs to be added:
 
 * Scheduler logic will be updated to consider pod-level requests. Hence pkg/scheduler will require additional coverage.
-* pkg/kubelet/cm will be updated to set pod-level cgroups using CPU requests and limits, and memory limits.
+* pkg/kubelet/cm will be updated to set pod-level cgroups using CPU requests and limits, memory limits, and swap limits (`memory.swap.max`).
+* pkg/kubelet/kuberuntime will be updated to handle container swap behavior when pod-level resources are specified.
 * pkg/apis/core/validation/types_test.go and pkg/apis/core/validation since new fields are added in PodSpec and also new validation rules are required for the new fields.
 * pkg/kubeapiserver/admission for changes made in the admission logic for
   LimitRanger and ResourceQuota admission controllers.
@@ -1376,6 +1457,7 @@ enforcement. We may replicate and/or move some of the E2E tests functionality in
 * Validate the containers with no limits set are throttled on CPU when CPU usage reaches Pod level CPU limits.
 * Validate the containers with no limits set are OOMKilled when memory usage
   reaches Pod level memory limits.
+* Validate Pod and container cgroup swap limits (`memory.swap.max`) and swap usage under `LimitedSwap` and `NoSwap` for pods with pod-level resources (pod-only and mixed pod/container specifications).
 * Test the correct values in TotalResourcesRequested.
 
 - [Pod Level Resources](https://github.com/ndixita/kubernetes/blob/master/test/e2e/common/node/pod_level_resources.go): [SIG Node](https://testgrid.k8s.io/sig-node-presubmits#pr-kubelet-serial-e2e-podresources), [triage search](https://storage.googleapis.com/k8s-triage/index.html?ci=0&pr=1&sig=node&job=pull-kubernetes-node-kubelet-serial-podresources)
@@ -1411,13 +1493,14 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
 * Resolve defaulting bugs via `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36). [Issue 136120](https://github.com/kubernetes/kubernetes/issues/136120)
 * Resolve Kubelet QoS class determination bugs via `PodLevelResourcesFixKubeletQOSClass` feature gate (Beta in 1.36). [Issue 135082](https://github.com/kubernetes/kubernetes/issues/135082)
 
-#### GA (stable)
+#### GA (stable) (target 1.38)
 
 * No major bugs reported for 3 months.
 * Pod Level Resources Support With In Place Pod Vertical Scaling KEP is past alpha.
 * User feedback (ideally from at least two distinct users) is green
 * Resource Allocation Managers i.e. Topology, Memory and CPU managers support with
   Pod-level resources is past alpha.
+* Node Swap Support with Pod-level resources.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1425,7 +1508,11 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
 API Server and Scheduler should be upgraded before the kubelet in that order. 
 
 The existing workloads will not have any impact specifically because of pod-level resources feature
-since they won't be using the new field `resources` in PodSpec at pod-level. 
+since they won't be using the new field `resources` in PodSpec at pod-level.
+
+For clusters using `pod.spec.resources` on Linux nodes with `MemorySwap.SwapBehavior: LimitedSwap`, upgrading the kubelet to `1.38` enables Pod-level and container-level swap integration:
+* Eligible `Burstable` pods (`PodMemoryRequest > 0` and `PodMemoryRequest != PodMemoryLimit`) have `memory.swap.max` set proportional to `PodMemoryRequest` on the Pod cgroup (`PodSwapLimit`), while containers inside the pod have `memory.swap.max` set to `max` when `pod.spec.resources.requests.memory` is set and no container memory request/limit is set (or `0` (`NoSwap`) if pod-level memory values are not set), proportional to `ContainerMemoryRequest` when `request < limit`, and `0` (`NoSwap`) when `request == limit`.
+* Swap-ineligible pods with `PodMemoryRequest == PodMemoryLimit` have `memory.swap.max` set to `0` (`NoSwap`) on both the Pod cgroup and all container cgroups (even if a container specifies `requests.memory < limits.memory`; this is a breaking change from Beta, justified as a bug fix since Pod-Level Resources did not previously support swap).
 
 ##### Downgrade
 Kubelet should be downgraded before Scheduler and API server. 
@@ -1740,7 +1827,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Operators can use the `kubelet_pod_level_resources_admission_total` metric to track the adoption of this feature. This metric is categorized by resource configuration strategy (`config_mode`), admission status, and QoS class. Additionally, `kube_pod_level_resource_spec` (Kube-State-Metrics) can be used to identify specific pods using the feature and their configured resource values.
+Operators can use the `kubelet_pod_level_resources_admission_total` metric to track the adoption of this feature. This metric is categorized by resource configuration mode (`config_mode`: `pod_and_container_level`, `pod_level`, `container_level`, or `""` for unconfigured/BestEffort) and QoS class (`qos_class`).
 
 **Note:** This metric is **ALPHA** and temporary. It is intended to track feature adoption while the feature is new and is scheduled to be removed 2-3 releases after the Pod-Level Resources feature reaches General Availability (GA).
 
@@ -1757,7 +1844,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [X] Other Field
   - pod.status.spec.resources[x]
-  - Inspect Cgroup Filesystem: cgroup fs for the pod will reflect the requests/limits at pod level in cpu.weight, cpu.max, memory.max cgroup files.
+  - Inspect Cgroup Filesystem: cgroup fs for the pod will reflect the requests/limits at pod level in `cpu.weight`, `cpu.max`, `memory.max`, and `memory.swap.max` cgroup files.
 
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -1787,15 +1874,13 @@ Pick one more of these and delete the rest.
 
 - [X] Metrics
   - Metric name:
-  - `kubelet_pod_level_resources_admission_total` (**ALPHA, Temporary**): Total number of pods processed during Kubelet admission, categorized by resource configuration strategy. Scheduled for removal 2-3 releases after GA.
-  - `kubelet_oom_kills_total`: Total number of OOM kills triggered. Use label `scope="pod"` to identify kills caused specifically by the shared pod-level limit.
-  - `kubelet_cpu_cfs_throttled_seconds_total`: Total time in seconds that containers were throttled. Use label `scope="pod"` to identify throttling caused by the shared pod-level ceiling.
-  - `kube_pod_level_resource_spec` (Kube-State-Metrics): Exposes the numeric values of pod-level resources specified in the PodSpec.
+  - `apiserver_rejected_requests` will indicate any failures (`Bad Request` code=400) related to translation of new `resources` field in PodSpec.
+  - `kubelet_pod_level_resources_admission_total` (**ALPHA, Temporary**): Total number of pods admitted during Kubelet admission, categorized by resource configuration mode (`config_mode`) and QoS class (`qos_class`). Scheduled for removal 2-3 releases after GA.
   - `schedule_attempts_total{result="error|unschedulable"}`
   - `node_collector_evictions_total`: to check if a pod level resource setting is causing to evict more pods than normal
   - `started_pods_errors_total`: exposed by kubelet to check if large number of pods are failing unusually
   - `started_containers_errors_total`: exposed by kubelet to check if large number of containers are failing unusually
-  - Components exposing the metric: apiserver, kubelet, scheduler, kube-state-metrics
+  - Components exposing the metric: apiserver, kubelet, scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -2000,6 +2085,7 @@ resource specs.
 - **2025-06-18:** Revised KEP for Beta
 - **2026-01-27:** Revised KEP for 1.36 to include fixes for issues 135082 and 136120.
 - **2026-06-08:** Revised KEP for GA in 1.37.
+- **2026-09-18:** Revised KEP for GA in 1.38 and added Node Swap Support.
 
 ## Drawbacks
 
