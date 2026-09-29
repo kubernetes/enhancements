@@ -1160,8 +1160,8 @@ acts through intermediate controllers):
   runtime group creation downward:
   `TrainJob` compiles the `Workload` blueprint (and potentially creates its top-level
   `CompositePodGroup`), and injects well-known downward annotations
-  (`scheduling.k8s.io/group-template-name` and `scheduling.k8s.io/parent-compositepodgroup`)
-  into the `JobSet` metadata. The intermediate `JobSet` controller then reads these
+  (`scheduling.k8s.io/workload-name`, `scheduling.k8s.io/group-template-name` and
+  `scheduling.k8s.io/parent-compositepodgroup`) into the `JobSet` metadata. The intermediate `JobSet` controller then reads these
   annotations, materializes the runtime `PodGroup`s from the referenced template in the
   parent `Workload`, attaches them to the parent `CompositePodGroup`, and injects the resulting
   `PodGroup` names into the child `Job` pod templates.
@@ -1175,12 +1175,16 @@ finalized for GA based on production feedback from ecosystem adopters.
 If a composite controller delegates runtime `PodGroup` management to an intermediate or child controller (such as
 in the `TrainJob -> JobSet -> Job` multi-tier pattern where the parent cannot inject distinct per-replica pod-level
 scheduling references across the intermediary abstraction boundary), we must solve a crucial coordination problem. The downstream
-controller needs two distinct pieces of information to construct and place its runtime scheduling objects correctly:
+controller needs three distinct pieces of information to construct and place its runtime scheduling objects correctly:
 
-1. **Template Mapping:** Which `PodGroupTemplate` or `CompositePodGroupTemplate` inside the parent's
+1. **Workload Linkage:** Which `Workload` in the namespace holds the compiled templates. The
+   `Workload` may be compiled by any ancestor, not only the direct parent (e.g. `TrainJob` in a
+   `TrainJob -> JobSet -> Job` hierarchy), so the downstream controller cannot derive it from its
+   own owner.
+2. **Template Mapping:** Which `PodGroupTemplate` or `CompositePodGroupTemplate` inside the parent's
    compiled `Workload` corresponds to this child's pods (enabling the downstream controller to materialize
    or compile the correct policy and constraints).
-2. **Parent Instance Linkage:** Which specific runtime `CompositePodGroup` instance name in the
+3. **Parent Instance Linkage:** Which specific runtime `CompositePodGroup` instance name in the
    namespace this newly created group must attach to (under its `spec.parentRef`). This linkage is
    especially critical in multi-instantiated environments (such as `LeaderWorkerSet` / LWS), where a
    composite controller may instantiate multiple separate `CompositePodGroup` objects from the exact
@@ -1189,9 +1193,16 @@ controller needs two distinct pieces of information to construct and place its r
 ##### The Solution: Downward Mapping Annotations
 
 To resolve this template and hierarchy mapping without structural API schema changes, orchestrators
-operating in delegated mode propagate these linkages downwards by injecting two well-known metadata annotations
+operating in delegated mode propagate these linkages downwards by injecting well-known metadata annotations
 directly into the created child objects (for example, `TrainJob` sets these annotations on the `JobSet` objects it creates):
 
+* **Workload Linkage Annotation:**
+  * **Annotation Key:** `scheduling.k8s.io/workload-name`
+  * **Value:** The exact resource name of the `Workload` in the same namespace that contains the
+    template named by `scheduling.k8s.io/group-template-name`. It is required whenever
+    `scheduling.k8s.io/group-template-name` is set, and is propagated unchanged through every
+    delegation level, so a controller at any depth resolves the `Workload` with a single `Get`
+    instead of walking the ownerReference chain.
 * **Template Linkage Annotation:**
   * **Annotation Key:** `scheduling.k8s.io/group-template-name`
   * **Value:** The unique name of the target `PodGroupTemplate` or `CompositePodGroupTemplate`
@@ -1569,6 +1580,7 @@ for Job integration) to diagnose controller reconciliation, admission, or schedu
   the ecosystem (JobSet, LWS, TrainJob, Spark Operator, Deployment, StatefulSet). Promoted reusable
   building blocks directly to `scheduling.k8s.io/v1` with `v1alpha3` Go type aliases per API review guidance.
   Completed Beta PRR questionnaire.
+- 2026-09-29: Added the `scheduling.k8s.io/workload-name` downward annotation.
 
 ## Drawbacks
 
