@@ -3,3 +3,5 @@ alpha:
   approver: "@soltysh"
 beta:
   approver: "@soltysh"
+stable:
+  approver: "@soltysh"
