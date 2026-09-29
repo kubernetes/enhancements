@@ -90,7 +90,7 @@ There has been long-standing interest in changing or disabling probes on a runni
 
 - Making other container fields mutable.
 - Supporting probe updates for ordinary init containers, ephemeral containers, mirror Pods, static Pods, terminating Pods, or terminal Pods.
-- Updating a controller's Pod template when an individual Pod is changed.
+- Updating a controller's Pod template when an individual Pod is changed, or adding automatic in-place propagation of probe template changes to built-in workload controllers.
 - Adding a probe subresource, a new API type, or a CRI operation.
 - Providing conditional or policy-driven probes based on the state of other workloads.
 - Providing a probe-specific acknowledgement that every kubelet has applied a particular update.
@@ -131,6 +131,8 @@ During a skewed rollout, an API server may accept a change before the kubelet on
 
 Allowing an `exec` probe to change also lets a Pod updater change a command that the kubelet executes inside an existing container. This does not add an RBAC verb, and Pod updates remain subject to admission and audit, but policy authors should account for the broader effect of the existing Pod update permission.
 
+After a probe is removed, Pod status may temporarily reflect the previous probe configuration. API validation and external consumers must tolerate this interval while the kubelet reconciles status.
+
 ## Design Details
 
 ### API Behavior
@@ -148,17 +150,15 @@ Static and mirror Pods remain managed from their source manifests. Users must ch
 
 ### Kubelet Behavior
 
-The probe manager will reconcile the desired workers every time the kubelet processes an updated Pod. A worker is still identified by Pod UID, container name, and probe type. Reconciliation adds missing workers, updates enabled workers, and disables workers for probes that were removed. A disabled worker remains available for reuse until the probe is re-enabled or the Pod is cleaned up.
+On the kubelet, `MutableContainerProbes` has an explicit feature gate dependency on `ContainerScopedProbes`.
+
+Following [KEP-5972's atomic allocation model](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5972-dynamic-containers/README.md#allocation), probe changes wait if the target container is unallocated or has an update pending allocation, so a probe intended for a new image is not applied to the old one. Pending changes to other containers do not block a probe update. This can delay a correction to a broken probe until the same container's pending allocation is resolved.
+
+The probe manager will reconcile the desired workers every time the kubelet processes an updated Pod. A worker is identified by Pod UID, container name, probe type, and container ID. Reconciliation adds missing workers, updates enabled workers, and disables workers for probes that were removed. A disabled worker remains available for reuse until the probe is re-enabled or the Pod is cleaned up.
 
 Workers use an immutable snapshot of probe configuration for each attempt. The manager invalidates attempts when their handler or timeout is replaced, when the probe is disabled, when the worker is removed, or when the container ID changes. A late result from an invalid attempt is ignored even if cancellation did not stop the underlying probe in time.
 
 When the kubelet applies a probe addition, update, or removal for a running Pod, it emits a `Normal` Pod event with the reason `ContainerProbeChanged`. The event message identifies the container, probe type, and action. This event is a best-effort troubleshooting signal that the node observed and applied the change; it is not a durable acknowledgement or a mechanism for inventorying use of the feature.
-
-The following flow summarizes how kubelet coordinates health checks when it
-observes a Pod update. It describes the intended behavior rather than specific
-implementation calls.
-
-![Health-check reconciliation flow](ReconcilePod.png)
 
 The behavior of individual changes is:
 
@@ -180,7 +180,7 @@ Changing only `periodSeconds` neither clears an accumulated threshold count nor 
 
 ### Adding and removing probes
 
-Adding a readiness probe to a running, started container uses the current readiness semantics: the initial result is failure and the container is not Ready until the probe reaches its success threshold. Adding a liveness probe starts with a successful initial result, so the addition itself does not restart the container.
+Adding a readiness probe to a running, started container preserves its current readiness until the new probe produces a result that meets the configured success or failure threshold. The addition itself does not make an already-ready container unready. Adding a liveness probe starts with a successful initial result, so the addition itself does not restart the container.
 
 Once `Started` is true for a container ID, adding or changing a startup probe does not change it back to false. The configuration is retained and is used if the container is restarted with a new container ID. If the current container has not started, the startup worker is created and run normally.
 
@@ -189,6 +189,8 @@ Removing a readiness probe makes a running container Ready when it is already St
 Restartable init containers follow the same rules. Ordinary init containers are excluded because their probes do not have the continuing lifecycle of an app container or sidecar.
 
 ### Restart and termination behavior
+
+Applying a liveness or startup probe change resets the affected container's crash loop backoff so a corrected probe can take effect without the previous delay. This does not restart a running container; readiness-only changes and unchanged configurations do not reset backoff.
 
 Probe configuration is persisted in the PodSpec, so a kubelet restart rebuilds workers from the most recently observed spec. Timers, consecutive counts, cached results, and in-flight attempts are in-memory state and are initialized again, as they are today. No new checkpoint is introduced.
 
@@ -255,14 +257,14 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-Node e2e tests will update the readiness, liveness, and startup probes of a running Pod and verify the corresponding `Ready`, `Started`, and restart behavior while confirming that the update itself does not restart the container. The tests will cover adding, modifying, and removing probes for regular containers and restartable init containers, and verify that a new container instance uses the latest startup probe configuration.
+E2e tests in `test/e2e/node` will update the readiness, liveness, and startup probes of a running Pod and verify the corresponding `Ready`, `Started`, and restart behavior while confirming that the update itself does not restart the container. The tests will cover adding, modifying, and removing probes for regular containers and restartable init containers, and verify that a new container instance uses the latest startup probe configuration.
 
 ### Graduation Criteria
 
 #### Alpha
 
 - The feature is implemented behind the `MutableContainerProbes` feature gate.
-- Node e2e tests cover the primary update paths for regular containers and restartable init containers.
+- E2e tests in `test/e2e/node` cover the primary update paths for regular containers and restartable init containers.
 - User-facing documentation describes update semantics and version skew.
 
 #### Beta
@@ -435,7 +437,7 @@ Probe updates cannot be submitted or persisted while the API is unavailable. Kub
 
 - **A probe update is rejected.** Check that `MutableContainerProbes` is enabled on every API server, the Pod is neither terminating nor terminal, and the request changes only supported probe fields.
 - **An accepted update is not applied on a node.** Check the node version and kubelet feature gate, then compare the Pod generation with the generation observed by the kubelet. Version-skew tests cover this case.
-- **A workload becomes unready or starts restarting.** Inspect the current probe in the PodSpec, Pod events, container status, and `prober_probe_total`. Restore the previous probe or remove it in another Pod update before disabling the feature gate. Node e2e tests cover these status transitions.
+- **A workload becomes unready or starts restarting.** Inspect the current probe in the PodSpec, Pod events, container status, and `prober_probe_total`. Restore the previous probe or remove it in another Pod update before disabling the feature gate. E2e tests in `test/e2e/node` cover these status transitions.
 - **A result from an old configuration is observed.** Kubelet logs and probe events can identify the timing of the update and result. Unit tests exercise blocked in-flight probes, removal, and container ID changes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
