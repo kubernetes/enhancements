@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Preemption simulation](#preemption-simulation)
   - [Preemption settling for DRA](#preemption-settling-for-dra)
   - [Claim nomination](#claim-nomination)
     - [Holding capacity for the preemptor](#holding-capacity-for-the-preemptor)
@@ -245,6 +246,11 @@ Features/scenarios that we will not support:
   path, which removes victims from the simulation differently. The plugin will not free devices for
   them, whether their ResourceClaims are reserved for the PodGroup or for individual pods. See
   [Deferred: workload-aware preemption](#deferred-workload-aware-preemption).
+* **Extended resources backed by DRA (`DRAExtendedResource`)**: For pods requesting extended
+  resources backed by DRA, the backing `ResourceClaim` is synthesized in memory during `Filter` and
+  is only created in the API server during `PreBind` (and recorded in
+  `pod.Status.ExtendedResourceClaimStatus` rather than `pod.Spec.ResourceClaims`). Preemption of or
+  by pods using DRA-backed extended resources is not supported in Alpha.
 
 Simulating the removal of victims is not the whole problem. The devices freed by a preemption do not
 become allocatable when the victim pods are deleted, but later, when the resourceclaim controller
@@ -258,9 +264,10 @@ deallocated. This is specified in [Design Details](#design-details).
 
 Supporting this requires a small, generic addition to the scheduling framework: an optional
 `NominationExtensions` interface. Because `DefaultPreemption` evaluates candidate nodes concurrently
-using cloned `CycleState`s, a plugin cannot tell from `RemovePod` and `Filter` alone which candidate
-won. `NominationExtensions` notifies the plugin when a winning preemption candidate is selected
-(passing the winning `CycleState` and victim pods) or when a nomination is cleared, and lets a plugin
+using cloned `CycleState`s that are discarded when `DryRunPreemption` ends, a plugin cannot tell
+from `RemovePod` and `Filter` alone which candidate won. `NominationExtensions` notifies the plugin
+when a winning preemption candidate is selected (passing the scheduling cycle's `CycleState`, the
+winning node, and the victim pods) or when a nomination is cleared, and lets a plugin
 report in `PodEligibleToPreemptOthers` whether resources freed by an earlier preemption by that pod
 are still being reclaimed. Today `DefaultPreemption` answers that eligibility question with a
 hard-coded heuristic: if a pod already has `nominatedNodeName` set from an earlier preemption, it
@@ -287,8 +294,9 @@ preemptor has been scheduled. The timeline referred to as t0 to t4 is defined in
   queue controllers such as Kueue—can see `nominatedNodeName` on the preemptor pod in the API, but
   cannot see which specific DRA devices or capacities on that node have been nominated for it, and
   may therefore make conflicting scale-down or placement decisions during the settling window.
-  Persisting nominations in the API server (for example in `ResourceClaim.Status`) requires an API
-  change; we defer that design to Beta.
+  Persisting nominations in the API server (for example in `ResourceClaim.Status`, or on the Pod for
+  cases such as `DRAExtendedResource` where no `ResourceClaim` object exists before `PreBind`)
+  requires an API change; we defer that design to Beta.
 * **Claims that are never deallocated.** If the resourceclaim controller is unhealthy and fails to
   deallocate a victim claim, its capacity remains occupied in the API server (which is standard DRA
   behavior whenever a pod is deleted while the controller is down). The preemptor remains waiting
@@ -300,6 +308,14 @@ preemptor has been scheduled. The timeline referred to as t0 to t4 is defined in
   scheduler may allocate the held capacity. This matches the existing limitation of nominated nodes.
 
 ## Design Details
+
+### Preemption simulation
+
+During `PreFilter`, `dynamicresources` snapshots `AllocatedState` from `draManager` into `stateData` in
+`CycleState`. During `DryRunPreemption`, `DefaultPreemption` clones `CycleState` (`stateData.Clone()`) for
+each candidate node and drops it when the simulation ends. `RemovePod` and `AddPod` only read from
+`draManager` and mutate the cloned `AllocatedState` in `CycleState` (which `Filter` uses to construct a
+local allocator), so `draManager` itself never needs to be mutated or cloned.
 
 ### Preemption settling for DRA
 
