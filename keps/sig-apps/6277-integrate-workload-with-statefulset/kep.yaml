@@ -5,7 +5,8 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
   - sig-scheduling
-status: provisional
+  - sig-storage
+status: implementable
 creation-date: 2026-08-25
 reviewers:
   - "@kannon92"
@@ -49,4 +50,4 @@ disable-supported: true
 
 # Metrics
 metrics:
-  -
+  - statefulset_workload_creation_errors_total

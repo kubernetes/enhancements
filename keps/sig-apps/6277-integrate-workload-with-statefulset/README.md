@@ -99,7 +99,7 @@ What this KEP adds is the ability to ask for them declaratively on the StatefulS
 The field exposes the reusable scheduling building blocks introduced by
 [KEP-6089](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/6089-was-controller-apis).
 The StatefulSet controller compiles it — via the shared `workloadbuilder` library — into one
-`Workload` (static template) and one `PodGroup` (runtime scheduling unit) in
+`Workload` (persistent template) and one `PodGroup` (runtime scheduling unit) in
 `scheduling.k8s.io/v1beta1`, and stamps `spec.schedulingGroup.podGroupName` onto every pod it
 creates so the scheduler can act on the group as a whole. The controller owns the lifecycle of both
 objects and keeps the pod-to-group mapping correct across scale, rollout, and pod recreation.
@@ -205,7 +205,7 @@ integrate all workload controllers with the Workload API.
   controller, linking each pod to its PodGroup for scheduler consumption.
 
 - Handle the StatefulSet lifecycle correctly — initial creation, scaling up and down, and deletion
-  — with proper Workload/PodGroup creation, in-place update, and cleanup.
+  - with proper Workload/PodGroup creation, in-place `minCount` updates, and cleanup.
 
 - Follow the ownership model defined in the Workload API: one Workload and one PodGroup per
   StatefulSet, both owned via `ownerReference` with `controller=true` and
@@ -234,9 +234,13 @@ integrate all workload controllers with the Workload API.
 - Automatic detection of whether a StatefulSet "should" use Workload-Aware Scheduling via
   heuristics. The user must explicitly opt in by setting `spec.scheduling` on the StatefulSet.
 
-- Per-replica ResourceClaims analogous to `volumeClaimTemplates`, where each replica gets its own
-  dedicated claim. Only per-PodGroup ResourceClaims — one claim shared across the group — are
-  supported; per-replica semantics are deferred to future work.
+- A StatefulSet-level API for dedicated per-replica ResourceClaims analogous to
+  `volumeClaimTemplates`. Pods can already request pod-scoped claims through
+  `spec.template.spec.resourceClaims`; per KEP-5729, a Pod claim uses a shared PodGroup claim only
+  when its name and claim source match exactly. Whether StatefulSets need a separate dedicated-claim
+  API, how it would coexist with shared PodGroup claims, and whether its retention behavior should
+  differ from ordinary pod-scoped claims are left to future work. This KEP does not add a
+  configurable ResourceClaim retention policy.
 
 - Switching a StatefulSet's scheduling *shape* after creation: adding or removing
   `spec.scheduling`, flipping between `gang` and `basic`, or changing `schedulingConstraints`,
@@ -316,10 +320,11 @@ type StatefulSetSchedulingConfiguration struct {
     SchedulingConstraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"schedulingConstraints,omitempty" protobuf:"bytes,2,opt,name=schedulingConstraints"`
 
     // DisruptionMode defines the mode in which the StatefulSet's pods can be
-    // disrupted. Exactly one of Single or All must be set.
+    // disrupted by an external entity. It does not redefine disruption or unavailability patterns by the StatefulSet controller. Exactly one of Single or All must be set.
+    // The configured mode is passed through to the underlying PodGroup.
     // Single (the scheduler default when unset) treats each pod as an
-    // independent preemption victim; All makes the whole StatefulSet a single
-    // atomic preemption unit.
+    // independent disruption (e.g. preemption) victim; All makes the whole StatefulSet a single
+    // atomic disruption (e.g. preemption) unit.
     // All is only valid with the Gang policy: workloadbuilder rejects
     // `all` combined with `basic`, since a Basic group is scheduled
     // independently and all-or-nothing disruption is meaningless for it.
@@ -356,7 +361,7 @@ type StatefulSetSchedulingConfiguration struct {
 
 When `spec.scheduling` is non-nil, the StatefulSet controller:
 
-1. Discovers or creates the `Workload` — the static template that defines the PodGroup template.
+1. Discovers or creates the `Workload` — the persistent object that defines the PodGroup template.
 2. Discovers or creates the `PodGroup` — the runtime scheduling unit instantiated from that
    template.
 3. Creates pods with `spec.schedulingGroup.podGroupName` referencing the PodGroup.
@@ -610,9 +615,10 @@ PodGroup's claim by name and source to consume it.
    `spec.scheduling.resourceClaims` field as well.
 
 8. **Higher-level controllers composing StatefulSets**: A StatefulSet created by a parent
-   controller (LeaderWorkerSet, for example) can set `spec.scheduling` and still let the parent own
-   the `Workload` and the `CompositePodGroup` structure; the StatefulSet controller creates one only
-   when no parent already owns it, following the KEP-6089 downward-mapping annotations. See
+   controller (LeaderWorkerSet, for example) can set `spec.scheduling` and delegate `Workload`
+   ownership to the parent when the parent supplies the KEP-6089 `group-template-name` annotation.
+   A parent `OwnerReference` alone does not imply delegation: without the annotation, the
+   StatefulSet controller manages its own Workload and PodGroup. See
    [Composition by Higher-Level Controllers](#composition-by-higher-level-controllers).
 
 9. **Discovery is by reference, not by name**: Following
@@ -631,6 +637,8 @@ PodGroup's claim by name and source to consume it.
 | `rollingUpdate.partition` cannot be used with `spec.scheduling` in Alpha | Partitioned canary rollouts are unavailable to any StatefulSet using WAS, and immutability means one that already opted in cannot opt out to run one | Rejected by validation on create and update with a clear message. See [RollingUpdate.Partition](#rollingupdatepartition-deferred-to-beta) |
 | Rolling update of a gang-scheduled StatefulSet stalls | A pod recreated with a revision that no longer fits (bigger requests, new topology domain) cannot be placed, and the gang stays unsatisfied | Visible in PodGroup status and Pending-pod signals; rolling-update semantics under gang are a Beta design item |
 | Scale-up makes the gang unsatisfiable | `minCount` rises to the new replica count, so the new pods stay Pending and the group is never satisfied. In Alpha the only exit is scaling `replicas` back down, since `minCount` is not user-settable | Raising `minCount` never evicts bound pods — the StatefulSet keeps serving at its previous size. User-configurable `minCount` in Beta lets a StatefulSet set a floor below `replicas` |
+| Scale-to-zero retains shared DRA allocations | The StatefulSet keeps its PodGroup at `replicas: 0`, so claims reserved for that PodGroup remain allocated even with no pods and can hold scarce devices indefinitely | Document the Alpha retention behavior; operators can inspect `ResourceClaim.status.allocation` and `status.reservedFor`. Decide and implement the zero-replica release policy before Beta. See [Scale Lifecycle](#scale-lifecycle) |
+| Rolling update stops using a shared ResourceClaim | A new Pod revision can change `spec.template.spec.resourceClaims` while the PodGroup's `resourceClaims` are immutable. Claims that no longer exactly match are Pod-scoped, while the old PodGroup claim can remain allocated with no consumers | Document the matching rule and warn when the Pod template no longer references a shared claim. See [RollingUpdate.Partition](#rollingupdatepartition-deferred-to-beta) |
 | Volume bindings conflict with group placement | PVCs bind to PVs that may carry node affinity (local or zonal storage), so a `schedulingConstraints.topology` constraint can be unsatisfiable against volumes already bound elsewhere, and each bound volume narrows where the group can be placed on reschedule | Surfaces as an unsatisfied PodGroup, not a partial placement. Topology constraints are intended for StatefulSets whose storage is topology-agnostic or provisioned in the same domain; volume-aware group placement is a Beta design item |
 | Parent controller's `PodGroupTemplate` disagrees with the inner StatefulSet's `spec.scheduling` | The delegated PodGroup is instantiated from the parent's template, so an inner StatefulSet asking for e.g. `disruptionMode: all` when the parent's template does not may silently not get it | Alpha open question: parents that own the Workload usually own the policy too, so the conflict should be rare. Alpha will either define precedence or reject the conflict at admission. See [Composition by Higher-Level Controllers](#composition-by-higher-level-controllers) |
 | Scheduler missing `GenericWorkload` while the controller has `WorkloadWithStatefulSet` | Pods reference the PodGroup but the scheduler ignores it: they are placed individually and the gang guarantee is silently absent, so a quorum-based StatefulSet can come up partially placed | Nothing fails and no object is corrupted — the exposure is a missing guarantee, not an error. A PodGroup recording no `scheduler_podgroup_schedule_attempts_total` is the signal; see [Version Skew Strategy](#version-skew-strategy) |
@@ -644,7 +652,7 @@ Discovery is by **reference, not by name and not by ownership**, exactly as spec
 [KEP-5547](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/5547-integrate-workload-with-job#workload-and-podgroup-discovery).
 This KEP adopts that model unchanged; the rules below are restated only for readability.
 
-A `Workload` is the Workload for a given StatefulSet if:
+In the StatefulSet-managed path, a `Workload` is the Workload for a given StatefulSet if:
 - it is in the StatefulSet's namespace, and
 - its `spec.controllerRef` identifies that StatefulSet (`apiGroup: apps`, `kind: StatefulSet`,
   matching `name`).
@@ -670,27 +678,36 @@ the Job integration does.
 ### Controller Workflow
 
 The controller attempts to *create* Workload and PodGroup only when the StatefulSet has no pods
-associated with it yet. Once pods exist, it only discovers and uses whatever is already there. This
-is what makes a restart mid-workflow — Workload created but PodGroup or pods not — recoverable: on
-the next sync the existing objects are found via the listers and the workflow continues from there.
+associated with it yet. Once pods exist, it discovers and uses whatever is already there, and
+reconciles `minCount` on objects it created; it does not create missing objects. This makes a
+restart mid-workflow — Workload created but PodGroup or pods not — recoverable: on the next sync
+the existing objects are found via the listers and the workflow continues from there.
 
-1. If the StatefulSet carries an `OwnerReference` to a parent controller that owns the Workload,
-   the controller does not create a Workload. It then branches on the downward-mapping annotations
-   described in [Composition by Higher-Level Controllers](#composition-by-higher-level-controllers).
-2. If the StatefulSet already has pods (active or terminal, owned by this StatefulSet), skip
-   creation and only discover.
+1. If the StatefulSet already has pods (active or terminal, owned by this StatefulSet), skip all
+   creation; use the applicable path below to discover existing objects and sync their `minCount`
+   when they were created by this controller.
+2. If the StatefulSet has a parent controller `OwnerReference` and the parent supplies the
+   `scheduling.k8s.io/group-template-name` annotation, resolve the parent-owned Workload and its
+   named PodGroupTemplate, and manage only the delegated PodGroup (creating it only when no pods
+   exist). If the parent Workload or template cannot be resolved unambiguously, fall back and
+   surface an event rather than creating a separate Workload. An `OwnerReference` without this
+   annotation does not select delegation; continue with the StatefulSet-managed path below. See
+   [Composition by Higher-Level Controllers](#composition-by-higher-level-controllers).
 3. Look up the Workload by `spec.controllerRef`. If none exists, compile one from
    `spec.scheduling` via `workloadbuilder` and create it with a controller `ownerReference` and a
    `spec.controllerRef` pointing at the StatefulSet. If more than one is found, treat it as
-   ambiguous: create nothing, mutate nothing, and surface an event.
+   ambiguous: create nothing, mutate nothing, and surface an event. If the controller created the
+   existing Workload, reconcile its template's gang `minCount` to the current replica-derived value
+   before syncing the PodGroup.
 4. Look up the PodGroup by `spec.podGroupTemplateRef` against the target `PodGroupTemplate`. If
-   none exists, instantiate it from the template. If more than one is found, fall back — multiple
-   PodGroups per StatefulSet are not supported.
+   none exists, instantiate it from the template. If the controller created the existing PodGroup,
+   reconcile its gang `minCount` to the template's current value. If more than one is found, fall
+   back — multiple PodGroups per StatefulSet are not supported.
 5. Run the existing pod-management logic, setting `spec.schedulingGroup.podGroupName` on each pod.
 
-The controller does not update an existing Workload or PodGroup during this discovery path. The
-only ongoing reconciliation it performs on them is the in-place `minCount` update on scale (see
-[Scale Lifecycle](#scale-lifecycle)).
+The controller does not update other fields of an existing Workload or PodGroup. On every sync, it
+reconciles `minCount` on the objects it created, so a restart between the Workload and PodGroup
+updates converges without recreating either object (see [Scale Lifecycle](#scale-lifecycle)).
 
 If the Workload was created by another actor — a user pre-creating one, or a parent controller —
 the StatefulSet controller respects and uses it, adds no ownerReference, never mutates it, and
@@ -703,20 +720,25 @@ not 1.
 Controllers such as LeaderWorkerSet create StatefulSets as their building blocks, and a parent may
 want to keep the `Workload` and the `CompositePodGroup` structure under its own control while the
 inner StatefulSet still carries its own scheduling requirements. Setting `spec.scheduling` on an
-inner StatefulSet therefore does not imply that the StatefulSet controller manages a standalone
-Workload of its own. The coordination uses the well-known downward-mapping annotations from
+inner StatefulSet does not by itself indicate whether the parent participates in workload-aware
+scheduling. The coordination uses the well-known downward-mapping annotations from
 [KEP-6089](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/6089-was-controller-apis#the-solution-downward-mapping-annotations),
-which the parent injects onto each StatefulSet it creates:
+which a parent injects when delegating PodGroup management to a child StatefulSet:
 
 | Parent's ownerReference on the StatefulSet | `scheduling.k8s.io/group-template-name` | StatefulSet controller behavior |
 |---|---|---|
-| Absent | — | **Root case.** The controller compiles and owns both the Workload and the PodGroup, as described above. |
-| Present (parent owns the Workload) | Present | **PodGroup delegated.** The controller creates no Workload. It creates its own runtime PodGroup from the parent's named `PodGroupTemplate`, and — when `scheduling.k8s.io/parent-compositepodgroup` is also set — links that PodGroup to the named parent `CompositePodGroup` instance. The PodGroup gets a controller `ownerReference` to the StatefulSet. |
-| Present | Absent | **Both delegated.** The parent owns the Workload and the PodGroup. The controller creates neither; it discovers the existing objects and uses them when stamping `spec.schedulingGroup.podGroupName` onto pods. |
+| Absent | Absent | **StatefulSet-managed.** The controller compiles and owns both the Workload and the PodGroup. |
+| Absent | Present | **Invalid delegation.** With no parent controller to supply a Workload, the annotation does not suppress StatefulSet-managed Workload and PodGroup creation; the controller surfaces an event. |
+| Present | Absent | **StatefulSet-managed.** The parent owns the StatefulSet but has not signaled Workload ownership; the controller compiles and owns both scheduling objects. |
+| Present | Present | **PodGroup delegated.** The annotation signals that the parent owns the Workload. The controller creates no Workload. It creates its own runtime PodGroup from the parent's named `PodGroupTemplate`, and — when `scheduling.k8s.io/parent-compositepodgroup` is also set — links that PodGroup to the named parent `CompositePodGroup` instance. The PodGroup gets a controller `ownerReference` to the StatefulSet. |
 
 The annotations are transient coordination metadata set by controllers, not user-facing scheduling
 intent, which is why they are annotations rather than API fields. The exact keys are owned by
-KEP-6089; this KEP consumes them.
+KEP-6089; this KEP consumes them. An annotation without a parent controller `OwnerReference` is not
+valid delegation and does not make the StatefulSet skip Workload creation. Parent management of both
+the Workload and the PodGroup is deferred until there is an explicit signal identifying that case
+and the objects the StatefulSet should use; absence of `group-template-name` cannot serve as that
+signal.
 
 This is also what allows a composed StatefulSet to contribute a `CompositePodGroup` member without
 the StatefulSet controller fighting the parent for ownership, which the earlier revision of this
@@ -738,10 +760,10 @@ flowchart BT
     Pod -->|ownerRef| PodGroup
     Pod -->|ownerRef| StatefulSet
     PodGroup -->|ownerRef| StatefulSet
-    PodGroup -->|ownerRef <br/> (root StatefulSet only)| Workload
+    PodGroup -->|"ownerRef<br/>StatefulSet-managed case only"| Workload
     Workload -->|ownerRef| StatefulSet
 
-    PodGroup -.->|via <br/> podGroupTemplateRef| Workload
+    PodGroup -.->|"via podGroupTemplateRef"| Workload
 
     linkStyle 5 stroke:#888,color:#888
 ```
@@ -808,7 +830,7 @@ The StatefulSet controller maps StatefulSet fields to Workload API fields as fol
 | `metadata.name` | `spec.controllerRef.name` | Direct reference |
 | `"apps"` | `spec.controllerRef.apiGroup` | Constant |
 | `"StatefulSet"` | `spec.controllerRef.kind` | Constant |
-| `spec.replicas` | `podGroupTemplates[0].schedulingPolicy.gang.minCount` | Derived from replicas (Alpha); user-configurable in Beta |
+| `spec.replicas` | `podGroupTemplates[0].schedulingPolicy.gang.minCount` | Derived from replicas and kept in sync on scale for a StatefulSet-managed Workload (Alpha); user-configurable in Beta |
 | `spec.scheduling.schedulingConstraints` | `podGroupTemplates[0].schedulingConstraints` | Pass-through |
 | `spec.scheduling.disruptionMode` | `podGroupTemplates[0].disruptionMode` | Pass-through |
 | `spec.scheduling.resourceClaims` | `podGroupTemplates[0].resourceClaims` | Pass-through; each entry maps to a `PodGroupResourceClaim` |
@@ -819,12 +841,12 @@ When `podManagementPolicy` is set to `Parallel`, the StatefulSet controller crea
 pods simultaneously without waiting for sequential readiness. This aligns naturally with gang
 scheduling because all pods are created together and should be scheduled together.
 
-The controller creates a Workload (static template), a PodGroup (runtime scheduling unit), and
-then the pods. The MinCount equals the replica count, ensuring all StatefulSet pods are scheduled
-atomically.
+The controller creates a Workload (whose template `minCount` is updated on scale), a PodGroup
+(runtime scheduling unit), and then the pods. The MinCount equals the replica count, ensuring all
+StatefulSet pods are scheduled atomically.
 
 ```yaml
-# Workload (static template)
+# Workload (persistent template; gang minCount is updated on scale)
 apiVersion: scheduling.k8s.io/v1beta1
 kind: Workload
 metadata:
@@ -867,7 +889,7 @@ metadata:
     uid: <statefulset-uid>
     controller: true
     blockOwnerDeletion: true
-  # Second ownerRef to the Workload, for the root case only: a parent-owned
+  # Second ownerRef to the Workload, for the StatefulSet-managed case only: a parent-owned
   # Workload is never given an ownerReference from the PodGroup.
   - apiVersion: scheduling.k8s.io/v1beta1
     kind: Workload
@@ -1055,30 +1077,37 @@ That approach was dropped for three reasons:
    update, so `minCount` does not change either. Pods keep the same `podGroupName` across revisions
    and the group's scheduling configuration is stable throughout.
 
-What still needs design before partitions can be supported (Beta):
+**Rolling-update risk with or without a partition:** A rolling update deletes and recreates one
+pod at a time. Per [KEP-4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling#the-workload-scheduling-cycle),
+new pods joining an already scheduled PodGroup are evaluated in a subsequent Workload Scheduling
+Cycle that takes its scheduled members into account. If a replacement pod from the new revision
+cannot fit — for example, it needs more resources or a different placement — the rollout can
+stall. This risk exists at `partition: 0` too; rejecting positive partitions does not solve it.
+Alpha allows the ordinary `partition: 0` rolling update and calls out this risk separately in
+[Risks and Mitigations](#risks-and-mitigations).
 
-- **Gang semantics during a rolling update.** A gang is satisfied at bind time; a rolling update
-  deletes and recreates one pod at a time. The recreated pod must rejoin an already-placed gang.
-  If the new revision does not fit — larger requests, a different topology domain, a new device
-  class — the group can stall part-way through the rollout. Whether the scheduler should treat the
-  replacement as an incremental admission against the existing group, or the whole group should be
-  re-gang-scheduled, is a KEP-4671/KEP-5710 level question.
-- **Canary semantics under a group constraint.** With `disruptionMode: all` or a topology
-  constraint, "update only pods ≥ partition" and "the group is one unit" pull in opposite
-  directions. The intended interaction needs to be specified rather than inferred.
+**ResourceClaims across revisions:** `spec.scheduling.resourceClaims` is immutable in Alpha, so a
+rolling update does not change the PodGroup's shared claims. The Pod template's
+`spec.resourceClaims` can change, however. Per
+[KEP-5729](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5729-resourceclaim-support-for-workloads#pod),
+each claim in a replacement Pod is shared only if its name and claim source exactly match an
+entry in the PodGroup. A nonmatching claim is instead reserved for that Pod (or generated from its
+template for that Pod). Matching claims, if any, continue to use the existing shared allocation.
+If no replacement Pods use a previously shared claim, it remains allocated for the unchanged
+PodGroup, potentially holding devices without consumers. Changing the Pod template does not
+replace the PodGroup or its claims; validation warns if it no longer contains matching entries
+for the configured shared claims.
 
-Until that is settled, rejecting the combination is the honest option: it is a strictly relaxable
-restriction, and it avoids shipping semantics in Alpha that we would have to change later.
+The **partition-specific** open question is how to interpret a canary boundary under group-wide
+constraints. With `disruptionMode: all` or a topology constraint, "update only pods ≥ partition"
+and "the group is one unit" pull in opposite directions. Until that interaction is specified,
+Alpha rejects positive partitions. This is a strictly relaxable restriction, separate from the
+rolling-update risk above.
 
 **Known cost of this decision**: users who rely on partitioned canary rollouts cannot opt a
 StatefulSet into WAS in Alpha, and — because `spec.scheduling` is immutable in Alpha — cannot
 temporarily opt out to perform one. This is called out in
 [Risks and Mitigations](#risks-and-mitigations) and in the Beta graduation criteria.
-
-Note that the underlying tension is not created by partitions: even a plain
-`RollingUpdate` with `partition: 0` recreates gang members one at a time. Alpha allows this
-(rejecting rolling updates outright would make the feature unusable) and documents the stall risk;
-Beta is where the semantics get pinned down.
 
 ### Lifecycle Management
 
@@ -1088,7 +1117,7 @@ When a Parallel StatefulSet is created with gang scheduling enabled:
 
 1. The StatefulSet controller detects `spec.scheduling` is non-nil and that the StatefulSet has no
    pods yet.
-2. It discovers, or creates, the `Workload` object (static template with PodGroup template).
+2. It discovers, or creates, the `Workload` object (with its PodGroup template).
 3. It discovers, or creates, the `PodGroup` object (runtime unit, instantiated from the Workload's
    template), and proceeds on the synchronous response to that call — there is no wait on the
    informer cache.
@@ -1102,7 +1131,7 @@ a PodGroup it has not seen yet.
 ```
 StatefulSet Created (podManagementPolicy: Parallel, schedulingPolicy.gang)
   │
-  ├─→ Controller discovers/creates Workload (static template, includes resourceClaims if configured)
+  ├─→ Controller discovers/creates Workload (persistent template, includes resourceClaims if configured)
   │
   ├─→ Controller discovers/creates PodGroup (runtime, minCount = replicas, resourceClaims included)
   │
@@ -1118,11 +1147,28 @@ StatefulSet Created (podManagementPolicy: Parallel, schedulingPolicy.gang)
 #### Scale Lifecycle
 
 Per [KEP-4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling),
-`minCount` is mutable on both `PodGroupTemplate` and the standalone `PodGroup`, which significantly
-simplifies scaling: a scale is an in-place update, never a PodGroup recreation.
+`minCount` is mutable on both `PodGroupTemplate` and the standalone `PodGroup`. For a Workload and
+PodGroup created by the StatefulSet controller, each reconcile derives the target `minCount` from
+`spec.replicas` (clamped to 1), updates the Workload's sole PodGroupTemplate first, and then updates
+the runtime PodGroup to the same value. As in
+[KEP-5547](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/5547-integrate-workload-with-job#reconciliation-flow-upon-updates),
+the controller recompiles against the persisted Workload and patches only the changed `minCount`;
+it does not recreate either object. A failed or interrupted update is retried on the next sync. The
+controller waits for both updates to succeed before creating pods on scale-up or deleting pods on
+scale-down, so the stored runtime group does not retain the old, higher `minCount` while members
+terminate. The scheduler observes the updated value asynchronously, as described in KEP-4671.
+
+For a Workload supplied by a user or parent controller, that Workload's PodGroupTemplate is
+authoritative: the StatefulSet controller never changes it. If the StatefulSet controller created
+the PodGroup, it syncs the PodGroup's `minCount` from that template, not directly from
+`spec.replicas`. A PodGroup supplied by another actor is never mutated either. The Workload's owner
+is responsible for updating its template if its desired gang size changes. In particular, a parent
+that owns the Workload must lower the template's `minCount` before scaling down the child
+StatefulSet if it wants the delegated PodGroup to reflect the smaller gang before pod deletion.
 
 **Scale Up** (e.g., replicas 3 → 5):
-1. The controller updates the PodGroup's `schedulingPolicy.gang.minCount` from 3 to 5.
+1. The controller updates its Workload's PodGroupTemplate `minCount` from 3 to 5, then updates its
+   PodGroup's `schedulingPolicy.gang.minCount` from 3 to 5.
 2. The controller creates the 2 new pods with `spec.schedulingGroup.podGroupName` referencing the
    existing PodGroup.
 3. The scheduler re-evaluates the gang with the updated minCount.
@@ -1130,32 +1176,44 @@ simplifies scaling: a scale is an in-place update, never a PodGroup recreation.
    new pods are bound simultaneously).
 
 **Scale Down** (e.g., replicas 5 → 3):
-1. Delete pods with ordinals ≥ 3.
-2. Update the PodGroup's `schedulingPolicy.gang.minCount` from 5 to 3.
+1. Update the controller-owned Workload's PodGroupTemplate `minCount` from 5 to 3, then update the
+   controller-owned PodGroup's `schedulingPolicy.gang.minCount` from 5 to 3.
+2. After both updates succeed, delete pods with ordinals ≥ 3. Existing scheduled pods remain
+   bound; once the scheduler observes the update, a member needing rescheduling during graceful
+   termination is evaluated against the reduced gang size.
 
 **Scale to zero**: `replicas: 0` is a normal StatefulSet operation, but a gang `minCount` must be
-positive. The controller deletes all pods and leaves the PodGroup in place with `minCount: 1` (the
+positive. The controller first lowers its Workload template and PodGroup to `minCount: 1` (the
 clamped floor described in
-[StatefulSet with Parallel Pod Management](#statefulset-with-parallel-pod-management)) rather than
-attempting an invalid `minCount: 0` update or deleting the PodGroup. Since no pods reference it,
-the value has no scheduling effect until the StatefulSet is scaled back up, at which point the
-normal scale-up path applies.
+[StatefulSet with Parallel Pod Management](#statefulset-with-parallel-pod-management)), then
+deletes all pods. It does not attempt an invalid `minCount: 0` update or delete the PodGroup. Once
+no pods reference it, the value has no scheduling effect until the StatefulSet is scaled back up,
+at which point the normal scale-up path applies.
 
-**Note on Alpha behavior**: The examples above reflect Alpha, where `minCount` is always derived
-from `spec.replicas` — scaling replicas automatically updates `minCount` to match. In Beta, when
-`minCount` becomes user-configurable, scaling `replicas` will not automatically change a
+**Note on Alpha behavior**: The examples above describe objects created by the StatefulSet
+controller. For them, Alpha derives `minCount` from `spec.replicas` and scaling updates both the
+Workload template and PodGroup to match. In Beta, when `minCount` becomes user-configurable,
+scaling `replicas` will not automatically change a
 user-supplied `minCount`. For example, a user may set `replicas: 5` with `minCount: 3` and later
 scale to `replicas: 7` while keeping `minCount: 3`.
 
 **ResourceClaims during scaling**: ResourceClaims shared at the PodGroup level are unaffected by
 simple scaling operations. Scale-up adds new pods that reference the existing PodGroup and its
 already-allocated ResourceClaims — no new ResourceClaims are generated. Scale-down deletes pods
-but the PodGroup's ResourceClaims remain allocated as long as the PodGroup exists.
+but the PodGroup's ResourceClaims remain allocated as long as the PodGroup exists, including at
+`replicas: 0`. This can reserve scarce devices indefinitely while the StatefulSet is idle. Per
+[KEP-5729](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5729-resourceclaim-support-for-workloads#deallocate),
+deleting all pods does not release a claim reserved for the PodGroup; deleting the PodGroup does.
+Claims generated from ResourceClaimTemplates for individual Pods instead follow those Pods'
+lifetimes; this does not provide stable, per-replica claims across Pod replacement.
 
 **Note**: There is no operation in this design that recreates the PodGroup. A StatefulSet keeps one
-PodGroup, with a stable identity, for its entire lifetime; scaling mutates `minCount` in place
-and rolling updates leave the PodGroup untouched. The PodGroup and its generated ResourceClaims are
-deleted only when the StatefulSet itself is deleted.
+PodGroup, with a stable identity, for its entire lifetime; scaling mutates `minCount` in place on
+the controller-owned Workload template and PodGroup, while rolling updates leave both untouched.
+The PodGroup and its generated ResourceClaims are deleted only when the StatefulSet itself is
+deleted. For a pre-existing ResourceClaim referenced by
+name, PodGroup deletion removes that group's reservation; the claim is deallocated once no other
+reservations remain, but the ResourceClaim object is not garbage-collected with the PodGroup.
 
 ### Opting into Workload-Aware Scheduling
 
@@ -1293,15 +1351,18 @@ both enabled and disabled, ensuring no regressions to current behavior.
   - `disruptionMode` and `schedulingConstraints.topology` are passed through to the PodGroup
     unchanged for both `Basic` and `Gang` policies
   - Pods receive correct `spec.schedulingGroup.podGroupName` references
-  - PodGroup minCount updated in-place on replica scaling
-  - `minCount` is clamped to 1 when `spec.replicas` is 0: the PodGroup is neither deleted nor
-    patched to an invalid `minCount: 0`
+  - The controller-owned Workload template and PodGroup `minCount` are both updated in-place on
+    replica scaling; a failure between updates is retried on the next sync
+  - Scale-down lowers both `minCount` values before deleting pods; a failed update prevents pod
+    deletion until the controller retries successfully
+  - `minCount` is clamped to 1 when `spec.replicas` is 0: neither object is deleted nor patched to
+    an invalid `minCount: 0`
   - The derived `minCount` is never written back to the StatefulSet —
     `spec.scheduling.schedulingPolicy.gang.minCount` is still nil after a sync
   - PodGroup name and identity are stable across a rolling update (no recreation)
   - Workload and PodGroup cleanup on StatefulSet deletion
   - OwnerReferences and finalizers are set correctly on all three object kinds: Workload →
-    StatefulSet; PodGroup → StatefulSet and (root case only) Workload; Pod → StatefulSet and
+    StatefulSet; PodGroup → StatefulSet and (StatefulSet-managed case only) Workload; Pod → StatefulSet and
     PodGroup
   - Discovery by reference: an existing Workload is matched by `spec.controllerRef` and an
     existing PodGroup by `spec.podGroupTemplateRef`, regardless of their names
@@ -1312,13 +1373,20 @@ both enabled and disabled, ensuring no regressions to current behavior.
     mutated and an event is emitted
   - A Workload or PodGroup not created by the controller is used as-is: no ownerReference added,
     no mutation, no deletion
+  - With a BYO or parent-owned Workload and a controller-owned PodGroup, only the PodGroup's
+    `minCount` is synced from the Workload template; scaling does not mutate the Workload
+  - With a BYO PodGroup, scaling mutates neither that PodGroup nor any BYO Workload
   - A discovered Workload with a `podGroupTemplates` count other than 1 is ignored, with an event
   - Composition: with a parent ownerReference and `scheduling.k8s.io/group-template-name` set, the
     controller creates no Workload and instantiates its PodGroup from the parent's named template
   - Composition: with `scheduling.k8s.io/parent-compositepodgroup` also set, the created PodGroup
     links to that parent CompositePodGroup instance
-  - Composition: with a parent ownerReference and no `group-template-name` annotation, the
-    controller creates neither object and only stamps `podGroupName` onto pods
+  - Composition: with a parent ownerReference but no `group-template-name` annotation, the
+    controller creates its own Workload and PodGroup and stamps their `podGroupName` onto pods
+  - Composition: `group-template-name` without a parent controller ownerReference does not suppress
+    StatefulSet-managed Workload and PodGroup creation and surfaces an event
+  - Composition: an unresolved or ambiguous parent Workload/template with the annotation present
+    falls back with an event instead of creating a separate Workload
   - ResourceClaims from `spec.scheduling.resourceClaims` are passed through to PodGroupTemplate
     and PodGroup `spec.resourceClaims`
   - Pods receive matching `spec.resourceClaims` entries when the pod template includes them
@@ -1347,7 +1415,8 @@ both enabled and disabled, ensuring no regressions to current behavior.
 - Gang StatefulSet: no pod is bound until the whole group can be placed; all are bound once it can
 - `disruptionMode: all`: a higher-priority pod preempts the whole StatefulSet rather than a subset
 - `schedulingConstraints.topology`: all pods land in a single instance of the named domain
-- Scaling updates PodGroup minCount in-place (no recreation needed)
+- Scaling updates the controller-owned Workload template and PodGroup `minCount` in-place (no
+  recreation needed); an interrupted update converges on retry
 - Rolling update (`partition: 0`) keeps the same PodGroup; pods are recreated with the same
   `podGroupName`
 - StatefulSet deletion cascades to Workload, PodGroup, and Pod deletion via OwnerReference
@@ -1356,6 +1425,8 @@ both enabled and disabled, ensuring no regressions to current behavior.
 - A StatefulSet composed by a parent controller (parent-owned Workload + downward-mapping
   annotations) gets a PodGroup attached to the parent's CompositePodGroup, and the StatefulSet
   controller creates no Workload of its own
+- A StatefulSet owned by a controller that does not set the downward-mapping annotation creates
+  its own Workload and PodGroup
 - Feature gate disabled: no Workload/PodGroup objects created, standard behavior preserved
 - ResourceClaims from `spec.scheduling.resourceClaims` propagated to PodGroup and shared by all pods
 - ResourceClaimTemplate generates one ResourceClaim per PodGroup, not per pod
@@ -1367,11 +1438,19 @@ both enabled and disabled, ensuring no regressions to current behavior.
 - End-to-end all-or-nothing scheduling of a Parallel StatefulSet
 - End-to-end gang preemption with `disruptionMode: all`
 - End-to-end topology co-location with `schedulingConstraints.topology`
-- Scale-up with in-place PodGroup minCount update: verify new pods join existing PodGroup
-- Scale-down with in-place PodGroup minCount update: verify correct pod termination and PodGroup
-  minCount reduced to match new replica count
+- Scale-up with in-place Workload template and PodGroup `minCount` updates: verify new pods join the
+  existing PodGroup
+- Scale-down with in-place Workload template and PodGroup `minCount` updates: verify correct pod
+  termination and both values reduced before pod deletion; if either update fails, pod deletion
+  waits for a successful retry
 - Scale to zero and back up: all pods are removed, the PodGroup survives with `minCount: 1`, and
-  the gang re-forms on scale-up against the same PodGroup
+  the Workload template also has `minCount: 1`; the gang re-forms on scale-up against the same
+  PodGroup
+- Scale to zero with a shared ResourceClaim: verify that the claim remains allocated and reserved
+  for the retained PodGroup after all pods are gone
+- Rolling update with a changed Pod claim reference: verify that nonmatching replacement-Pod
+  claims are Pod-scoped, matching claims still use the PodGroup claim, and an unused shared claim
+  remains allocated to the PodGroup
 - OrderedReady StatefulSet with Basic Workload: verify sequential scheduling preserved
 - Failure scenario: insufficient resources prevent gang formation; no pod of the group is bound
 - StatefulSet deletion: verify Workload, PodGroup, and all pods cleaned up
@@ -1393,8 +1472,9 @@ both enabled and disabled, ensuring no regressions to current behavior.
 - Reference-based discovery of the Workload and PodGroup, matching the Job integration, so that a
   controller restart mid-workflow never produces duplicates
 - Support for composition by higher-level controllers via the KEP-6089 downward-mapping
-  annotations (parent-owned Workload, optionally parent-owned PodGroup)
-- Basic lifecycle management: create, delete, scale (in-place PodGroup minCount update)
+  annotations (parent-owned Workload with a StatefulSet-owned PodGroup)
+- Basic lifecycle management: create, delete, scale (in-place Workload template and PodGroup
+  `minCount` updates for controller-owned objects)
 - Admission validation for the OrderedReady + Gang conflict and the `partition` + `scheduling`
   conflict
 - Initial unit and integration tests completed and enabled
@@ -1412,6 +1492,9 @@ both enabled and disabled, ensuring no regressions to current behavior.
   rejoins an already-placed group, and what happens when the new revision does not fit)
 - On that basis, decide and implement `rollingUpdate.partition` support — without splitting a
   StatefulSet across multiple PodGroups and without recreating pods to reassign scheduling groups
+- Decide and implement the scale-to-zero lifecycle for PodGroup-backed ResourceClaims: whether
+  and how to release device allocations while preserving safe scale-up, including the impact on
+  PodGroup identity; test the chosen behavior
 - Controller crash-recovery edge cases addressed
 - Metrics for Workload/PodGroup creation and update latency
 - E2e tests in CI, linked in TestGrid
@@ -1508,10 +1591,10 @@ applying. Disabling the gate therefore does not roll back the *behavior*; it onl
 StatefulSet controller from keeping the objects in sync, which introduces a real desynchronization
 hazard:
 
-- Scaling `spec.replicas` no longer updates the PodGroup's `minCount`. Scaling a gang-scheduled
-  StatefulSet from 3 to 5 leaves `minCount: 3`, so the 2 new pods are scheduled against a group
-  whose declared size no longer matches reality; scaling down to 2 leaves `minCount: 3`, which can
-  never be satisfied by the remaining pods.
+- Scaling `spec.replicas` no longer updates the Workload template or PodGroup `minCount`. Scaling a
+  gang-scheduled StatefulSet from 3 to 5 leaves both at `minCount: 3`, so the 2 new pods are
+  scheduled against a group whose declared size no longer matches reality; scaling down to 2 leaves
+  both at `minCount: 3`, which can never be satisfied by the remaining pods.
 - New pods created after rollback are created *without* `schedulingGroup`, so a single StatefulSet
   can end up with some pods inside its PodGroup and some outside it.
 
@@ -1542,8 +1625,9 @@ Yes — integration tests cover:
 - Gate enabled: Workload and PodGroup created for qualifying StatefulSets (both Parallel+Gang and
   OrderedReady+Basic configurations).
 - Gate toggled off then on: existing scheduling objects discovered and reused; no duplicates.
-- Gate toggled off: PodGroup `minCount` is no longer updated on scale, and the pre-existing
-  PodGroup is still honored by the scheduler (the documented desynchronization behavior above).
+- Gate toggled off: Workload template and PodGroup `minCount` are no longer updated on scale, and
+  the pre-existing PodGroup is still honored by the scheduler (the documented desynchronization
+  behavior above).
 - Running pods unaffected by gate toggle.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -1709,6 +1793,7 @@ Yes. For each StatefulSet with `spec.scheduling` set, the controller uses inform
 and PodGroup objects and makes the following API calls:
 - `CREATE Workload` — 1 per StatefulSet creation
 - `CREATE PodGroup` — 1 per StatefulSet creation
+- `PATCH Workload` — on scale (controller-owned template `minCount` update)
 - `PATCH PodGroup` — on scale (minCount update)
 
 There is no PodGroup recreation path: the PodGroup is created once and mutated in place for the
@@ -1780,11 +1865,14 @@ without a Workload would bypass gang scheduling guarantees.
 
 ## Implementation History
 
-- 2026-08-25: Initial KEP draft created (OCPNODE-4667)
+- 2026-08-25: Initial KEP draft created
 - 2026-09-21: Addressed review comments — adopted KEP-5547's ownership and discovery model,
   deferred `rollingUpdate.partition` to Beta, reworked the Risks and Mitigations table, corrected
   the `minCount` and `disruptionMode` semantics, and filled in the previously TBD PRR monitoring
   answers.
+- 2026-09-30: Addressed follow-up review comments — clarified ownership and scale reconciliation,
+  documented ResourceClaim retention and claim changes during rolling updates, and expanded the
+  risks and test plan.
 
 ## Drawbacks
 
