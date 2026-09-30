@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-storage
-status: implementable
+status: withdrawn
 creation-date: 2021-05-08
 reviewers:
   - "@andrewsykim"
@@ -15,6 +15,9 @@ reviewers:
 approvers:
   - "@andrewsykim"
 see-also:
+  - "[Umbrella Issue](https://github.com/kubernetes/enhancements/issues/2699)"
+  - "[Original Work](https://github.com/kubernetes/kubernetes/pull/108838)"
+  - "[SIG Meeting for Withdraw](https://www.youtube.com/watch?v=DlxkBTVx384)"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
