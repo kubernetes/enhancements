@@ -225,8 +225,9 @@ at its symptom.
 - Rejected DaemonSet Pod corpses on a shutting-down node are cleaned up without
   being replaced, removing a documented source of manual operator toil.
 - The reader's contract is defined in terms of condition `type` and `status`
-  only, consistent with [KEP-5683]'s admin-managed condition model, so that it
-  remains correct as additional writers are introduced by sibling KEPs.
+  only. It does not care who wrote the condition: an administrator (the only
+  writer as of v1.37), the kubelet (this KEP), or writers added by sibling
+  KEPs.
 - The kubelet clears the conditions on every path where it can (shutdown
   cancelled, kubelet startup) and clears only the conditions it wrote. If the
   kubelet never returns, the conditions are cleared by an administrator or go
@@ -311,8 +312,20 @@ administrator clears them or the Node object is deleted; see [Kubelet
 Only `status: "True"` on `GracefulNodeShutdownInProgress` has behavioral
 effect. `False`, `Unknown`, and an absent condition are all equivalent to "no
 shutdown in progress" for the reader. The reader ignores `DrainInProgress`; the
-kubelet writes it because [KEP-5683] requires it during Graceful Node Shutdown
-and other readers key off it.
+kubelet writes it because the WG requires it during Graceful Node Shutdown and
+other readers key off it.
+
+**Why a drain does not stop DaemonSet Pods, but a shutdown does.** A drain and
+a shutdown are different things for a DaemonSet. `kubectl drain` evicts
+workload Pods but not DaemonSet Pods; it refuses to run unless told to ignore
+them. That is because a drained node is still a running node: its kubelet is
+up, Pods not yet evicted still need networking and storage, and the node may be
+uncordoned and reused without a reboot. So a node-level agent that dies during
+a drain must be recreated, and the DaemonSet controller keeps creating on a
+node with `DrainInProgress=True`. A shutdown is the opposite. The node is going
+away, and the kubelet rejects every new Pod until it does, so creating there
+only churns. That is why the reader keys on the shutdown condition and not on
+the drain one.
 
 The reader in (2) is specified against condition values only; see [Other
 writers](#other-writers).
@@ -362,8 +375,8 @@ writers](#other-writers).*
 - **The kubelet's write must land inside the logind inhibit window.** The
   kubelet holds a delay inhibitor lock; once it releases the lock (after
   `killPods` returns), systemd proceeds regardless. An unreachable API server
-  must never delay the shutdown itself, so the write is best-effort with a
-  bounded retry, and the kubelet re-asserts the condition on its later status
+  must never delay the shutdown itself, so the write is issued first but never
+  waited on, and the kubelet re-asserts the condition on its later status
   updates while the shutdown is in progress.
 - **Whether a shutdown is in progress is in-memory only.** `nodeShuttingDownNow`
   is a boolean behind a mutex; a restarted kubelet cannot know it was
@@ -398,7 +411,7 @@ writers](#other-writers).*
 
 | Risk | Mitigation (alpha) |
 |---|---|
-| The kubelet's status write does not land before the machine dies (slow or unreachable API server during a rack-wide event). | Best-effort, bounded retry, and the kubelet re-asserts the condition on its later status updates while the shutdown is in progress. If nothing lands, the DaemonSet controller sees absent conditions and behaves as today. Never worse than status quo. |
+| The kubelet's status write does not land before the machine dies (slow or unreachable API server during a rack-wide event). | The write is best-effort and never waited on, so it cannot delay the shutdown; the kubelet re-asserts the condition on its later status updates while the shutdown is in progress. If nothing lands, the DaemonSet controller sees absent conditions and behaves as today. Never worse than status quo. |
 | Conditions left `True` after the kubelet is gone (crash, power loss). | Cleared by the kubelet at startup when the node returns. If the kubelet never returns, the conditions stay `True` until an administrator clears them or the Node object is deleted. Nothing can run on that node in the meantime, so holding DaemonSet Pods back costs nothing. Accepted for alpha; automatic detection of a vanished writer is a graduation item. |
 | A stale `True` condition on a node whose kubelet is alive (for example, the cancel write failed). | The kubelet keeps `GracefulNodeShutdownInProgress` in step with its own state on every node status update, so a stale value lasts one heartbeat. |
 | The kubelet restarts in the middle of a shutdown. | It does not know a shutdown is in progress ([k/k#122674], the amnesia bug) and clears `GracefulNodeShutdownInProgress` at startup. The DaemonSet controller may create Pods on that node for the few seconds until the machine goes down; those Pods are rejected or left `Pending`, as today. Accepted for alpha. |
@@ -440,9 +453,10 @@ common signal that Pods are leaving a node, and other readers key off it. `Grace
 received a shutdown signal and is rejecting new Pods. The DaemonSet reader needs
 only the why. It acts on `GracefulNodeShutdownInProgress=True` alone and ignores
 `DrainInProgress`. So a plain `kubectl drain` or a maintenance drain, which sets
-`DrainInProgress` without the GNS condition, does not stop DaemonSet Pods; they
-are expected to keep running through those drains, and a node-level logging or
-networking agent that dies mid-drain is recreated. Only the kubelet writes
+`DrainInProgress` without the GNS condition, does not stop DaemonSet Pods. A
+drained node is still a running node, and its node-level agents must keep
+running and be recreated if they die; see the [Proposal](#proposal) for the
+full reasoning. Only the kubelet writes
 `GracefulNodeShutdownInProgress`, so the reader has one writer to reason about.
 *Reader rule agreed with SIG Apps, SIG Node, and the WG lead at KEP review,
 2026-09-29.*
@@ -480,17 +494,20 @@ an impending shutdown — `PrepareForShutdown(true)` from systemd-logind on Linu
 1. **Publish the conditions** — a single Node status update setting
    `GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`, both with
    reason `NodeShutdown` (a `DrainInProgress=True` that is already present is
-   left as is; see below). The write is best-effort with a bounded retry: an
-   unreachable API server must never delay the shutdown, and the write must
-   complete inside the platform's shutdown window (the logind inhibit delay on
-   Linux; the SCM preshutdown timeout on Windows). Today the shutdown manager records
-   the shutdown in memory and then fires the kubelet's generic status sync in a
-   goroutine it does not await (`go m.syncNodeStatus(...)` in
+   left as is; see below). The write is best-effort and never waited on: it
+   is issued before step 2 begins, in its own goroutine, and step 2 starts
+   without waiting for it to land. A slow or unreachable API server therefore
+   never delays the shutdown, which matters on nodes with seconds to live, such
+   as spot instances. Today the shutdown manager records the shutdown in memory
+   and then fires the kubelet's generic status sync in a goroutine it does not
+   await (`go m.syncNodeStatus(...)` in
    [`nodeshutdown_manager_linux.go`][nodeshutdown_manager_linux.go]), so
-   `Ready=False` may land after Pod termination has already begun. The condition
-   write should instead be a dedicated, synchronous, bounded call issued before
-   step 2, so that the conditions are ordered ahead of the first Pod termination
-   rather than left to the status loop's timing. After that first write, the
+   `Ready=False` may land after Pod termination has already begun. The
+   condition write is a dedicated call issued ahead of that, so in the common
+   case the conditions reach the API server before the first Pod termination
+   does, rather than being left to the status loop's timing. If the write does
+   not land, the DaemonSet controller behaves as today for that shutdown; see
+   [Risks and Mitigations](#risks-and-mitigations). After that first write, the
    kubelet keeps `GracefulNodeShutdownInProgress` in step with its own state on
    every later node status update: `True` while it is in shutdown, `False` when
    it is not. That is what makes a failed first write, a failed cancel write,
@@ -509,8 +526,8 @@ if they see an issue.*
 
 **Invariant (agreed with the issue author).** The signal that gates DaemonSet
 Pod creation transitions at the same moment the kubelet begins rejecting Pod
-admission. Publishing the conditions before terminating Pods is how the design
-honors it.
+admission. Issuing the condition write before terminating Pods is how the
+design honors it, without making termination wait for the write.
 
 **What the kubelet touches: one rule.** The kubelet sets and clears only the
 conditions it wrote. If `DrainInProgress` is already `True` when the shutdown
@@ -1224,9 +1241,9 @@ nodes only, plus one field in the kubelet's local shutdown state file.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No. The kubelet's condition write is bounded and does not delay shutdown; the
-DaemonSet controller's per-node check is one condition lookup on an object it
-already holds.
+No. The kubelet's condition write is never waited on and cannot delay
+shutdown; the DaemonSet controller's per-node check is one condition lookup on
+an object it already holds.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1241,8 +1258,8 @@ No.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The kubelet's write is best-effort and bounded; it fails and the shutdown
-proceeds. The DaemonSet controller sees absent conditions and behaves as today.
+The kubelet's write is best-effort and never waited on; it fails and the
+shutdown proceeds. The DaemonSet controller sees absent conditions and behaves as today.
 
 ###### What are other known failure modes?
 
