@@ -40,4 +40,5 @@ metrics:
   - apiserver_watch_cache_watcher_catchup_rounds_total
   - apiserver_watch_cache_watcher_catchup_events
   - apiserver_watch_cache_stalled_watchers
+  - apiserver_watch_cache_watcher_skipped_events_total
   - apiserver_terminated_watchers_total
