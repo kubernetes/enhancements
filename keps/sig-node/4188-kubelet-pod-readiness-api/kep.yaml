@@ -35,14 +35,14 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: PodInfoAPI
+  - name: PodsAPI
     components:
       - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - pod_status_endpoint_requests_total
-  - pod_status_endpoint_requests_list
-  - pod_status_endpoint_requests_get
-  - pod_status_endpoint_errors_get
+  - kubelet_pod_requests_total
+  - kubelet_pod_requests_list_total
+  - kubelet_pod_requests_get_total
+  - kubelet_pod_requests_watch_total
