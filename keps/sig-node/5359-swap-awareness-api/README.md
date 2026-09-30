@@ -17,7 +17,7 @@
   - [Proposed Design: Limits-Only Model](#proposed-design-limits-only-model)
   - [Swap limit semantics](#swap-limit-semantics)
     - [Relationship between <code>limits.swap</code> and <code>limits.memory</code>](#relationship-between-limitsswap-and-limitsmemory)
-  - [NodeInfo Exposure](#nodeinfo-exposure)
+  - [In-Place Pod Resize](#in-place-pod-resize)
   - [User Experience Examples](#user-experience-examples)
     - [Use Case 1: Swap-Disabled Workload](#use-case-1-swap-disabled-workload)
     - [Use Case 2: Swap-Enabled Workload](#use-case-2-swap-enabled-workload)
@@ -75,24 +75,20 @@ To effectively manage swap utilization in workloads, the primary goals of this
 KEP are to
 
 -  provide an API that allows application owners to specify the amount of
-    swap an application can use (at the container level and/or pod level).
--  offer the ability to disable swap entirely for a container or pod by setting
-    `swap.limit=0`.
+    swap an application can use (at the container level and/or pod level), where
+    swap is opt-in by default (`limits.swap=0`).
 -  enable workloads to declare the maximum _acceptable_ swap limits for
     their containers or pods.
 -  enable users to configure swap for containers of any QoS class (including
-    `Guaranteed` and `BestEffort`), removing QoS-based restrictions on swap
-    while maintaining the safe default of swap being disabled (i.e. limit=0).
+    `Guaranteed` and `BestEffort`), removing QoS-based restrictions on swap.
 -  allow safely overcommit on swap to fully leverage available node capacity.
 -  facilitate kubernetes node features like in-place pod resize and CPU pinning on
     swap enabled nodes by eliminating implicit swap assumptions on pods.
 
 ### Non Goals
 
--  define new swap scheduling behavior for workloads; this is managed by a
-    separate KEP for placement control ([KEP-5424](https://github.com/kubernetes/enhancements/issues/5424)),
-    where [Node Declared Features (KEP-5328)](https://kep.k8s.io/5328) can be
-    explored as one possible way to route swap-configured pods onto swap-capable nodes.
+-  define new swap scheduling behavior for workloads; this is deferred to a
+    separate KEP for placement control ([KEP-5424](https://github.com/kubernetes/enhancements/issues/5424)).
 -  change eviction behavior for swap enabled nodes; this will be
     investigated with a separate future KEP if improvements are needed. 
 -  deprecate or remove `LimitedSwap` mode.
@@ -108,12 +104,14 @@ This is achieved by introducing a new `swap` resource field under
 `resources.limits` (`containers[*].resources.limits.swap` and
 `pod.spec.resources.limits.swap`). This "limits-only" model allows users to
 specify the maximum amount of swap a container or pod can use. If this limit is not
-specified, swap will not be allowed (`0`), providing a safe
+specified, swap will not be allowed (`0`), providing a safe opt-in
 default.
 
 This explicit limit allows for:
 
-1. Disabling swap for specific containers or an entire pod by setting `swap: "0"`
+1. Disabling swap (`swap: "0"`) for specific containers within a pod where a
+    pod-level swap limit is set, or opting out of automatic swap on a
+    `LimitedSwap` node
 1. Granting specific swap allowances to containers or a shared pod swap pool that can benefit from it
     eg: `swap: "1Gi"`
 1. Enabling swap for QoS classes that were previously incompatible, like
@@ -126,13 +124,18 @@ This explicit limit allows for:
 
 #### Use Case 1: Swap-Disabled
 
- A user wants to run a workload that should never use swap.
+A user wants to run a workload that should never use swap (e.g., opting out a
+latency-sensitive container inside a pod with pod-level swap, or opting out on a
+`LimitedSwap` node).
 
 #### Use Case 2: Explicit limits on swap usage
 
 Modern applications with multiple containers often have varying swap
 requirements. eg: a log uploader might have more swap tolerance than a main
-web-server. 
+web-server. Swap limits can be specified directly in the workload spec, injected
+by mutating admission controllers (e.g., applying a ratio of memory request or
+limit for backward compatibility), or dynamically managed by VPA or node-level
+agents via In-Place Pod Resize.
 
 #### Use Case 3: Swap in Guaranteed pods
 
@@ -144,12 +147,11 @@ safety net against OOM kills, which was previously not possible.
 
 1. **Why is swap not an allocatable resource?**
 
-Swap is not modeled as a conventional / allocatable resource as swap is only
-consumed when memory pressure occurs. If swap space were 'accounted for' without
-being actively used, it could result in scenarios where swap is reserved
-unnecessarily, leading to underutilization of other available resources. If
-there are use-cases for `resources.swap` rise in the future it could be
-discussed.
+This KEP models `limits.swap` as a cgroup upper bound rather than an allocatable
+resource with hard capacity reservation (`requests.swap`). This allows workloads
+and controllers to explicitly assign and overcommit swap across all QoS classes,
+while deferring `requests.swap` and capacity-based swap scheduling to future
+work ([KEP-5424](https://github.com/kubernetes/enhancements/issues/5424)).
 
 1. **The "swap:0" placement problem**
 
@@ -162,19 +164,27 @@ proposal adopts the position that limits control usage, not placement.
 -  If workload separation for swap is desired, explicit placement controls
     like taints or nodeSelector should be the preferred option, separating API
     concerns of workload placement from resource usage.
--  ‘limits' should not overload the meaning of "swap:0" to mean "I require a
-    non-swap node". Swap aware scheduling is investigated as a separate KEP
-    (xref: [#5424](https://github.com/kubernetes/enhancements/issues/5424)). 
+-  ‘limits' should not overload the meaning of "swap:0" to mean a hard placement
+    requirement for a non-swap node; any placement preference based on swap
+    configuration is an optional scheduling heuristic investigated in a separate
+    KEP (xref: [#5424](https://github.com/kubernetes/enhancements/issues/5424)). 
 
 ### Risks and Mitigations
 
 1. Risk: Swap Overcommit and Exhaustion
 
-On a node configured with `WorkloadControlledSwap`, it is possible for the sum of swap limits across all containers to exceed the node's total swap capacity. If multiple workloads begin to use swap simultaneously, the node's swap space can be exhausted. This can lead to some processes unable to access the swap space they expect leading to OOM kills.
+On a node configured with `WorkloadControlledSwap`, it is possible for the sum
+of swap limits across all containers to exceed the node's total swap capacity.
+If multiple workloads begin to use swap simultaneously, approaching swap
+exhaustion can trigger excessive paging and thrashing before the OOM killer is
+invoked.
 
 Mitigation:
 
-The primary mitigation for this risk is enhancing observability, empowering cluster operators to monitor swap allocation and usage effectively. Kubernetes will not automatically intervene if swap is exhausted, as swap is a node-level resource managed by the administrator.
+The primary mitigation for this risk is enhancing observability, empowering
+cluster operators to monitor swap allocation and usage effectively. Mitigations
+such as PSI-triggered eviction or dynamic swap limit adjustment will be
+investigated prior to Beta graduation.
 
 - To help operators manage swap overcommitment, this KEP proposes to add a  new metric `kubelet_node_swap_allocated_bytes`. This metric will represent the sum of all `resources.limits.swap` for all containers on the node. Operators can use this metric to create alerts based on the ratio of allocated swap to total swap capacity, allowing them to proactively manage risk.
 - A new `HighSwapUtilization` condition can be added to the node status to provide a high-level signal that a node is experiencing heavy swap utilization.
@@ -183,8 +193,9 @@ The primary mitigation for this risk is enhancing observability, empowering clus
 2. Risk: User confusion between `LimitedSwap` and `WorkloadControlledSwap`
     modes.
 
-Mitigation: Swap behavior will be exposed as a field in node-info to be
-observable by the user.
+Mitigation: Node swap configuration is observable via the kubelet's `/configz`
+endpoint and node labels; exposing swap metadata on `NodeStatus` is deferred
+until swap scheduling and allocatable design are decided.
 
 ## Design Details
 
@@ -337,15 +348,11 @@ specified swap limit will have no effect. On nodes configured with either
 This approach avoids disrupting pods that have already been scheduled.
 
 **Note on placement:** Setting an explicit swap limit on a pod provides a strong
-signal of user intent. To ensure pods specifying `resources.limits.swap` (`> 0`)
-are scheduled onto nodes with swap enabled rather than `NoSwap` nodes, kubelets
-can advertise `WorkloadControlledSwap` via
-[Node Declared Features (KEP-5328)](https://kep.k8s.io/5328). While this KEP
-does not implement capacity-based swap scheduling or `swap: "0"` node
-anti-affinity (distinguishing an omitted swap limit as swap-agnostic from
-`swap: "0"` as avoiding swapping nodes entirely), a separate
-[Swap Scheduling KEP](https://github.com/kubernetes/enhancements/issues/5424)
-is exploring those scheduling capabilities.
+signal of user intent. If users want to guarantee that a workload lands on a
+node with swap enabled, they can use node labels (`nodeSelector` or node
+affinity) to do so. Capacity-based swap scheduling (e.g. when swap requests are
+considered) and swap-aware placement are deferred to a separate
+[Swap Scheduling KEP](https://github.com/kubernetes/enhancements/issues/5424).
 
 **Note on coexistence:** Because explicit `resources.limits.swap` takes
 precedence over `LimitedSwap`'s automatic calculation ("workload swap wins"),
@@ -359,20 +366,23 @@ cluster and on the same `LimitedSwap` node:
   all pods when `limits.swap` is omitted), so only workloads that explicitly
   specify `limits.swap > 0` use swap.   
 
-### NodeInfo Exposure
+### In-Place Pod Resize
 
-Swap behavior will be exposed in the `Node` status to enable monitoring and
-selection: 
+Under `WorkloadControlledSwap`, `limits.swap` is independent of `requests.memory`
+and `limits.memory`, so resizing memory requests or limits has no implicit
+side-effects on swap (and on `LimitedSwap` nodes, lifting the resize restriction
+can recalculate proportional swap when explicit `limits.swap` is not set).
 
-```
-nodeInfo:
-  ...
-  swap:
-    behavior: WorkloadControlledSwap
-    capacity: 53687087104
-```
-
-This will enable field selection for monitoring:
+When `limits.swap` (or a derived swap limit) is resized in-place
+(with `RestartNotRequired` default), the kubelet updates the container or pod
+cgroup's `memory.swap.max`:
+- **Increasing `limits.swap` (`new max > current max`):** The higher
+  `memory.swap.max` limit is applied immediately in cgroup v2.
+- **Downsizing `limits.swap` (`new max < current max`):** Consistent with
+  kubelet's existing memory limit scale-down validation (`memory.current <
+  new_memory_max`), kubelet will verify `memory.swap.current < new_swap_max`
+  before applying a swap limit decrease, keeping the resize `InProgress`
+  (deferred) until `memory.swap.current` drops below the new `limits.swap`.
 
 ### User Experience Examples
 
@@ -486,11 +496,16 @@ Unit and E2E tests provide sufficient coverage for the feature. Integration
 tests may be added to cover any gaps that are discovered in the future.
 
 **e2e tests**
-    -  Verify pod with explicit swap on `WorkloadControlledSwap` node uses swap.
-    -  Verify pod with no limit on `WorkloadControlledSwap` node does not use swap.
-    -  Verify pod with `swap:"0"` on `WorkloadControlledSwap` node does not use swap.
-    -  Verify that a Guaranteed pod with explicit swap set on `WorkloadControlledSwap`
-        node uses swap.
+
+Node E2E tests will run in a swap-enabled cgroup v2 Node E2E Prow job (alongside
+the existing `NodeSwap` test lanes) that configures `KubeletConfiguration` with
+`memorySwap.swapBehavior: WorkloadControlledSwap`:
+
+- Verify pod with explicit swap on `WorkloadControlledSwap` node uses swap.
+- Verify pod with no limit on `WorkloadControlledSwap` node does not use swap.
+- Verify pod with `swap:"0"` on `WorkloadControlledSwap` node does not use swap.
+- Verify that a Guaranteed pod with explicit swap set on `WorkloadControlledSwap`
+  node uses swap.
 
 ## Graduation Criteria
 
@@ -502,7 +517,10 @@ tests may be added to cover any gaps that are discovered in the future.
 
 ### Beta
 
--  Resolve `requests.swap` and `limitOnlyResources` API design feedback with API reviewers.
+-  Resolve `requests.swap` and `limitOnlyResources` API design feedback with API
+    reviewers.
+-  Investigate mitigations for swap exhaustion and thrashing (such as
+    PSI-triggered eviction or dynamic swap limit adjustment).
 -  API controlled swap functionality is running behind feature flag for at least one release.
 -  No major bugs reported and user feedback is positive.
 
@@ -521,7 +539,7 @@ This feature introduces a new resource key, `swap`, under `resources.limits` at 
 
 If the control plane is upgraded to a version that supports this feature, but some nodes are still running older kubelet versions, pods with `resources.limits.swap` may be scheduled on those older nodes. The older kubelet will not recognize `limits.swap` and will ignore it, falling back to the node's configured `swapBehavior` (`NoSwap` or `LimitedSwap`) without emitting a swap-specific event. Enforcement of explicit workload swap limits is active once the kubelet on the node is upgraded to a compatible version with the `WorkloadControlledSwap` feature gate enabled.
 
-Therefore, the functionality described in this KEP is only guaranteed on nodes where the kubelet version is new enough to support the feature. During a cluster upgrade, the enforcement of swap limits will be best-effort until all kubelets are upgraded (and can be paired with Node Declared Features in [KEP-5424](https://github.com/kubernetes/enhancements/issues/5424) for scheduler placement awareness).
+Therefore, the functionality described in this KEP is only guaranteed on nodes where the kubelet version is new enough to support the feature. During a cluster upgrade, the enforcement of swap limits will be best-effort until all kubelets are upgraded (or nodes are targeted using node labels).
 
 ## Production Readiness Review Questionnaire
 
