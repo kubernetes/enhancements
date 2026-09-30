@@ -314,6 +314,8 @@ type StatefulSetSchedulingConfiguration struct {
     // for the StatefulSet's pods. Setting schedulingConstraints.topology
     // requires every pod of the StatefulSet to land in a single instance of
     // the named topology domain (KEP-5732).
+    // Topology constraints require the TopologyAwareWorkloadScheduling feature
+    // gate in kube-apiserver and kube-scheduler.
     //
     // +optional
     // +k8s:optional
@@ -597,7 +599,9 @@ PodGroup's claim by name and source to consume it.
 
 5. **Feature gate dependencies**: This feature depends on the `GenericWorkload` feature gate
    (introduced in KEP-4671, consolidated in 1.37) being enabled in both `kube-controller-manager`
-   and `kube-scheduler`. The `resourceClaims` field additionally requires
+   and `kube-scheduler`. Topology constraints require `TopologyAwareWorkloadScheduling` (KEP-5732)
+   in kube-apiserver and kube-scheduler; without it, topology placement is not enforced. The
+   `resourceClaims` field additionally requires
    `DRAWorkloadResourceClaims` (KEP-5729) in kube-apiserver, kube-controller-manager,
    kube-scheduler, and kubelet; with that gate off the API server clears the field before it is
    stored — as StatefulSet already does for its other feature-gated fields — so the controller
@@ -624,7 +628,7 @@ PodGroup's claim by name and source to consume it.
 9. **Discovery is by reference, not by name**: Following
    [KEP-5547](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/5547-integrate-workload-with-job#workload-and-podgroup-discovery),
    the controller finds its Workload via `workload.spec.controllerRef` and its PodGroup via
-   `podGroup.spec.podGroupTemplateRef` — never by reconstructing a name. Names are for human
+   `podGroup.spec.workloadRef` — never by reconstructing a name. Names are for human
    readability only, so the naming scheme can change in a later release without breaking
    reconciliation. A consequence worth stating: the controller never blindly creates, it discovers
    first and creates only what is missing, which is what makes crash recovery and re-enablement
@@ -659,7 +663,7 @@ In the StatefulSet-managed path, a `Workload` is the Workload for a given Statef
 
 A `PodGroup` is the PodGroup for that StatefulSet if:
 - it is in the StatefulSet's namespace, and
-- its `spec.podGroupTemplateRef.workloadName` is the name of that Workload.
+- its `spec.workloadRef.workloadName` is the name of that Workload.
 
 `ownerReference` is used only so that objects the controller created are garbage-collected with the
 StatefulSet — it is not a discovery mechanism, because a Workload created by a user or by a parent
@@ -677,33 +681,32 @@ the Job integration does.
 
 ### Controller Workflow
 
-The controller attempts to *create* Workload and PodGroup only when the StatefulSet has no pods
-associated with it yet. Once pods exist, it discovers and uses whatever is already there, and
-reconciles `minCount` on objects it created; it does not create missing objects. This makes a
-restart mid-workflow — Workload created but PodGroup or pods not — recoverable: on the next sync
-the existing objects are found via the listers and the workflow continues from there.
+On every sync, the controller looks up the applicable Workload and PodGroup by reference. It creates
+a missing Workload in the StatefulSet-managed path and a missing PodGroup in either path, even if the
+StatefulSet already has pods. It then reconciles `minCount` on objects it created. This recovers
+from a restart partway through creation and lets a rolling update or single-pod replacement proceed
+if a scheduling object is missing while other pods are still running.
 
-1. If the StatefulSet already has pods (active or terminal, owned by this StatefulSet), skip all
-   creation; use the applicable path below to discover existing objects and sync their `minCount`
-   when they were created by this controller.
-2. If the StatefulSet has a parent controller `OwnerReference` and the parent supplies the
+1. If the StatefulSet has a parent controller `OwnerReference` and the parent supplies the
    `scheduling.k8s.io/group-template-name` annotation, resolve the parent-owned Workload and its
-   named PodGroupTemplate, and manage only the delegated PodGroup (creating it only when no pods
-   exist). If the parent Workload or template cannot be resolved unambiguously, fall back and
-   surface an event rather than creating a separate Workload. An `OwnerReference` without this
+   named PodGroupTemplate, and manage only the delegated PodGroup (creating it if missing, even
+   when pods exist). If the parent Workload or template cannot be resolved unambiguously, fall back
+   and surface an event rather than creating a separate Workload. An `OwnerReference` without this
    annotation does not select delegation; continue with the StatefulSet-managed path below. See
    [Composition by Higher-Level Controllers](#composition-by-higher-level-controllers).
-3. Look up the Workload by `spec.controllerRef`. If none exists, compile one from
+2. Look up the Workload by `spec.controllerRef`. If none exists, compile one from
    `spec.scheduling` via `workloadbuilder` and create it with a controller `ownerReference` and a
    `spec.controllerRef` pointing at the StatefulSet. If more than one is found, treat it as
    ambiguous: create nothing, mutate nothing, and surface an event. If the controller created the
    existing Workload, reconcile its template's gang `minCount` to the current replica-derived value
    before syncing the PodGroup.
-4. Look up the PodGroup by `spec.podGroupTemplateRef` against the target `PodGroupTemplate`. If
+3. Look up the PodGroup by `spec.workloadRef` against the target `PodGroupTemplate`. If
    none exists, instantiate it from the template. If the controller created the existing PodGroup,
    reconcile its gang `minCount` to the template's current value. If more than one is found, fall
    back — multiple PodGroups per StatefulSet are not supported.
-5. Run the existing pod-management logic, setting `spec.schedulingGroup.podGroupName` on each pod.
+4. Once the scheduling objects are available, run the existing pod-management logic, setting
+   `spec.schedulingGroup.podGroupName` on each new pod. If creation fails, retry before creating
+   new pods.
 
 The controller does not update other fields of an existing Workload or PodGroup. On every sync, it
 reconciles `minCount` on the objects it created, so a restart between the Workload and PodGroup
@@ -763,14 +766,14 @@ flowchart BT
     PodGroup -->|"ownerRef<br/>StatefulSet-managed case only"| Workload
     Workload -->|ownerRef| StatefulSet
 
-    PodGroup -.->|"via podGroupTemplateRef"| Workload
+    PodGroup -.->|"via workloadRef"| Workload
 
     linkStyle 5 stroke:#888,color:#888
 ```
 
 - The `Workload` carries an ownerReference to the StatefulSet with `controller: true`, when the
   StatefulSet controller created it.
-- The `PodGroup` links to its Workload via `spec.podGroupTemplateRef` and carries a controller
+- The `PodGroup` links to its Workload via `spec.workloadRef` and carries a controller
   ownerReference to the StatefulSet when the controller created it. A **parent-owned** Workload is
   never given an ownerReference from the PodGroup.
 - The `Pod` carries a controller ownerReference to the StatefulSet plus an ownerReference to the
@@ -899,9 +902,9 @@ metadata:
   finalizers:
   - scheduling.k8s.io/podgroup-protection
 spec:
-  podGroupTemplateRef:             # this is what discovery matches on
+  workloadRef:             # this is what discovery matches on
     workloadName: my-statefulset-a1b2c3
-    podGroupTemplateName: my-statefulset
+    templateName: my-statefulset
   schedulingPolicy:  # Snapshot from Workload template
     gang:
       minCount: 3
@@ -1359,16 +1362,16 @@ both enabled and disabled, ensuring no regressions to current behavior.
     an invalid `minCount: 0`
   - The derived `minCount` is never written back to the StatefulSet —
     `spec.scheduling.schedulingPolicy.gang.minCount` is still nil after a sync
-  - PodGroup name and identity are stable across a rolling update (no recreation)
+  - With the PodGroup present, its name and identity are stable across a rolling update (no recreation)
   - Workload and PodGroup cleanup on StatefulSet deletion
   - OwnerReferences and finalizers are set correctly on all three object kinds: Workload →
     StatefulSet; PodGroup → StatefulSet and (StatefulSet-managed case only) Workload; Pod → StatefulSet and
     PodGroup
   - Discovery by reference: an existing Workload is matched by `spec.controllerRef` and an
-    existing PodGroup by `spec.podGroupTemplateRef`, regardless of their names
+    existing PodGroup by `spec.workloadRef`, regardless of their names
   - No duplicate creation when a Workload exists but its PodGroup does not (crash-recovery path)
-  - No creation attempted once the StatefulSet already has pods; existing objects are discovered
-    and used
+  - With existing pods, discover and reuse any present scheduling objects; create missing ones
+    before a rolling-update or single-pod replacement creates a new pod
   - Two Workloads matching the same StatefulSet are treated as ambiguous: nothing is created or
     mutated and an event is emitted
   - A Workload or PodGroup not created by the controller is used as-is: no ownerReference added,
@@ -1611,10 +1614,11 @@ the gate off). Specifically:
 
 - If the Workload and PodGroup still exist (they were not manually deleted), the controller
   discovers them by reference — `workload.spec.controllerRef` and
-  `podGroup.spec.podGroupTemplateRef` — and reuses them. This works regardless of how they were
+  `podGroup.spec.workloadRef` — and reuses them. This works regardless of how they were
   named.
 - If only a partial set exists (e.g., Workload but no PodGroup from a crash during the original
-  enablement), the controller creates the missing object on its next sync.
+  enablement), the controller creates the missing object on its next sync, even if pods already
+  exist.
 - StatefulSets with `OrderedReady` and `spec.scheduling` (non-gang, Basic policy) also resume
   compilation — they produce a Workload with `basic: {}` for observability.
 
@@ -1779,6 +1783,10 @@ Pending pods with the existing scheduler queue metrics, and the blocking itself 
   `StatefulSetSpec` embeds them.
 - **kube-scheduler with `GenericWorkload` enabled**: The scheduler must be able to act on PodGroups.
   Without it, Workloads and PodGroups are created but have no effect on scheduling.
+- **TopologyAwareWorkloadScheduling feature gate** (for topology constraints): The
+  `TopologyAwareWorkloadScheduling` feature gate (KEP-5732) must be enabled in kube-apiserver and
+  kube-scheduler for `schedulingConstraints.topology` to take effect. With the scheduler gate off,
+  PodGroup topology constraints are not enforced.
 - **DRAWorkloadResourceClaims feature gate** (optional, for ResourceClaim support): The
   `DRAWorkloadResourceClaims` feature gate (KEP-5729) must be enabled in kube-apiserver,
   kube-controller-manager, kube-scheduler, and kubelet for the `resourceClaims` field on
