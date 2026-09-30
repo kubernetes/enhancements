@@ -12,8 +12,7 @@
   - [User Stories](#user-stories)
     - [Story 1: a user asks whether a replica is healthy](#story-1-a-user-asks-whether-a-replica-is-healthy)
     - [Story 2: a workload controller decides whether to recreate a group](#story-2-a-workload-controller-decides-whether-to-recreate-a-group)
-    - [Story 3: a disruption budget counts group replicas](#story-3-a-disruption-budget-counts-group-replicas)
-    - [Story 4: a dashboard shows degraded gangs](#story-4-a-dashboard-shows-degraded-gangs)
+    - [Story 3: a dashboard shows degraded gangs](#story-3-a-dashboard-shows-degraded-gangs)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -75,9 +74,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-`PodGroup` status declares two condition types. `DisruptionTarget`, from
-[KEP-5710], marks a group that is about to be terminated by a disruption such
-as preemption. `PodGroupInitiallyScheduled` reports initial placement and is
+`PodGroup` status declares two condition types. `DisruptionTarget` marks a
+group that is about to be terminated by a disruption such as preemption.
+`PodGroupInitiallyScheduled` reports initial placement and is
 terminal by design: once it is `True` it never reverts, "even if pods are
 subsequently evicted and group constraints are no longer met". Neither reports
 how many members the group currently has. A workload controller, a disruption
@@ -104,8 +103,8 @@ revert to False, even if pods are subsequently evicted and group constraints
 are no longer met." The scheduler enforces that with an explicit guard in
 `updatePodGroupCondition` (`pkg/scheduler/schedule_one_podgroup.go`) that
 refuses to regress the condition. The other declared condition,
-`DisruptionTarget` ([KEP-5710]), describes an impending disruption, not the
-group's current membership.
+`DisruptionTarget`, describes an impending disruption, not the group's current
+membership.
 
 [KEP-4671] is explicit that this is a known gap rather than a decision against
 live status. It records, as a possible future extension, "a more robust status
@@ -138,16 +137,15 @@ interfere". Under gang scheduling, Pending is also the steady state of a group
 waiting for capacity, so one signal now carries two opposite meanings
 ([kubernetes-sigs/lws#1056] works through the consequence for
 `RecreateGroupAfterStart`). The native Workload integration, LWS KEP-666
-(merged in [kubernetes-sigs/lws#979]), additionally lists
-`PodGroup.status.conditions[type=PodGroupInitiallyScheduled]` as a surface
-users inspect, and reuses a replica's `PodGroup` across a leader restart. Once
-groups are reused, that condition reads `True` for a replica whose members are
-all gone.
+(merged in [kubernetes-sigs/lws#979]), reuses a replica's `PodGroup` across a
+leader restart and states that `PodGroupInitiallyScheduled` "is not replica
+health", so LWS keeps deriving replica health from pods.
 
-**The multi-pod PodDisruptionBudget KEP** ([kubernetes/enhancements#5671])
-defines a replica as healthy "if and only if `healthy_pods >= minCount`" and
-has the eviction path fetch the `PodGroup`, read `minCount` out of its spec,
-and count member pods itself, because the group does not report it.
+**The multi-pod PodDisruptionBudget KEP** (KEP-5682,
+[kubernetes/enhancements#5671]) defines a replica as healthy "if and only if
+`healthy_pods` >= `minCount`", and has the disruption controller fetch the
+`PodGroup`, read `minCount` out of its spec, and count healthy member pods
+itself.
 
 **JobSet** records "recover one failed component" as future work in its gang
 KEP ([kubernetes-sigs/jobset#1253]): "partial eviction and rescheduling of an
@@ -157,9 +155,8 @@ individual ReplicatedJob remain future work".
 gang policies to in-tree controllers, which widens the set of consumers that
 will ask this question.
 
-Each of these re-implements a count that the scheduler already has, using a
-different definition of "scheduled" than the scheduler uses, with no way to
-agree during the window between assume and bind.
+None of them can read the group's current state from the group itself, so
+each derives its own view from pods.
 
 ### Goals
 
@@ -231,15 +228,7 @@ Pending", which is wrong under gang scheduling. With both conditions present
 the distinction is explicit: `PodGroupInitiallyScheduled` answers whether the
 group ever formed, `PodGroupSatisfied` answers whether it is intact now.
 
-#### Story 3: a disruption budget counts group replicas
-
-The multi-pod PDB KEP needs to know whether each `PodGroup` replica is
-healthy, and currently derives `healthy_pods >= minCount` in the eviction
-path. With the condition it can read one scheduler-maintained signal, which
-also removes the possibility of the eviction path and the scheduler
-disagreeing about what counts as scheduled.
-
-#### Story 4: a dashboard shows degraded gangs
+#### Story 3: a dashboard shows degraded gangs
 
 A platform team wants an alert for gangs that have been below `minCount` for
 more than a few minutes, which today requires joining pod-level metrics
@@ -272,7 +261,8 @@ generate frequent status writes.
 every count change; coalesce same-status updates; route writes through the
 asynchronous API-call machinery from [KEP-5229] when it is available so that
 informer event handlers never block on the API. The scalability section
-quantifies the resulting write rate.
+bounds the writes per group; measuring the actual write rate is a beta
+criterion.
 
 **Consumers treat an observational condition as authoritative for eviction
 safety.** A controller could read `PodGroupSatisfied=True` and skip its own
@@ -282,9 +272,10 @@ checks in a window where the cache is briefly stale.
 staleness characteristics as pod status, and keep fail-closed behavior in
 consumers such as the PDB path.
 
-**An alpha condition on a GA API.** `PodGroup` graduates to GA
-(`scheduling.k8s.io/v1`) in v1.38 ([kubernetes/enhancements#6349]), so this
-alpha adds a condition type to a GA API.
+**An alpha condition on a GA API.** [KEP-4671] plans GA for `PodGroup`
+(`scheduling.k8s.io/v1`) in v1.38 ([kubernetes/enhancements#6349]), before
+this KEP's alpha in v1.39, so this alpha would add a condition type to a GA
+API.
 
 *Mitigation:* conditions are a `[]metav1.Condition` list with no enumeration
 of valid types, so this adds no schema change and no validation change. The
@@ -312,10 +303,10 @@ rate on a large cluster.
 
 No schema change. `PodGroupStatus.Conditions` already exists. This KEP adds
 one known condition type and two reasons as Go constants next to the existing
-ones in the `PodGroup` API types
-(`staging/src/k8s.io/api/scheduling/v1/types.go`, and `v1beta1` for as long as
-that version is served), and documents them in the `Conditions` field comment,
-marked as alpha:
+ones in each served version of the `PodGroup` API types
+(`staging/src/k8s.io/api/scheduling/v1beta1/types.go` today, and `v1` once the
+GA planned for v1.38 lands), and documents them in the `Conditions` field
+comment, marked as alpha:
 
 ```go
 const (
@@ -389,8 +380,11 @@ The count already exists in the scheduler cache. The work is publishing it.
    moves `ScheduledPodsCount()` across the `minCount` boundary, or when a
    `PodGroup` update moves `minCount` across the current count.
 2. A status writer in the scheduler consumes pending transitions and patches
-   the condition through the same strategic merge patch path
-   `updatePodGroupCondition` uses. With `SchedulerAsyncAPICalls` enabled the
+   the condition on the `status` subresource with its own patch. It cannot
+   go through `updatePodGroupCondition`, which refuses to move any condition
+   off `True` (the guard that keeps `PodGroupInitiallyScheduled` terminal),
+   and unlike `util.PatchPodGroupStatus` it sets a `resourceVersion`
+   precondition; see below. With `SchedulerAsyncAPICalls` enabled the
    patch goes through the asynchronous API-call queue ([KEP-5229]), which
    needs a new `PodGroup` status patch call type next to today's
    `pod_status_patch` and `pod_binding`; otherwise it is issued from a
@@ -446,9 +440,9 @@ mismatch; the condition is not defined for it.
 - **Gang scheduling ([KEP-4671]).** No behavior change. The condition
   describes the same relation the plugin enforces, without altering it, and
   does not touch `PodGroupInitiallyScheduled`.
-- **Workload-aware preemption ([KEP-5710]).** KEP-5710 defines the
-  `DisruptionTarget` condition, which marks a group that is about to be
-  terminated. `PodGroupSatisfied` is complementary: it turns `False` once the
+- **Workload-aware preemption ([KEP-5710]).** The `PodGroup` API declares a
+  `DisruptionTarget` condition for a group that is about to be terminated.
+  `PodGroupSatisfied` is complementary: it turns `False` once the
   preempted members have actually terminated. Victim selection is unchanged.
 - **Topology-aware workload scheduling ([KEP-5732]).** Unaffected; the
   condition counts members and says nothing about placement.
@@ -474,12 +468,11 @@ mismatch; the condition is not defined for it.
 
 | Consumer | What it gains |
 |---|---|
-| LeaderWorkerSet ([kubernetes-sigs/lws#979]) | A correct source for group health, replacing inference from Pod phase, and a correction to the observability guidance that currently points at the terminal condition |
-| Multi-pod PDB ([kubernetes/enhancements#5671]) | Replaces the eviction path's own `healthy_pods >= minCount` derivation with the scheduler's own count |
+| LeaderWorkerSet ([kubernetes-sigs/lws#979]) | A replica health signal from the group itself; KEP-666 says the terminal condition is not replica health, so LWS derives it from pods today |
 | Job ([KEP-5547]) | Loss and restoration of gang satisfaction become observable for gang Jobs, without fixing [kubernetes/kubernetes#142330], where a replacement for one index stays unschedulable after another index completes; the mitigation there is in the Job controller, and lowering `minCount` as indexes succeed also keeps the condition `True` while a Job finishes normally |
-| Kueue ([kubernetes-sigs/kueue#13715]) | The [Kueue and Workload-Aware Scheduling integration work plan] lists keying `waitForPodsReady.recoveryTimeout` on this condition, instead of inferring recovery from Pod readiness. For batch workloads, `False` can briefly mean that members finished before `minCount` was lowered |
+| Kueue (gang integration, [kubernetes-sigs/kueue#13715]) | The Kueue integration work plan in the [WG Workload-Aware Scheduling meeting notes] lists keying `waitForPodsReady.recoveryTimeout` on this condition, instead of inferring recovery from Pod readiness. For batch workloads, `False` can briefly mean that members finished before `minCount` was lowered |
 | JobSet ([kubernetes-sigs/jobset#1253]) | A signal for the deferred "recover one failed component" work |
-| StatefulSet ([KEP-6277]) and Deployment ([KEP-6276]) integrations | Group health in status for gang-enabled sets; the StatefulSet proposal ([kubernetes/enhancements#6298]) currently points its monitoring at `PodGroupInitiallyScheduled` |
+| StatefulSet ([KEP-6277]) and Deployment ([KEP-6276]) integrations | Group health in status for gang-enabled sets; KEP-6277 uses `PodGroupInitiallyScheduled` to answer whether a set's group was ever placed |
 | Users and dashboards | A direct answer to "is this gang intact", with a transition timestamp |
 
 ### Test Plan
@@ -769,15 +762,15 @@ memory and event-handling cost that the scheduling path should not carry.
 
 **Make `PodGroupInitiallyScheduled` non-terminal.** This would answer the
 question with no new condition, but it breaks the documented contract of a
-field that is GA from v1.38, changes the meaning of existing data, and loses
+field planned for GA in v1.38, changes the meaning of existing data, and loses
 the "did this group ever form" signal that controllers separately need.
 
 **Expose the count without a condition, as a status field.** A
 `scheduledMembers` integer would be more precise than a boolean condition, but
-it is a schema change to a GA API, it invites write amplification on every
-count change rather than on transitions, and it does not fit the conventional
-way Kubernetes reports state. A condition carrying the count in its message
-was preferred; see [Open Questions](#open-questions).
+it is a schema change to an API planned for GA in v1.38, it invites write
+amplification on every count change rather than on transitions, and it does
+not fit the conventional way Kubernetes reports state. A condition carrying
+the count in its message was preferred; see [Open Questions](#open-questions).
 
 ## Future work: a recovery policy for gangs
 
@@ -884,19 +877,18 @@ identified consumer and is not proposed.
 [KEP-6012]: /keps/sig-scheduling/6012-composite-podgroup-api/README.md
 [KEP-6089]: /keps/sig-scheduling/6089-was-controller-apis/README.md
 [KEP-6276]: https://github.com/kubernetes/enhancements/issues/6276
-[KEP-6277]: https://github.com/kubernetes/enhancements/issues/6277
+[KEP-6277]: /keps/sig-apps/6277-integrate-workload-with-statefulset/README.md
 [kubernetes/kubernetes#136334]: https://github.com/kubernetes/kubernetes/issues/136334
 [kubernetes/kubernetes#141860]: https://github.com/kubernetes/kubernetes/pull/141860
 [kubernetes/kubernetes#142269]: https://github.com/kubernetes/kubernetes/issues/142269
 [kubernetes/kubernetes#142330]: https://github.com/kubernetes/kubernetes/issues/142330
 [kubernetes/enhancements#5671]: https://github.com/kubernetes/enhancements/pull/5671
-[kubernetes/enhancements#6298]: https://github.com/kubernetes/enhancements/pull/6298
 [kubernetes/enhancements#6349]: https://github.com/kubernetes/enhancements/pull/6349
 [kubernetes-sigs/lws#979]: https://github.com/kubernetes-sigs/lws/pull/979
 [kubernetes-sigs/lws#1056]: https://github.com/kubernetes-sigs/lws/issues/1056
 [kubernetes-sigs/jobset#1253]: https://github.com/kubernetes-sigs/jobset/pull/1253
 [kubernetes-sigs/kueue#13715]: https://github.com/kubernetes-sigs/kueue/issues/13715
-[Kueue and Workload-Aware Scheduling integration work plan]: https://docs.google.com/document/d/1XSPdK4L3zkAFhAZ3hBQJr2k7JX9CpGD7NeQfujM1PT4
+[WG Workload-Aware Scheduling meeting notes]: https://docs.google.com/document/d/1XSPdK4L3zkAFhAZ3hBQJr2k7JX9CpGD7NeQfujM1PT4
 [scheduler-plugins PodGroup controller]: https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/pkg/controllers/podgroup_controller.go
 [Koordinator]: https://github.com/koordinator-sh/koordinator
 [Koordinator gang scheduling proposal]: https://github.com/koordinator-sh/koordinator/blob/main/docs/proposals/scheduling/20220901-gang-scheduling.md
