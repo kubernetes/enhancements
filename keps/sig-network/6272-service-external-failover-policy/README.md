@@ -1,4 +1,4 @@
-# KEP-6272: Service External Failover Policy
+# KEP-6272: LoadBalancer ipMode Router
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -19,6 +19,7 @@
     - [kube-proxy (nftables)](#kube-proxy-nftables)
     - [Non-kube-proxy implementations](#non-kube-proxy-implementations)
   - [Health Check Node Port Interaction](#health-check-node-port-interaction)
+  - [Gateway API Interaction](#gateway-api-interaction)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -40,6 +41,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [New externalTrafficPolicy value PreferLocal](#new-externaltrafficpolicy-value-preferlocal)
+  - [New spec field externalFailoverPolicy](#new-spec-field-externalfailoverpolicy)
+  - [Annotation](#annotation)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -86,23 +90,22 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP introduces a new Service API field, `spec.externalFailoverPolicy`, for
-Services using `externalTrafficPolicy: Local`.
+This KEP introduces a new `LoadBalancerIPMode` value, `Router`, for the
+existing `status.loadBalancer.ingress[].ipMode` field on Services.
 
-When `externalFailoverPolicy: Passthrough` is set and traffic to the Service's
-LoadBalancer or ExternalIP addresses would otherwise be dropped or rejected
-solely because no eligible endpoints are reachable, the Service proxy suppresses
-that drop/reject. Instead, normal node networking determines subsequent packet
-handling.
+When a LoadBalancer controller sets `ipMode: Router` on an ingress IP, the
+Service proxy (kube-proxy or equivalent) programs DNAT rules for that IP when
+endpoints are available — same as `VIP` mode. But when no eligible endpoints
+exist, the proxy does not install a DROP or REJECT rule. Instead, the packet
+follows the node's routing table.
 
 This allows BGP, ECMP, anycast, or other routing mechanisms to redirect traffic
 to another node, cluster, or location without requiring coordination between the
 Service proxy and the routing system.
 
-When the cluster has no endpoints at all, this also applies to Pod traffic
-addressed to the external VIP: it is no longer rejected and can fail over through
-the network. Traffic the proxy already serves (the Pod/host cluster-wide
-short-circuit) is unchanged.
+The `ipMode` field is set by the LoadBalancer controller (not the user) in
+Service status, making it the natural place to express "this IP is a routed
+anycast address" rather than "this IP is a cloud load balancer VIP."
 
 ## Motivation
 
@@ -141,13 +144,11 @@ explicitly delegated failover to the network.
 
 ### Goals
 
-- Add an opt-in Service API field that suppresses no-endpoint DROP/REJECT
-  behavior for LoadBalancer and ExternalIP destinations when
-  `externalTrafficPolicy: Local` is used.
-- Suppress the external DROP for externally-originated traffic when the node
-  has no local endpoint, and the no-endpoint REJECT (external and Pod origin)
-  when the cluster has no endpoints at all, while preserving traffic the proxy
-  already serves (the Pod/host cluster-wide short-circuit).
+- Add a new `LoadBalancerIPMode` value `Router` that suppresses no-endpoint
+  DROP/REJECT for the LoadBalancer IP while preserving DNAT when endpoints
+  exist.
+- The value is set by the LoadBalancer controller in Service status, not by
+  the user in Service spec.
 - Preserve `healthCheckNodePort` behavior so routing or load-balancer
   integrations can continue to observe local endpoint availability.
 - Preserve all existing behavior by default.
@@ -156,14 +157,16 @@ explicitly delegated failover to the network.
 
 - BGP route advertisement or withdrawal.
 - Creating routes or otherwise implementing failover routing.
+- Changing `externalTrafficPolicy` semantics or adding new values.
 - Changing `internalTrafficPolicy`.
-- Changing ClusterIP behavior.
-- Changing NodePort no-endpoint behavior as part of the initial implementation.
-- Defining a cluster-wide default; the feature is opt-in per Service.
+- Changing ClusterIP or NodePort behavior.
+- Defining how a LoadBalancer controller decides to set `Router` — that is an
+  implementation decision for Calico, Cilium, MetalLB, or other BGP speakers.
 
 ## Proposal
 
-Add a new optional field to the Service API:
+A BGP speaker acting as a LoadBalancer controller sets `ipMode: Router` on
+the ingress IP it assigns:
 
 ```yaml
 apiVersion: v1
@@ -173,14 +176,19 @@ metadata:
 spec:
   type: LoadBalancer
   externalTrafficPolicy: Local
-  externalFailoverPolicy: Passthrough
   ports:
   - port: 80
     targetPort: 8080
+status:
+  loadBalancer:
+    ingress:
+    - ip: "10.0.0.1"
+      ipMode: Router
 ```
 
-When the field is unset or set to its default value, existing behavior is
-unchanged.
+The user does not set `ipMode` — it is a status field managed by the
+LoadBalancer controller. From the user's perspective, nothing changes in the
+Service spec. The controller signals to kube-proxy how to handle the IP.
 
 ### User Stories
 
@@ -203,22 +211,22 @@ the same external routing and failover path as traffic arriving from outside
 the cluster, so it can reach another cluster or location.
 
 The behavior of Pod-originated traffic to the external VIP depends on endpoint
-state today. `Passthrough` only changes the case where the traffic would
+state today. `Router` only changes the case where the traffic would
 otherwise be lost:
 
 - When the cluster has no endpoints at all, kube-proxy currently installs a
   filter `REJECT` for the external VIP that is reached from the `FORWARD` hook,
-  so Pod-originated traffic to the VIP is rejected. `Passthrough` suppresses
+  so Pod-originated traffic to the VIP is rejected. `Router` suppresses
   that reject and lets the packet follow normal node routing, so it can reach
   another cluster or location.
 - When the local node has no eligible endpoint but other cluster-local
   endpoints exist, kube-proxy already load-balances this traffic cluster-wide
-  ("up-and-out" simulation). It is served without loss, so `Passthrough` leaves
+  ("up-and-out" simulation). It is served without loss, so `Router` leaves
   it unchanged.
 
 ### Notes/Constraints/Caveats
 
-- `Passthrough` does not provide routing. It only prevents the Service proxy
+- `Router` mode does not provide routing. It only prevents the Service proxy
   from dropping or rejecting the packet because no eligible endpoints are
   reachable. It does not change traffic that kube-proxy already serves, such as
   the Pod/host cluster-wide short-circuit to the external VIP.
@@ -227,126 +235,89 @@ otherwise be lost:
 - The feature applies even when the local cluster has zero endpoints, because
   the same external address may still be reachable through another cluster or
   location.
-- NodePort is intentionally excluded from the initial behavior because
-  `nodeIP:nodePort` normally targets a locally owned address and does not
-  represent the external VIP routing use case.
+- The LB controller decides when to set `Router` vs `VIP`. A BGP-based
+  controller would use `Router` for BGP-advertised addresses. A cloud LB
+  controller would continue to use `VIP`.
 
 ### Risks and Mitigations
 
 | Risk | Mitigation |
 |------|------------|
-| Passthrough is enabled without a usable network path | Document that the feature delegates subsequent handling to normal node networking and does not itself provide failover. |
-| Operator expects eTP `Cluster` semantics | Validation only permits the field with `externalTrafficPolicy: Local`. |
-| Routing convergence is slow | This feature removes kube-proxy as an additional source of packet loss but does not change routing convergence itself. |
+| `Router` set without a usable routing path | Traffic follows the routing table; if no route exists, standard IP routing behavior applies (e.g., ICMP unreachable). Document that the feature delegates to node networking. |
+| LB controller sets `Router` incorrectly | The field is in status, not spec. Only controllers with status write access can set it. Incorrect use degrades gracefully. |
+| Interaction with Gateway API | Gateway API implementations create a LoadBalancer Service per Gateway. The envoy-proxy pod is always an endpoint, so kube-proxy never triggers the no-endpoint path regardless of `ipMode`. See [Gateway API Interaction](#gateway-api-interaction). |
 
 ## Design Details
 
 ### API Changes
 
+Add a new constant to the existing `LoadBalancerIPMode` type:
+
 ```go
-// ServiceExternalFailoverPolicy describes how a Service proxy handles traffic
-// destined to a Service's external addresses when externalTrafficPolicy is
-// Local and no locally eligible endpoints exist on the node.
-type ServiceExternalFailoverPolicy string
-
 const (
-    // ServiceExternalFailoverPolicyNone preserves existing behavior.
-    ServiceExternalFailoverPolicyNone ServiceExternalFailoverPolicy = "None"
+    LoadBalancerIPModeVIP    LoadBalancerIPMode = "VIP"
+    LoadBalancerIPModeProxy  LoadBalancerIPMode = "Proxy"
 
-    // ServiceExternalFailoverPolicyPassthrough prevents the Service proxy from
-    // dropping or rejecting traffic solely because no eligible endpoints are
-    // reachable. Normal node networking then determines subsequent packet
-    // handling.
-    ServiceExternalFailoverPolicyPassthrough ServiceExternalFailoverPolicy = "Passthrough"
+    // LoadBalancerIPModeRouter indicates that the Service proxy should program
+    // DNAT rules for this IP when endpoints are available (same as VIP), but
+    // should not install DROP or REJECT rules when no eligible endpoints exist.
+    // Instead, the packet follows the node's routing table.
+    //
+    // This mode is intended for BGP/anycast LoadBalancer controllers that
+    // advertise the IP as a routed address. The controller manages route
+    // advertisement and withdrawal; the proxy should not make independent
+    // reachability decisions.
+    //
+    // +featureGate=LoadBalancerIPModeRouter
+    LoadBalancerIPModeRouter LoadBalancerIPMode = "Router"
 )
-
-// ServiceSpec describes the attributes that a user creates on a Service.
-type ServiceSpec struct {
-    ...
-
-    // ExternalFailoverPolicy controls handling of traffic destined to the
-    // Service's LoadBalancer or ExternalIP addresses when
-    // externalTrafficPolicy is "Local" and no locally eligible endpoints exist.
-    //
-    // "None" (default): preserve existing Service proxy behavior.
-    //
-    // "Passthrough": do not drop or reject traffic solely because no eligible
-    // endpoints are reachable. When the cluster has no endpoints, normal node
-    // networking determines subsequent handling instead of a reject. Traffic
-    // that the proxy already serves (such as the Pod/host cluster-wide
-    // short-circuit to the external address) is unchanged.
-    //
-    // This field is only valid when externalTrafficPolicy is "Local".
-    //
-    // +featureGate=ServiceExternalFailoverPolicy
-    // +optional
-    ExternalFailoverPolicy *ServiceExternalFailoverPolicy `json:"externalFailoverPolicy,omitempty" protobuf:"bytes,24,opt,name=externalFailoverPolicy,casttype=ServiceExternalFailoverPolicy"`
-}
 ```
 
-The exact zero/default representation and feature-gated field handling should
-follow the conventions used by current feature-gated Service API fields.
+No new fields are added. The change extends an existing enum in an existing
+status field.
 
 ### Semantics
 
 The core contract is:
 
-> When `externalTrafficPolicy` is `Local`,
-> `externalFailoverPolicy` is `Passthrough`, and traffic destined to the
-> Service's LoadBalancer or ExternalIP addresses would otherwise be dropped or
-> rejected solely because no eligible endpoints are reachable, a conforming
-> Service proxy MUST NOT drop or reject that traffic. The packet MUST be allowed
-> to continue through normal node networking so it can fail over via the
-> network.
+> When a LoadBalancer ingress IP has `ipMode: Router` and traffic destined to
+> that IP would otherwise be dropped or rejected solely because no eligible
+> endpoints are reachable, a conforming Service proxy MUST NOT drop or reject
+> that traffic. The packet MUST be allowed to continue through normal node
+> networking so it can fail over via the network.
 >
-> `Passthrough` only suppresses no-endpoint DROP/REJECT behavior. It does not
+> `Router` only suppresses no-endpoint DROP/REJECT behavior. It does not
 > change cases where the traffic is already served, including the existing
 > cluster-wide short-circuit for Pod- and host-originated traffic to the
 > external VIP.
 
-Today, kube-proxy handles external-VIP traffic differently depending on both
-the endpoint state and the packet origin. The following describes the current
-(`None`) behavior for kube-proxy iptables/nftables, which `Passthrough` must
-reason about explicitly.
+The behavior of `ipMode: Router` compared to the existing modes:
 
-Externally-originated traffic (from outside the cluster) for an external
-destination under eTP `Local`:
+|                                            | `VIP` (today)                     | `Proxy` (today)                    | `Router` (new)                                          |
+|--------------------------------------------|-----------------------------------|------------------------------------|---------------------------------------------------------|
+| Set by                                     | LB controller                     | LB controller                      | LB controller, only for anycast addresses               |
+| Packet arrives as                          | dst = LB IP:port                  | dst = nodeIP:nodePort or podIP     | dst = LB IP:port                                        |
+| Proxy programs DNAT for the IP             | yes                               | no (IP ignored)                    | yes                                                     |
+| Usable endpoints                           | DNAT                              | n/a                                | DNAT (same as VIP)                                      |
+| Zero endpoints                             | REJECT                            | n/a                                | no verdict, follows node routing table                  |
+| eTP:Local, no local eps, ext. eps          | DROP (external origin)            | n/a                                | open (falls back to the routing table)                  |
+| eTP:Local, no local eps, Pod/host origin   | DNAT cluster-wide                 | n/a                                | DNAT cluster-wide (unchanged)                           |
+| healthCheckNodePort                        | unhealthy without local eps       | n/a                                | same                                                    |
+| BGP / LB controller                        | eTP:Local: nodes with local eps; eTP:Cluster: all nodes | n/a | advertise only while the node would DNAT; never with zero endpoints |
 
-| Local endpoints | Other cluster-local endpoints | `None` (today) | `Passthrough` |
-|---|---|---|---|
-| yes | any | DNAT to local endpoint | DNAT to local endpoint (unchanged) |
-| no | yes | DROP (filter, no local endpoints) | No endpoint-based DROP; normal node networking |
-| no | no | REJECT (filter, no endpoints) | No endpoint-based REJECT; normal node networking |
+The two key changes from `VIP`:
 
-Pod-originated traffic (from a Pod on the node) to the external VIP under eTP
-`Local`:
+1. **No-local-endpoints DROP suppressed.** External traffic that would be
+   DROPped (because `eTP: Local` has no local endpoints) instead follows the
+   routing table.
+2. **Zero-endpoints REJECT suppressed.** Traffic that would be REJECTed
+   (because no endpoints exist anywhere) instead follows the routing table.
 
-| Local endpoints | Other cluster-local endpoints | `None` (today) | `Passthrough` |
-|---|---|---|---|
-| yes | any | DNAT to local endpoint | DNAT to local endpoint (unchanged) |
-| no | yes | DNAT cluster-wide ("up-and-out" short-circuit) | DNAT cluster-wide (unchanged; already served) |
-| no | no | REJECT (via `KUBE-EXTERNAL-SERVICES` from the `FORWARD` hook) | No endpoint-based REJECT; normal node networking |
+Traffic that kube-proxy already serves — the Pod/host cluster-wide
+short-circuit when other endpoints exist — is unchanged.
 
-Host-originated traffic (from the node itself) reaches the EXT chain via the
-nat `OUTPUT` hook and is DNAT'd like the Pod short-circuit when endpoints exist
-(unchanged). The no-endpoint filter (`KUBE-EXTERNAL-SERVICES`) is only hooked
-into `INPUT`/`FORWARD`, so host traffic is not endpoint-rejected today and is
-unaffected by `Passthrough`.
-
-The two cases that require the most care:
-
-- **no local / other cluster endpoints exist, Pod or host origin.** kube-proxy
-  already load-balances this traffic across all cluster endpoints ("up-and-out"
-  simulation). It is served without loss, so `Passthrough` leaves it unchanged.
-- **zero endpoints anywhere, external or Pod origin.** Under `None`, the
-  external VIP is filter-rejected rather than routed. Under `Passthrough`, no
-  endpoint-based reject is installed and the packet follows normal node routing,
-  allowing
-  anycast failover to another cluster.
-
-`Passthrough` never introduces a new forwarding path; it only removes a
-no-endpoint DROP/REJECT so normal node networking can take over. It does not
-affect traffic kube-proxy already serves, including the Pod/host short-circuit.
+`Router` never introduces a new forwarding path; it only removes a
+no-endpoint DROP/REJECT so normal node networking can take over.
 
 `loadBalancerSourceRanges` and other independent Service policy remain in
 force.
@@ -355,100 +326,58 @@ NodePort handling is unchanged by this KEP.
 
 ### Validation
 
-- `externalFailoverPolicy` may only be set when
-  `externalTrafficPolicy: Local`.
-- Unsupported enum values are rejected.
-- The feature affects LoadBalancer and ExternalIP destinations only.
-- NodePort behavior is unchanged.
-- Feature-gate enablement, disabled-field handling, update preservation, and
-  downgrade behavior must follow Kubernetes compatibility rules for
-  feature-gated API fields.
+- `Router` is a valid value for `status.loadBalancer.ingress[].ipMode`.
+- The value is set by the LB controller in status, not by users in spec.
+- `ipMode: Router` applies **only** to the LoadBalancer ingress IP it is set
+  on. ExternalIPs, NodePorts, and ClusterIPs on the same Service retain their
+  existing DROP/REJECT behavior regardless of `ipMode`.
+- When the `LoadBalancerIPModeRouter` feature gate is enabled,
+  `supportedLoadBalancerIPMode` in API validation must include `Router`
+  alongside `VIP` and `Proxy`. When the gate is disabled, `Router` is rejected
+  on create and update, but existing `Router` values already persisted in etcd
+  are preserved and remain visible to kube-proxy (standard drop-on-disable
+  pattern for feature-gated API values).
 
 ### Service Proxy Implementation Guidance
 
 The KEP specifies observable behavior rather than a required dataplane
 mechanism.
 
-A conforming implementation must distinguish:
-
-- endpoint availability (any endpoints vs. no endpoints anywhere);
-- endpoints usable under the external traffic policy (local endpoints);
-- endpoint-availability DROP/REJECT behavior for the external Service address.
-
-With `Passthrough`, the no-endpoint DROP (external origin, no local endpoints)
-and the no-endpoint REJECT (no endpoints anywhere) for the external Service
-address must not be installed. Traffic that the proxy already serves, including
-the Pod/host cluster-wide short-circuit, is left unchanged.
+kube-proxy's existing `IsVIPMode()` helper gates whether a LoadBalancer IP
+is added to kube-proxy's DNAT rules. For `Router`, the IP must be included
+(same as `VIP`) but the no-endpoint filter rules must be skipped. The
+implementation must ensure both conditions are met.
 
 #### kube-proxy (iptables)
 
-The existing kube-proxy implementation derives:
+When processing a LoadBalancer ingress IP with `ipMode: Router`:
 
-- whether endpoints exist anywhere (`hasEndpoints`);
-- whether endpoints are usable under the external traffic policy
-  (`hasExternalEndpoints`);
-- a DROP or REJECT target for `KUBE-EXTERNAL-SERVICES`.
-
-When `Passthrough` applies, the implementation should:
-
-- suppress the external no-endpoint filter rule in `KUBE-EXTERNAL-SERVICES` for
-  LoadBalancer/ExternalIP destinations. This is the DROP that blocks
-  externally-originated traffic when `!hasExternalEndpoints`, and the REJECT
-  that blocks all traffic (including Pod-originated, via the `FORWARD` hook)
-  when `!hasEndpoints`;
-- preserve all endpoint calculations and all NAT chains, including the Pod-
-  and host-originated "up-and-out" short-circuit rules in the service's
-  external (`EXT`) chain. Those rules already serve traffic and are not part of
-  the no-endpoint block.
-
-Conceptually the suppression keys off the same conditions kube-proxy already
-computes:
-
-```go
-// External-origin DROP is suppressed when there are no local endpoints.
-suppressExternalDrop :=
-    passthrough && !hasExternalEndpoints
-
-// No-endpoint REJECT is suppressed when there are no endpoints anywhere.
-suppressNoEndpointReject :=
-    passthrough && !hasEndpoints
-```
-
-where
-
-```go
-passthrough :=
-    svcInfo.ExternalPolicyLocal() &&
-    svcInfo.ExternalFailoverPolicy() ==
-        v1.ServiceExternalFailoverPolicyPassthrough
-```
-
-When suppression applies, do not write the corresponding filter rule for the
-external Service address and leave all other Service rules, including the
-short-circuit NAT rules, unchanged.
+- Add the IP to `loadBalancerVIPs` (same as `VIP`), so DNAT rules are
+  programmed when endpoints exist.
+- When `externalTrafficPolicy: Local` and no local endpoints exist: do not
+  write a DROP rule in `KUBE-EXTERNAL-SERVICES` for this IP.
+- When no endpoints exist anywhere: do not write a REJECT rule in
+  `KUBE-EXTERNAL-SERVICES` for this IP.
+- Preserve all NAT chains including the Pod/host cluster-wide short-circuit.
+- Preserve `loadBalancerSourceRanges` enforcement when endpoints exist.
 
 #### kube-proxy (nftables)
 
-The nftables implementation should provide the same observable behavior:
+Same observable behavior:
 
-- do not add the external Service address to the no-endpoint verdict map when
-  `Passthrough` applies (covering both the no-local-endpoints DROP and the
-  no-endpoints REJECT cases);
-- preserve all Service translation paths that already serve traffic, including
-  the Pod/host short-circuit to the cluster policy chain;
-- preserve unrelated Service policy.
-
-The implementation should continue using existing endpoint availability state
-rather than changing the meaning of `hasEndpoints` or
-`hasExternalEndpoints`.
+- Include the IP in Service translation maps.
+- Do not add the IP to the no-endpoint verdict map when `Router` applies.
+- Preserve all Service translation paths that already serve traffic.
 
 #### Non-kube-proxy implementations
 
-Other Service proxy implementations MAY implement this differently but MUST
-satisfy the same observable semantics.
+Cilium, Calico (BPF), Antrea, OVN-Kubernetes, and other implementations
+must satisfy the same observable semantics: program DNAT for `Router` IPs
+when endpoints exist, skip no-endpoint DROP/REJECT when they don't.
 
-The KEP intentionally does not prescribe an implementation mechanism for eBPF,
-IPVS, or other dataplanes.
+For BPF implementations, this means: when `ipMode: Router` and no local
+endpoints exist, pass the packet to the host networking stack instead of
+dropping it or sending an ICMP reject.
 
 ### Health Check Node Port Interaction
 
@@ -458,9 +387,28 @@ When a LoadBalancer Service using `externalTrafficPolicy: Local` has no locally
 eligible endpoints, the health check continues to report the node as unhealthy
 according to existing behavior.
 
-A routing controller may use this signal, EndpointSlices, or another mechanism
-to withdraw a route. `Passthrough` removes the requirement that kube-proxy and
-that routing update occur in a particular order.
+A BGP speaker uses this signal (or EndpointSlices) to withdraw the route.
+`Router` mode removes the requirement that kube-proxy and that route withdrawal
+occur in a particular order.
+
+### Gateway API Interaction
+
+Gateway API implementations (Calico Envoy Gateway, Cilium, etc.) create a
+`type: LoadBalancer` Service per Gateway. The envoy-proxy pod is always
+running, so the LB Service always has endpoints. kube-proxy never triggers
+the no-endpoint DROP/REJECT path for these Services.
+
+This means `ipMode: Router` has no effect on Gateway API Services — the
+no-endpoint code path is never reached. This is expected: Gateway API inserts
+an always-on proxy between the VIP and the backends. BGP speakers see the
+proxy as a healthy endpoint and never withdraw the route, so packets are
+consumed by the proxy (returning 503 when backends are gone) rather than
+following routing.
+
+For anycast failover, a plain `LoadBalancer` Service with
+`externalTrafficPolicy: Local` and `ipMode: Router` is the appropriate
+mechanism. See the [reproducer](https://gist.github.com/defo89/99fba7a7b575ccb3175df2164d4a82e1)
+for a demonstration.
 
 ### Test Plan
 
@@ -470,44 +418,36 @@ necessary to implement this enhancement.
 
 #### Prerequisite testing updates
 
-Existing tests for `externalTrafficPolicy: Local` must continue to pass
-unchanged when the feature gate is disabled or
-`externalFailoverPolicy` is unset/defaulted.
+Existing tests for `ipMode: VIP` and `ipMode: Proxy` must continue to pass.
 
 #### Unit tests
 
 For both iptables and nftables:
 
-- default behavior remains unchanged;
-- `Passthrough` with local endpoints behaves normally;
-- `Passthrough` with no local endpoints and other cluster-local endpoints:
-  externally-originated traffic is not DROPped and follows normal node
-  networking; Pod- and host-originated traffic still uses the existing
-  cluster-wide short-circuit (unchanged);
-- `Passthrough` with zero endpoints does not install the no-endpoint REJECT for
-  the external VIP, for both externally- and Pod-originated traffic;
-- Pod-originated and externally originated traffic behave per the semantics
-  tables: identical when the cluster has no endpoints (no REJECT), and
-  divergent when other cluster endpoints exist (external DROP suppressed; Pod
-  short-circuit preserved);
-- `loadBalancerSourceRanges` remains enforced;
-- NodePort behavior remains unchanged;
+- `ipMode: Router` with local endpoints behaves identically to `VIP`;
+- `ipMode: Router` with no local endpoints and other cluster-local endpoints:
+  no DROP for externally-originated traffic; Pod/host short-circuit unchanged;
+- `ipMode: Router` with zero endpoints: no REJECT; packet follows routing;
+- `ipMode: VIP` behavior unchanged;
+- `ipMode: Proxy` behavior unchanged;
+- `loadBalancerSourceRanges` enforced with `Router`;
+- NodePort behavior unchanged;
 - cover IPv4 and IPv6;
 - cover TCP and UDP.
 
 API tests:
 
-- validate accepted and rejected field combinations;
-- verify feature-gate handling;
-- verify update/downgrade compatibility behavior.
+- `Router` accepted as a valid `ipMode` value;
+- feature-gate handling;
+- update/downgrade compatibility.
 
 #### Integration tests
 
-- create and read a Service using the new field;
-- verify validation with `externalTrafficPolicy`;
-- verify feature-gate behavior;
-- verify updates preserve existing stored values according to feature-gated API
-  compatibility requirements.
+- `Router` accepted as a valid `ipMode` value in Service status;
+- `Router` rejected when feature gate is disabled;
+- LB controller can write `ipMode: Router` via status subresource;
+- kube-proxy reads and acts on the value;
+- feature-gate behavior across API server and kube-proxy.
 
 #### e2e tests
 
@@ -516,10 +456,10 @@ environments.
 
 Alpha testing should therefore focus on deterministic observable behavior:
 
-- no endpoint-availability DROP/REJECT for the external VIP when
-  `Passthrough` applies;
+- no endpoint-availability DROP/REJECT for the LB IP when
+  `ipMode: Router` and no endpoints;
 - existing Pod/host cluster-wide short-circuit preserved;
-- unchanged default behavior;
+- unchanged `VIP` and `Proxy` behavior;
 - unchanged NodePort behavior.
 
 A routing-aware e2e test may be added if a portable topology can be built in
@@ -529,52 +469,56 @@ Kubernetes CI.
 
 #### Alpha
 
-- Feature gate disabled by default.
-- Service API field available behind the feature gate.
+- Feature gate `LoadBalancerIPModeRouter` disabled by default.
+- New `Router` value accepted behind the feature gate.
 - kube-proxy iptables and nftables implementations.
-- API validation.
-- Unit coverage for external and Pod-originated traffic.
-- IPv4/IPv6 and TCP/UDP coverage.
+- Unit coverage.
 - Documented semantics and limitations.
 
 #### Beta
 
 - Feature gate enabled by default.
-- Implementation complete for supported kube-proxy Linux backends.
+- At least one BGP speaker (Calico, Cilium, or MetalLB) sets `Router` in
+  its LB controller.
 - No unresolved correctness or security issues.
-- User documentation complete.
-- Operational experience from BGP/anycast deployments.
+- User documentation.
 - Upgrade/downgrade behavior validated.
 
 #### GA
 
 - At least two releases of beta experience.
-- Evidence of production use.
-- No unresolved API-semantic issues.
-- Feedback-derived issues resolved.
+- Multiple BGP speakers setting `Router`.
+- No unresolved API issues.
 
 ### Upgrade / Downgrade Strategy
 
-Existing Services are unaffected because the feature is opt-in.
+Existing Services are unaffected because `Router` is only set by LB controllers
+that explicitly opt in.
 
-On upgrade, Services without `externalFailoverPolicy` retain existing
-DROP/REJECT behavior.
+On upgrade, Services without `ipMode: Router` retain existing behavior.
 
-During downgrade or version skew, components that do not understand or act on
-the field fall back to existing behavior. Stored-field preservation must follow
-normal Kubernetes compatibility requirements for feature-gated API fields.
+On downgrade, the API server is downgraded before node components (standard
+Kubernetes ordering). The old API server does not include `Router` in its
+validation set, so it rejects status updates that try to set `Router`. The LB
+controller falls back to `VIP` and kube-proxy never sees the value.
 
 ### Version Skew Strategy
 
-- **New API server, old kube-proxy:** the old proxy ignores the field and retains
-  existing behavior.
-- **New kube-proxy, API server without the field:** kube-proxy sees the default
-  value and retains existing behavior.
-- **Mixed kube-proxy versions:** only nodes running an implementation that
-  understands and enables the feature provide Passthrough behavior.
+Kubernetes supports kube-proxy being up to one minor version behind the API
+server.
 
-Mixed versions therefore degrade toward the existing DROP/REJECT behavior
-rather than introducing a new forwarding path.
+- **New API server, old kube-proxy:** old kube-proxy does not recognize
+  `Router` and skips the IP entirely — no DNAT and no DROP/REJECT rules are
+  installed. This is the same skew behavior that `Proxy` mode had when it
+  was introduced. During rolling upgrades, nodes with old kube-proxy do not
+  serve the LB IP locally. Full `Router` behavior is available once all
+  nodes are updated.
+- **New kube-proxy, old API server:** the old API server rejects `Router` in
+  validation. The value is never written to status. kube-proxy sees `VIP` or
+  `Proxy` and behaves accordingly.
+- **Mixed kube-proxy versions:** nodes with new kube-proxy provide `Router`
+  behavior; nodes with old kube-proxy skip the IP. This is expected during
+  rolling upgrades and resolves once all nodes are updated.
 
 ## Production Readiness Review Questionnaire
 
@@ -583,47 +527,47 @@ rather than introducing a new forwarding path.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ServiceExternalFailoverPolicy`
+  - Feature gate name: `LoadBalancerIPModeRouter`
   - Components depending on the feature gate: kube-apiserver, kube-proxy
 
-No downtime beyond the normal component restart. A Service also opts in via
-`spec.externalFailoverPolicy: Passthrough`.
+No downtime beyond the normal component restart. A LoadBalancer controller opts
+in by setting `ipMode: Router` in Service status.
 
 ###### Does enabling the feature change any default behavior?
 
-No. Opt-in per Service; unset/`None` preserves existing DROP/REJECT behavior.
+No. The feature only takes effect when a LB controller explicitly sets
+`ipMode: Router`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes (`disable-supported: true`). Disabling the gate or reverting a Service to
-`None` restores DROP/REJECT on the next kube-proxy sync. Non-opted-in workloads
-are unaffected; opted-in workloads lose network-failover behavior.
+Yes. Disabling the gate on the API server prevents new `Router` values from
+being written to status. Existing `Router` values already in etcd remain
+visible to kube-proxy, which skips those IPs (no DNAT). The feature is fully
+rolled back once the LB controller updates the affected Services.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Behavior is restored on the next sync. State is derived from the current Service
-and gate; nothing is persisted to reconcile.
+kube-proxy begins programming DNAT for `Router` IPs again on the next sync.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. Planned unit tests cover the gate switch for the new field (drop-on-disabled,
-preserve-on-update) and kube-proxy rule generation with the gate on/off.
+Planned unit tests cover gate on/off behavior for API validation and
+kube-proxy rule generation with `Router` IPs.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Non-opted-in workloads cannot break. Main risk: enabling `Passthrough` where the
-node has no network path for the VIP, so traffic may be black-holed instead of
-fast-failing. During skew, only enabled kube-proxy nodes provide `Passthrough`;
-others keep DROP/REJECT, degrading toward existing behavior. Rollback restores
-prior behavior on the next sync.
+Non-opted-in workloads are unaffected. Main risk: `Router` set without a
+routing path, so packets are not delivered. This is no worse than DROP/REJECT.
+During rolling upgrades, nodes with old kube-proxy skip `Router` IPs (no DNAT);
+this resolves once all nodes are updated.
 
 ###### What specific metrics should inform a rollback?
 
-Rising connection failures/timeouts to the affected external VIPs after enabling
-`Passthrough`, indicating the network has no usable failover path. kube-proxy
-exposes no metric specific to this feature.
+Rising connection failures to LB VIPs. Correlate with Services that have
+`ipMode: Router` and verify routing table and iptables/nftables state on
+affected nodes.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -637,21 +581,19 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Inspect Service objects for `spec.externalFailoverPolicy: Passthrough`.
+Inspect `status.loadBalancer.ingress[].ipMode` for `Router` values.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Other (treat as last resort)
-  - Details: kube-proxy installs no endpoint-availability DROP/REJECT for the
-    external VIP when no eligible endpoints exist. Verify via the generated
-    iptables/nftables state (VIP absent from the no-endpoint reject/drop set).
-    End-to-end success also depends on the external routing/anycast path.
+  - Details: verify kube-proxy does not install DROP/REJECT for the LB IP
+    when no endpoints exist. Verify via `iptables-save` / `nft list ruleset`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 The feature removes kube-proxy as a packet-loss source; it provides no delivery
-guarantee itself. Objective: no measurable regression in kube-proxy
-`sync_proxy_rules_duration`.
+guarantee itself. Objective: no measurable regression in
+`sync_proxy_rules_duration_seconds`.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -665,18 +607,14 @@ guarantee itself. Objective: no measurable regression in kube-proxy
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-A counter of external VIPs whose no-endpoint DROP/REJECT was suppressed under
-`Passthrough` could help; deferred past alpha since the config and dataplane
-effect are already inspectable.
+A counter of LB IPs in `Router` mode could help; deferred past alpha.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No Kubernetes component dependency. Successful failover requires an
-operator-provided external routing/anycast fabric (e.g. BGP/ECMP + a routing
-controller); if it is down, packets allowed by `Passthrough` are not delivered
-(no worse than DROP/REJECT, but fast-fail is lost).
+No Kubernetes component dependency. Successful failover requires a BGP speaker
+or equivalent routing controller.
 
 ### Scalability
 
@@ -686,8 +624,7 @@ No. No new listers, watches, or reconcile loops are introduced.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No. It adds one optional enum field (`ServiceExternalFailoverPolicy`) to the
-existing `ServiceSpec`.
+No. Extends an existing enum value.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -695,7 +632,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Marginally: opted-in Services gain one small string field. No new objects.
+No. Uses an existing field with a new value.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -718,45 +655,61 @@ server/etcd availability.
 
 ###### What are other known failure modes?
 
-`Passthrough` enabled without a usable network path for the external VIP: traffic
-is black-holed instead of fast-failing. Detect via rising VIP connection
-failures; mitigate by reverting the Service to `None` or fixing routing (kube-proxy
-restores DROP/REJECT on the next sync).
+`Router` set without a usable routing path: traffic follows the routing table
+but may not reach a destination. No worse than DROP/REJECT. Detect via VIP
+connection failures.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-If Passthrough is configured but traffic does not reach another location:
-
-- verify that the Service has no locally eligible endpoints;
-- verify that the feature gate is enabled on the relevant components;
-- verify that kube-proxy has not installed an endpoint-availability DROP/REJECT
-  for the external VIP;
-- if the intent is to fail over from a cluster that still has endpoints
-  elsewhere, note that Pod/host-originated traffic is still served cluster-wide
-  by design; only externally-originated traffic and the zero-endpoint case are
-  affected by `Passthrough`;
-- verify that the node routing table has a usable path for the external VIP;
-- verify upstream route advertisement and convergence.
+- Verify `ipMode: Router` is set on the Service status.
+- Verify kube-proxy feature gate is enabled.
+- Verify no DROP/REJECT in iptables/nftables for the LB IP.
+- Verify the node routing table has a path for the LB IP.
+- Verify BGP route advertisement and convergence.
 
 ## Implementation History
 
-- 2026-08-12: Initial KEP draft based on
-  [kubernetes/kubernetes#139300](https://github.com/kubernetes/kubernetes/issues/139300).
+- 2026-08-12: Initial KEP draft proposing `spec.externalFailoverPolicy` field
+  based on [kubernetes/kubernetes#139300](https://github.com/kubernetes/kubernetes/issues/139300).
+- 2026-10-01: Reworked to use `ipMode: Router` based on sig-network feedback.
 
 ## Drawbacks
 
-- Adds another field to the Service API.
-- Successful failover depends on external routing behavior that Kubernetes does
-  not control.
+- Adds a third `ipMode` value. However, `ipMode` is already designed to be
+  extensible and the existing two values do not cover the routed-IP case.
 
 ## Alternatives
 
-1. **Annotation instead of a Service API field**
+### New externalTrafficPolicy value PreferLocal
 
-   The original issue proposed
-   `service.kubernetes.io/no-reject-on-no-endpoints: "true"`.
+Add `externalTrafficPolicy: PreferLocal` — same as `Local` but without
+the no-endpoint DROP/REJECT.
 
-   An annotation has a smaller API footprint, but the requested behavior is not
-   inherently kube-proxy-specific. A typed field provides validation,
-   discoverability, feature lifecycle, and portable semantics for Service proxy
-   implementations.
+Rejected because:
+- Mixes two concerns: endpoint selection policy (Local vs Cluster) and VIP
+  reachability management (drop vs route).
+- `ipMode` is set by the LB controller per-IP, which is the right scope.
+  The user sets `eTP: Local` for source IP preservation and the LB controller
+  decides how the IP is managed.
+- Adding a new eTP value has larger API surface and more complex interaction
+  with existing eTP behavior.
+
+### New spec field externalFailoverPolicy
+
+Add `spec.externalFailoverPolicy: Passthrough` — the original proposal in
+this KEP.
+
+Rejected because:
+- Adds a new spec field that the user must set, but the decision is really
+  about how the LB IP is managed (a controller concern, not a user concern).
+- `ipMode` already exists as the mechanism for LB controllers to communicate
+  IP handling behavior to kube-proxy. No new API fields needed.
+
+### Annotation
+
+`service.kubernetes.io/no-reject-on-no-endpoints: "true"` — the original
+proposal in [kubernetes/kubernetes#139300](https://github.com/kubernetes/kubernetes/issues/139300).
+
+Rejected because:
+- No validation, no feature lifecycle, not portable across proxy implementations.
+- `ipMode` provides a typed, validated, discoverable mechanism.
