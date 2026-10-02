@@ -457,7 +457,7 @@ status:
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
     reason: TypeConflict
-    message: "Conflicting type. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
+    message: "Conflicting type. Using \"ClusterSetIP\" from oldest service export in \"cluster-b\". 2/5 clusters disagree."
 ```
 
 To export a service, a `ServiceExport` should be created within the cluster and
