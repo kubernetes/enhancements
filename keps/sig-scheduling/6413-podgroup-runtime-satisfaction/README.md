@@ -466,11 +466,13 @@ mismatch; the condition is not defined for it.
 
 ### Consumers
 
+None of these consumers has a design that reads the condition yet; each row says what it would gain.
+
 | Consumer | What it gains |
 |---|---|
 | LeaderWorkerSet ([kubernetes-sigs/lws#979]) | A replica health signal from the group itself; KEP-666 says the terminal condition is not replica health, so LWS derives it from pods today |
 | Job ([KEP-5547]) | Loss and restoration of gang satisfaction become observable for gang Jobs, without fixing [kubernetes/kubernetes#142330], where a replacement for one index stays unschedulable after another index completes; the mitigation there is in the Job controller, and lowering `minCount` as indexes succeed also keeps the condition `True` while a Job finishes normally |
-| Kueue (gang integration, [kubernetes-sigs/kueue#13715]) | The Kueue integration work plan in the [WG Workload-Aware Scheduling meeting notes] lists keying `waitForPodsReady.recoveryTimeout` on this condition, instead of inferring recovery from Pod readiness. For batch workloads, `False` can briefly mean that members finished before `minCount` was lowered |
+| Kueue | The Kueue and WAS integration work plan in the [WG Workload-Aware Scheduling meeting notes] lists keying `waitForPodsReady.recoveryTimeout` on this condition as a proposed backlog item; no Kueue design reads it yet. For batch workloads, `False` can also mean that members finished and the controller has not lowered `minCount` |
 | JobSet ([kubernetes-sigs/jobset#1253]) | A signal for the deferred "recover one failed component" work |
 | StatefulSet ([KEP-6277]) and Deployment ([KEP-6276]) integrations | Group health in status for gang-enabled sets; KEP-6277 uses `PodGroupInitiallyScheduled` to answer whether a set's group was ever placed |
 | Users and dashboards | A direct answer to "is this gang intact", with a transition timestamp |
@@ -523,8 +525,8 @@ unit and integration coverage that this KEP extends.
 - Condition implemented, written on transitions, and documented in the API
   field comment.
 - Unit and integration tests above.
-- At least one consumer with a design that reads it, such as the Kueue
-  integration plan under [Consumers](#consumers).
+- At least one consumer listed under [Consumers](#consumers) has a design
+  that reads the condition.
 
 #### Beta
 
@@ -887,7 +889,6 @@ identified consumer and is not proposed.
 [kubernetes-sigs/lws#979]: https://github.com/kubernetes-sigs/lws/pull/979
 [kubernetes-sigs/lws#1056]: https://github.com/kubernetes-sigs/lws/issues/1056
 [kubernetes-sigs/jobset#1253]: https://github.com/kubernetes-sigs/jobset/pull/1253
-[kubernetes-sigs/kueue#13715]: https://github.com/kubernetes-sigs/kueue/issues/13715
 [WG Workload-Aware Scheduling meeting notes]: https://docs.google.com/document/d/1XSPdK4L3zkAFhAZ3hBQJr2k7JX9CpGD7NeQfujM1PT4
 [scheduler-plugins PodGroup controller]: https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/pkg/controllers/podgroup_controller.go
 [Koordinator]: https://github.com/koordinator-sh/koordinator
