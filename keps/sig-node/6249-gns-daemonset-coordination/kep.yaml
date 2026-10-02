@@ -1,0 +1,44 @@
+title: Publish Graceful Node Shutdown state for DaemonSet coordination
+kep-number: 6249
+authors:
+  - "@danbruno101"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-apps
+status: implementable
+creation-date: 2026-09-08
+reviewers:
+  - "@rthallisey"
+approvers:
+  - "@mrunalp"
+  - "@dchen1107"
+  - "@janetkuo"
+
+see-also:
+  - "/keps/sig-node/5683-lifecycle-conditions"
+  - "/keps/sig-node/2000-graceful-node-shutdown"
+  - "/keps/sig-node/2712-pod-priority-based-graceful-node-shutdown"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+
+# The following PRR answers are required at alpha release
+feature-gates:
+  - name: DaemonSetGracefulNodeShutdown
+    components:
+      - kubelet
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - daemonset_controller_node_shutdown_suppression_total
