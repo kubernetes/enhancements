@@ -99,7 +99,8 @@ Volcano, Kueue, KAI or Coscheduling plugin.
 - Enable users to apply Workload-Aware Scheduling to Deployments without manually creating or
   managing Workloads, PodGroups, or their lifecycle.
 - Allow users to optionally set gang `minCount`. When unset, the controller derives it from
-  `spec.replicas`. Validation ensures `minCount` does not exceed `replicas`.
+  `spec.replicas`. For positive replica counts, validation ensures `minCount` does not exceed
+  `replicas`.
 - Support gang scheduling with `Recreate` strategy.
 - Support horizontal scaling and HPA natively through the Deployment `/scale` subresource.
 - Support topology-constrained Deployments whose replicas must be co-located within a requested
@@ -149,8 +150,11 @@ The key design principles:
   `spec.scheduling` and is orthogonal to the Deployment's rollout strategy (`spec.strategy`).
   When `spec.scheduling` is omitted, no scheduling objects are created.
 - Gang `minCount` defaults to `spec.replicas` when unset. Users may set `minCount` explicitly,
-  but validation rejects values exceeding `replicas`.
-- All `spec.scheduling` fields are immutable after creation.
+  but validation rejects values exceeding `replicas` when replicas is positive. At `replicas=0`,
+  the check is skipped because no active PodGroup exists.
+- All `spec.scheduling` fields are immutable after creation except `gang.minCount`,
+  which is mutable to support scaling. Setting or unsetting `minCount` is allowed.
+  An unset value auto-tracks `replicas`, while an explicit value acts as a fixed floor.
 - Deployments own the `Workload` for its lifecycle, and ReplicaSets own individual `PodGroups`
   for revision-specific scheduling. Each PodGroup also carries a non-controller ownerReference to
   the Workload for lifecycle management, matching the Job pattern ([KEP-5547]). Supported by
@@ -341,7 +345,8 @@ reports unavailable replicas through its standard status conditions.
 
 ### Notes/Constraints/Caveats
 
-- Users may set `gang.minCount`. Validation rejects values exceeding `replicas`. When
+- Users may set `gang.minCount`. For positive replicas, validation rejects values exceeding
+  `replicas`. At `replicas=0`, the check is skipped because no active PodGroup exists. When
   `minCount < replicas`, the gang is satisfiable with fewer pods than the full replica count,
   but each ReplicaSet still has a single PodGroup. Multiple PodGroups per ReplicaSet for
   elastic gang semantics are deferred to Beta.
@@ -352,18 +357,27 @@ reports unavailable replicas through its standard status conditions.
   of old and new claims is possible due to async cleanup but is unlikely in practice.
 - `revisionHistoryLimit` retains old ReplicaSets for rollback metadata only. PodGroups are
   explicitly deleted at scale-to-zero, so they are already gone before the ReplicaSet becomes a
-  history entry. If explicit deletion is missed (e.g., crash), owner-reference GC removes the
-  PodGroup when the ReplicaSet is pruned, and the `podgroup-protection` finalizer ensures
-  referencing pods drain first.
+  history entry. A scheduling-enabled ReplicaSet carries a controller-managed cleanup finalizer.
+  When the ReplicaSet is deleted, the ReplicaSet controller requests deletion of the PodGroup
+  controlled by that ReplicaSet with the matching UID if present, then removes the cleanup finalizer.
+  The `podgroup-protection` finalizer keeps PodGroup deletion ordered with referencing Pod cleanup.
+  The ReplicaSet controller continues to process the cleanup finalizer when
+  `WorkloadWithDeployment` is disabled. It does not create or reconcile new scheduling objects
+  while the gate is disabled.
 - Named ResourceClaims pin all revisions to the same node (the node where the device is allocated).
   If the node lacks capacity for the gang's pods and their requested resources, the update may
   remain Pending.
 - Topology binding is permanent per PodGroup. A replacement pod stuck on a full domain will not
   automatically reschedule to a different domain.
-- At `replicas=0`, the Deployment-owned Workload is retained. If the user set `minCount`
-  explicitly, that value is preserved. Otherwise the controller defaults to `minCount=1`.
-  The ReplicaSet-owned PodGroup is deleted at zero replicas and recreated when the
-  Deployment scales positive again.
+- At `replicas=0`, the `minCount ≤ replicas` validation is skipped because no active PodGroup
+  exists. The Deployment-owned Workload is retained with the user's explicit `minCount` preserved
+  for scale-up, or `minCount=1` when unset. The ReplicaSet-owned PodGroup is deleted at zero
+  replicas and recreated when the Deployment scales positive again. Scaling to any positive value
+  below `minCount` is rejected.
+- Scale-from-zero autoscalers, such as KEDA, may wake a Deployment by setting `replicas` to their
+  configured minimum. If that positive value is below an explicit `minCount`, the update is
+  rejected. Configure the autoscaler minimum to be at least `minCount`, or leave `minCount`
+  unset to derive it from replicas.
 - Workload and PodGroup informers and listers are used by the Deployment and ReplicaSet
   controllers to reconcile scheduling objects.
 - PodDisruptionBudgets are independent of `spec.scheduling`. `Recreate` rollouts and
@@ -494,9 +508,10 @@ flowchart BT
   reference their PodGroup through `spec.schedulingGroup.podGroupName`.
 
 By this ownership structure, garbage collection cascades correctly: deleting a Deployment
-removes its ReplicaSets, which in turn remove their Pods and PodGroups. The Workload is
-also removed through its Deployment ownerReference. The `podgroup-protection` finalizer
-on PodGroups ensures referencing pods drain before the PodGroup is deleted.
+removes its ReplicaSets, which in turn remove their Pods and trigger cleanup of their PodGroups
+through the ReplicaSet finalizer. The Workload is also removed through its Deployment
+ownerReference. The `podgroup-protection` finalizer on PodGroups ensures referencing pods drain
+before the PodGroup is deleted.
 
 #### Creation Ordering
 
@@ -521,13 +536,21 @@ For each scheduling-enabled ReplicaSet revision:
 
 5. **PodGroup creation.** Before creating pods, the ReplicaSet controller calls
    `ensurePodGroupForReplicaSet` (get-or-create) to instantiate the ReplicaSet-owned PodGroup
-   from the Workload's sole PodGroupTemplate. The resulting `gang.minCount` is inherited from
+   from the Workload's sole PodGroupTemplate. If a PodGroup with the deterministic name
+   already exists and is not controlled by this ReplicaSet, the controller does not adopt
+   or wire Pods to it, logs the ownership conflict, and retries reconciliation. The resulting
+   `gang.minCount` is inherited from
    the Workload template and does not necessarily match the ReplicaSet's desired replica count.
 
 6. **Scale-to-zero cleanup.** When the ReplicaSet has zero desired replicas,
    `ensurePodGroupForReplicaSet` calls `deletePodGroupForReplicaSet` to remove the PodGroup.
    When the ReplicaSet scales positive again, the PodGroup is recreated
    before creating pods.
+
+7. **ReplicaSet deletion cleanup.** A scheduling-enabled ReplicaSet carries a controller-managed
+   cleanup finalizer. When the ReplicaSet is marked for deletion, the ReplicaSet controller requests
+   deletion of the PodGroup controlled by that ReplicaSet with the matching UID if present, then
+   removes the cleanup finalizer.
 
 #### workloadbuilder Integration
 
@@ -569,8 +592,10 @@ need HPA-driven scaling could leave `minCount` unset (`gang: {}`) so it auto-tra
    the immutability. Because the Deployment API embeds the versioned
    `scheduling.k8s.io/v1alpha3` building blocks directly, their DV markers apply unchanged.
 2. **Hand-written Deployment validation** covers the cross-cutting rules DV cannot express:
-   - **`gang.minCount` must not exceed `replicas`.** If the user sets `minCount` and it exceeds
-     the current replica count, the request is rejected.
+   - **`gang.minCount` must not exceed `replicas` (when replicas > 0).** If the user sets
+     `minCount` and `replicas` is positive but less than `minCount`, the request is rejected.
+     At `replicas=0` the check is skipped because no PodGroup exists and the retained
+     `minCount` has no runtime effect.
    - **`RollingUpdate` with gang is rejected.** Gang scheduling requires `Recreate` strategy
      for Alpha.
    - **`spec.scheduling` with a pre-existing `schedulingGroup` is rejected.** If the pod template
@@ -600,8 +625,9 @@ Tests to add:
   and it is reconciled before pod creation.
 - ReplicaSet scale-to-zero behavior: the PodGroup is deleted at zero replicas and recreated before
   pods are created when the ReplicaSet scales positive.
-- Validation: `minCount > replicas` rejected, `RollingUpdate` with gang rejected,
-  immutability violations rejected, and resource-claim structural violations rejected.
+- Validation: `minCount > replicas` rejected for positive replicas, explicit `minCount` allowed at
+  `replicas=0`, `RollingUpdate` with gang rejected, immutability violations rejected, and
+  resource-claim structural violations rejected.
 - Idempotent reconciliation: missing Workloads and PodGroups are recreated without duplicates.
 
 #### Integration Tests
@@ -613,18 +639,23 @@ Tests to add:
   exists before the ReplicaSet creates pods.
 - Scale up and down and verify the Workload template and active PodGroup receive the correct
   positive `minCount`.
-- Scale to zero and verify the Workload retains the user's `minCount` (or defaults to 1) while
-  the PodGroup is deleted. Scale positive again and verify the Workload is patched and the
-  PodGroup is recreated before pods are created.
+- Scale to zero and verify that `minCount > replicas` is allowed only when `replicas=0`, that the
+  Workload retains the user's `minCount` (or defaults to 1), and that the PodGroup is deleted.
+  Scale positive again and verify the Workload is patched and the PodGroup is recreated before
+  pods are created.
 - Delete the Deployment and verify the Workload and ReplicaSet-owned PodGroup are eventually
   garbage-collected.
+- Delete a scheduling-enabled ReplicaSet directly and verify the controller removes its cleanup
+  finalizer after requesting deletion of the PodGroup controlled by the ReplicaSet with the
+  matching UID. Repeat after disabling `WorkloadWithDeployment` and verify the ReplicaSet does not
+  remain stuck.
 - Verify old PodGroups and template-backed ResourceClaims are released when old ReplicaSets reach
   zero.
 
 #### E2E Tests
 
 - Gang Deployment with `Recreate`: all replicas bind atomically or none bind.
-- Admission rejection for `RollingUpdate` with gang and `minCount > replicas`.
+- Admission rejection for `RollingUpdate` with gang and `minCount > replicas` when `replicas > 0`.
 - Topology placement: gang lands in a single domain.
 - `disruptionMode.single` versus `all`: preemption behavior differs as expected.
 - ResourceClaims: one template-backed claim per PodGroup, released when the PodGroup is deleted;
@@ -682,10 +713,12 @@ Disabling the gate after scheduling-enabled Deployments already exist does not r
 Workload, PodGroup, or pod references. As described in the
 [OwnerReferences Relationship](#ownerreferences-relationship) section, the Workload carries a
 controller ownerReference to the Deployment and each PodGroup carries a controller ownerReference
-to its ReplicaSet. Standard garbage collection therefore removes these objects when their owners
-are deleted; no controller-side cleanup is required while the gate is off. Existing pods retain
-the scheduling-group reference they were created with. Re-enabling the gate allows the controllers
-to resume normal scheduling-object reconciliation.
+to its ReplicaSet and a non-controller ownerReference to its Workload. Standard garbage collection
+therefore removes these objects when all of their owners are deleted. While the gate is disabled,
+the ReplicaSet controller continues to process the cleanup finalizer on existing scheduling-enabled
+ReplicaSets. The controller requests deletion of the owned PodGroup if present before removing the
+ReplicaSet finalizer. Existing pods retain the scheduling-group reference they were created with.
+Re-enabling the gate allows the controllers to resume normal scheduling-object reconciliation.
 
 **Mixed-pod caveat.** Toggling the feature gate while a scheduling-enabled Deployment has running
 pods produces a mixed state: some pods carry `schedulingGroup` and some do not. This is
@@ -729,8 +762,10 @@ unaffected. No scheduling objects are created unless the user explicitly sets th
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. With the gate disabled on kube-apiserver, new requests that set `spec.scheduling` are
-rejected. With the gate disabled on kube-controller-manager, the controllers stop reconciling
-scheduling objects. Existing PodGroups remain until their owning ReplicaSet is garbage-collected.
+rejected. With the gate disabled on kube-controller-manager, new scheduling objects are not
+created or reconciled. When an existing scheduling-enabled ReplicaSet is marked for deletion,
+either directly or by cascading garbage collection after its Deployment is deleted, the ReplicaSet
+controller requests deletion of its owned PodGroup if present before removing the cleanup finalizer.
 The Workload remains until the Deployment is deleted. See the **mixed-pod caveat** in the Upgrade
 Strategy section for the impact of disabling the gate while scheduling-enabled pods are running.
 
@@ -821,7 +856,7 @@ include:
 - Creating one PodGroup for each active ReplicaSet revision, or recreating it after scale-up from
   zero.
 - Patching a ReplicaSet-owned PodGroup when its owner or runtime `minCount` needs reconciliation.
-- Deleting the PodGroup when its ReplicaSet reaches zero replicas.
+- Deleting the PodGroup when its ReplicaSet reaches zero replicas or is deleted.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
