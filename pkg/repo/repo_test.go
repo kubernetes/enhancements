@@ -63,6 +63,56 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestNewRepoRejectsInvalidPathTypes(t *testing.T) {
+	testcases := []struct {
+		name         string
+		prepare      func(t *testing.T, repoPath string)
+		wantLocation string
+		wantType     string
+	}{
+		{
+			name: "proposal path is a file",
+			prepare: func(t *testing.T, repoPath string) {
+				require.NoError(t, os.WriteFile(filepath.Join(repoPath, "keps"), nil, 0o644))
+			},
+			wantLocation: "proposal path",
+			wantType:     "is not a directory",
+		},
+		{
+			name: "PRR approval path is a file",
+			prepare: func(t *testing.T, repoPath string) {
+				kepsPath := filepath.Join(repoPath, "keps")
+				require.NoError(t, os.Mkdir(kepsPath, 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(kepsPath, "prod-readiness"), nil, 0o644))
+			},
+			wantLocation: "PRR approval path",
+			wantType:     "is not a directory",
+		},
+		{
+			name: "proposal README is a directory",
+			prepare: func(t *testing.T, repoPath string) {
+				kepsPath := filepath.Join(repoPath, "keps")
+				require.NoError(t, os.MkdirAll(filepath.Join(kepsPath, "prod-readiness"), 0o755))
+				require.NoError(t, os.Mkdir(filepath.Join(kepsPath, "README.md"), 0o755))
+			},
+			wantLocation: "proposal README",
+			wantType:     "is not a regular file",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoPath := t.TempDir()
+			tc.prepare(t, repoPath)
+
+			r, err := repo.NewRepo(repoPath, &api.MockGroupFetcher{})
+			require.Nil(t, r)
+			require.ErrorContains(t, err, tc.wantLocation)
+			require.ErrorContains(t, err, tc.wantType)
+		})
+	}
+}
+
 func TestProposalValidate(t *testing.T) {
 	testcases := []struct {
 		name string
