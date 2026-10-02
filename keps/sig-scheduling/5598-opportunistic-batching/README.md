@@ -97,6 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Rescoring](#rescoring)
     - [Rescoring the Last Chosen Node](#rescoring-the-last-chosen-node)
     - [NormalizeScore on a Subset](#normalizescore-on-a-subset)
+    - [Generalized Rescoring via a Rescore Extension Point](#generalized-rescoring-via-a-rescore-extension-point)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Plugins need to keep signatures up to date](#plugins-need-to-keep-signatures-up-to-date)
@@ -128,7 +129,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Comparison with Equivalence Cache (circa 2018)](#comparison-with-equivalence-cache-circa-2018)
-  - [New Rescore Extension Point](#new-rescore-extension-point)
 - [Future work](#future-work)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -414,6 +414,9 @@ of flushing the batch:
 This is correct under the assumption that scoring is node-local: placing pod N on node A does not
 affect the scores of other nodes. This holds for all signable pods. Group-aware scoring plugins
 (which would violate it) already make pods unsignable and are excluded from batching entirely.
+Lifting this restriction is the target of the next phase of this KEP; see
+[Generalized Rescoring via a Rescore Extension Point](#generalized-rescoring-via-a-rescore-extension-point)
+below.
 
 **Cost comparison:**
 
@@ -444,6 +447,56 @@ by the explicit `Score` call, and `NormalizeScore` sees the same set with the sa
 The only source of divergence is cache staleness: if cluster state has changed since the initial
 full pipeline run, the cached raw scores for non-rescored nodes may be slightly out of date. This is
 bounded by the 500ms `maxBatchAge` expiry (see [Risks and Mitigations](#risks-and-mitigations)).
+
+#### Generalized Rescoring via a Rescore Extension Point
+
+The rescoring mechanism above only scores `placedNode`, and assumes scoring is node-local: placing
+pod N on node A does not affect the scores of other nodes. This holds for all currently signable
+plugins, but excludes group-aware plugins such as `PodTopologySpread` and `InterPodAffinity`,
+whose score for a node depends on the pod distribution across an entire topology domain (e.g. a
+zone), not just that node. Since the *default* scheduler profile enables a preferred
+`PodTopologySpread` constraint, opportunistic batching currently provides no benefit under default
+configuration. Lifting this restriction requires supporting cross-node scoring.
+
+**Considered options:**
+1. **Naive:** re-score every cached node and re-run `NormalizeScore` over the full list. Correct,
+   but requires re-scoring every node in the cached list, even if the placement only changed the
+   score of a small group of nodes.
+2. **Targeted:** introduce a new `Rescore` plugin interface, letting each plugin report only the
+   nodes it actually affected, and re-score just those.
+
+Option 2 is the target design because it is more efficient than option 1.
+
+**Proposed `Rescore` interface:**
+
+```go
+// RescorePlugin is an optional interface plugins may implement to support
+// incremental rescoring during opportunistic batching.
+type RescorePlugin interface {
+    Plugin
+    // Rescore is called after pod N is placed on placedNode. It returns raw
+    // (pre-NormalizeScore) scores for every node whose score is affected by
+    // the placement. The framework combines these with cached raw scores for
+    // unaffected nodes and runs NormalizeScore over the full cached set.
+    // Plugins with node-local scoring return scores for placedNode only.
+    // Group-aware plugins may return scores for multiple nodes.
+    //
+    // Return values:
+    //   - Success: map of affected node raw scores (may be empty if no scores changed)
+    //   - Error: unexpected failure; batch state is invalidated
+    Rescore(ctx context.Context, state *CycleState, pod *v1.Pod, placedNode NodeInfo, cachedNodes []NodeInfo) (map[string]int64, *Status)
+}
+```
+
+Today's implementation is the implicit node-local special case of this design: it always assumes
+only `placedNode` is affected, and always calls `Score` for that single node. With `Rescore`, step
+3 of [Rescoring the Last Chosen Node](#rescoring-the-last-chosen-node) above would be replaced by
+a call to `Rescore` for each plugin that implements it (falling back to `Score(placedNode)` for
+plugins that don't); the returned raw scores are merged with the cached raw scores of unaffected
+nodes, and `NormalizeScore` runs over the full cached set exactly as it does today.
+
+This capability is only usable once the signature mechanism is also extended to make group-aware
+pods signable (see [Group-aware plugin signability](#future-work)), a separate, larger change.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -1354,57 +1407,11 @@ The issues experienced by eCache were:
 
 See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 as starting point on
 eCache.
- 
-### New Rescore Extension Point
-
-A new `Rescore` plugin interface could be introduced, allowing plugins to declare which nodes are
-affected by the most recent placement and provide fresh raw scores for them. The framework then
-combines those with the cached raw scores for unaffected nodes and calls `NormalizeScore` on the
-full cached set — the same normalization flow as in the main pipeline.
-
-```go
-// RescorePlugin is an optional interface plugins may implement to support
-// incremental rescoring during opportunistic batching.
-type RescorePlugin interface {
-    Plugin
-    // Rescore is called after pod N is placed on placedNode. It returns raw
-    // (pre-NormalizeScore) scores for every node whose score is affected by
-    // the placement. The framework combines these with cached raw scores for
-    // unaffected nodes and runs NormalizeScore over the full cached set.
-    // Plugins with node-local scoring return scores for placedNode only.
-    // Group-aware plugins may return scores for multiple nodes.
-    //
-    // Return values:
-    //   - Success: map of affected node raw scores (may be empty if no scores changed)
-    //   - Error: unexpected failure; batch state is invalidated
-    Rescore(ctx context.Context, state *CycleState, pod *v1.Pod, placedNode NodeInfo, cachedNodes []NodeInfo) (map[string]int64, *Status)
-}
-```
-
-This KEP's rescoring approach is the implicit special case of this design: it always assumes only
-`placedNode` is affected (node-local scoring), runs `PreScore` and then calls `Score` to get its
-raw score, and normalizes the full cached set. The `Rescore` extension point generalizes that by 
-letting group-aware plugins declare additional affected nodes and provide their raw scores.
-
-Pros:
-- Semantically correct: plugins can provide correct raw scores for any affected nodes, including
-  related-node effects from group-aware plugins.
-- Opens the path to eventually supporting batching for pods with `PodTopologySpread` or
-  `InterPodAffinity` constraints.
-
-Cons:
-- Requires every in-tree scoring plugin to be updated to implement `Rescore`.
-- The related-node capability it enables is not usable until the signature mechanism is also
-  extended, which is a separate, larger change.
-- Adds permanent plugin API surface that must be maintained even when its primary benefit (group-
-  aware rescoring) is not yet available.
-- All currently signable pods use node-local scoring plugins, for which this KEP's rescoring
-  approach is already correct.
-
-This KEP's approach can be cleanly replaced by a dedicated `Rescore` extension point in a future.
 
 ## Future work
 
+- **Generalized rescoring via a `Rescore` extension point**: see
+  [Generalized Rescoring via a Rescore Extension Point](#generalized-rescoring-via-a-rescore-extension-point)
 - **Group-aware plugin signability**: Pods that use `PodTopologySpread`, `InterPodAffinity`, or
   other group-aware scoring plugins are currently unsignable and receive no batching benefit.
   Extending the signature mechanism to handle these plugins, possibly by incorporating their
@@ -1415,11 +1422,6 @@ This KEP's approach can be cleanly replaced by a dedicated `Rescore` extension p
   `PreFilterExtension`, with an `AddPod` method that plugins implement to incrementally update
   `CycleState` when a pod is placed, rather than recomputing it from scratch. This optimization is
   deferred for now.
-- **New Rescore extension point**: Once group-aware plugins become signable, a dedicated `Rescore`
-  plugin interface can be introduced to handle related-node score updates correctly. Plugins would
-  return raw scores for all affected nodes; the framework combines them with cached raw scores for
-  unaffected nodes and runs `NormalizeScore` on the full set. See [Alternatives](#alternatives) for
-  the full design.
 
 ## Infrastructure Needed (Optional)
 
