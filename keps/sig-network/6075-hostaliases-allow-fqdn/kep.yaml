@@ -2,6 +2,7 @@ title: Allow FQDN with trailing dot in HostAliases
 kep-number: 6075
 authors:
   - "@kairosci"
+  - "@mu5a"
 owning-sig: sig-network
 status: provisional
 creation-date: 2026-05-14

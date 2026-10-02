@@ -13,7 +13,7 @@
 - [Design Details](#design-details)
   - [Validation](#validation)
   - [Storage: trailing dot is preserved](#storage-trailing-dot-is-preserved)
-    - [/etc/hosts Generation with Graceful Degradation](#etchosts-generation-with-graceful-degradation)
+    - [/etc/hosts Generation](#etchosts-generation)
     - [Discrepancy with <code>man 5 hosts</code>](#discrepancy-with-man-5-hosts)
   - [Interaction with existing HostAliases semantics](#interaction-with-existing-hostaliases-semantics)
   - [Feature gate](#feature-gate)
@@ -47,11 +47,15 @@ Allow a trailing dot in hostnames under `spec.hostAliases[].hostnames`. The trai
 
 DNS resolution in modern systems supports two styles of domain name queries: relative and absolute. A relative query (e.g., `example.com`) is subject to search path expansion, where the resolver appends configured search domains and retries if the initial lookup fails. An absolute query (denoted by a trailing dot, e.g., `example.com.`) bypasses this expansion entirely. This distinction is standardized in RFC 1034 and RFC 2181, and is universally implemented across operating systems, system resolvers, and language runtime libraries.
 
-Kubernetes `HostAliases` currently validates hostnames using `ValidateDNS1123Subdomain`, which rejects trailing dots. This restriction prevents users from pinning absolute FQDN names to specific IP addresses within their Pods. Applications that perform absolute FQDN lookups (common in distributed systems where exact name resolution is critical) cannot use `HostAliases` to override those names, even though the system resolver implementations inside containers fully support this use case.
+Kubernetes Pods by default configure `ndots:5` in `/etc/resolv.conf`. When an application queries a bare external domain name, the resolver issues parallel A and AAAA queries across all search domains before querying the root. In a stock Kubernetes cluster with 3 search domains, resolving a bare name triggers up to 8 DNS queries (6 wasted queries, a 4x overhead). In cloud environments with 5 search domains, this reaches 12 queries (10 wasted queries). To prevent this query amplification and avoid DNS latency/throttling, applications frequently use absolute FQDNs with a trailing dot (e.g., `api.example.com.`), reducing DNS traffic to just 2 queries.
 
-The practical consequence is that users who need FQDN overrides must either accept incorrect DNS behavior (by using relative names and hoping search domains resolve correctly), or use privileged init containers to manually rewrite `/etc/hosts` to include the trailing dots. Neither approach is satisfactory: the former breaks applications designed to use absolute names, and the latter requires elevated privileges and circumvents Kubernetes security controls.
+However, Kubernetes `HostAliases` currently validates hostnames using `ValidateDNS1123Subdomain`, which rejects trailing dots. This prevents users from pinning or overriding absolute FQDN names. In system libc resolvers (glibc 2.31/2.41, musl 1.1.24/1.2.6), `/etc/hosts` matching via `getaddrinfo` and `getent hosts` is strictly literal: an entry `10.10.10.10 api.example.test` will **not** match an FQDN lookup for `api.example.test.` (and vice versa). While Go's pure resolver normalizes trailing dots internally, libc-based runtimes (Python, Java, Node.js, C/C++, Rust) fail to match.
 
-By allowing trailing dots in `HostAliases` hostnames, Kubernetes can support the full spectrum of DNS resolution patterns that applications require, making the feature more complete and usable for real-world scenarios.
+The practical consequence is that workloads using absolute FQDNs to avoid `ndots:5` amplification cannot use `HostAliases` to override those endpoints (for instance, redirecting an external API to a mock/sandbox IP in staging or local environments). Users are forced to either accept search-path amplification or resort to privileged init containers that manually modify `/etc/hosts`.
+
+Containerized testing (across glibc 2.31, glibc 2.41, musl 1.1.24, musl 1.2.6, and Go) confirms that parser tolerance holds: system resolvers cleanly parse dotted hostnames in `/etc/hosts`, do not reject lines, and continue resolving subsequent aliases on the line.
+
+By allowing trailing dots in `HostAliases` hostnames, Kubernetes enables workloads using absolute FQDNs to override host resolution cleanly and securely.
 
 ### Goals
 
@@ -66,15 +70,17 @@ By allowing trailing dots in `HostAliases` hostnames, Kubernetes can support the
 
 ## Proposal
 
-Modify `ValidateHostAliases` to unconditionally strip a trailing dot before calling `ValidateDNS1123Subdomain`. Add a gate check in `ValidatePod` and `ValidatePodUpdate` to reject trailing dots when the feature gate is disabled.
+Modify `ValidateHostAliases` to unconditionally strip a trailing dot before calling `ValidateDNS1123Subdomain`. Add a feature gate check for `HostAliasesAllowFQDN`:
+- On pod creation (`ValidatePod`), reject trailing dots if the feature gate is disabled.
+- On pod update (`ValidatePodUpdate`), compare against `oldPod.Spec.HostAliases` (field ratcheting): if the gate is disabled, only reject trailing dots if they are newly added or modified, allowing existing pods with trailing dot hostnames to receive metadata and spec updates without error.
 
-The validation itself always succeeds for valid subdomains regardless of gate state — the gate only controls whether trailing dots are permitted at all.
+The core validation itself (`ValidateHostAliases`) always succeeds for valid subdomains regardless of gate state.
 
 ### User Stories
 
 #### Story 1
 
-A pod runs an application that resolves `example.com.` (with trailing dot, as an FQDN). The user adds a HostAlias to pin that name to a specific IP:
+A pod runs an application that resolves `example.com.` (with trailing dot, as an FQDN to avoid `ndots:5` search path amplification). The user adds a HostAlias to pin that name to a specific IP:
 
 ```yaml
 spec:
@@ -84,7 +90,7 @@ spec:
     - "example.com."
 ```
 
-The trailing dot makes `gethostbyname` skip the search list. Without this KEP the pod is rejected by validation.
+The trailing dot bypasses search path expansion and matches the exact literal `/etc/hosts` entry. Without this KEP the pod is rejected by validation.
 
 #### Story 2
 
@@ -95,25 +101,29 @@ spec:
   hostAliases:
   - ip: "10.10.10.10"
     hostnames:
-    - "example.com."
     - "example.com"
+    - "example.com."
 ```
 
-This generates a single `/etc/hosts` entry with both names, allowing both query styles to match: applications using the absolute form match the FQDN entry, and applications using the relative form match the second entry (which may then be expanded by the search list if needed). This avoids duplicate IP entries and is the DNS best practice for supporting both absolute and relative resolution.
+This generates a single `/etc/hosts` entry with both names:
+```
+10.10.10.10    example.com    example.com.
+```
+Placing the bare name first (`example.com` before `example.com.`) ensures both query forms match while keeping the canonical name returned by reverse lookups (`gethostbyaddr`/`getnameinfo`) unchanged.
 
 ### Risks and Mitigations
 
 **Concern: Use case is rare and undocumented**
 
-This concern underestimates both the prevalence of the use case and the documentation status. RFC 1034 and RFC 2181 explicitly document trailing dots in domain names as the standard representation of absolute FQDNs. Every major operating system, system resolver (glibc, musl, BSD, Windows), and language runtime (Go, Python, Java, Node.js, Rust, Ruby) implements this behavior consistently. The trailing dot convention is not anecdotal—it is normative DNS semantics. The use case is not rare: any workload that makes absolute FQDN queries (including service meshes, distributed tracing systems, and any application that explicitly specifies FQDN URLs) requires this functionality. The current validation barrier simply prevents legitimate use cases from being expressed in Kubernetes.
+This concern underestimates both the prevalence of the use case and the documentation status. RFC 1034 and RFC 2181 explicitly document trailing dots in domain names as the standard representation of absolute FQDNs. In Kubernetes, using absolute names with a trailing dot is a well-documented and standard pattern to avoid the `ndots:5` query amplification penalty (saving 6 to 10 wasted DNS queries per lookup). Containerized testing across glibc, musl, and Go confirms that libc matching against `/etc/hosts` is literal, making trailing dot support in `HostAliases` necessary for any workload querying absolute names.
 
 **Concern: Downgrade compatibility**
 
-Downgrade risk is real but limited: pods with trailing dot hostnames cannot be updated through an older API server that does not strip trailing dots. This risk is mitigated by automatic ratcheting—`ValidateHostAliases` strips trailing dots before DNS validation regardless of feature gate state, so stored pods with trailing dots remain updatable after a downgrade. The risk is therefore confined to clusters that explicitly enable the feature and then downgrade: those pods cannot be modified until the cluster is upgraded again. This is acceptable downgrade behavior because the feature is gated and opt-in.
+Downgrade risk is mitigated by field ratcheting: `ValidateHostAliases` strips trailing dots before DNS validation regardless of feature gate state. When the feature gate is disabled, `ValidatePodUpdate` compares `pod.Spec.HostAliases` against `oldPod.Spec.HostAliases`, ensuring existing pods with trailing dots remain updatable. The risk is therefore confined to clusters that enable the feature and then downgrade to an older minor version that lacks the KEP code entirely.
 
 **Concern: Behavioral inconsistency across resolver implementations**
 
-All major resolver implementations support trailing dots and follow RFC 1034 semantics. The behavior is uniform, not inconsistent. The `man 5 hosts` specification is the outlier—it does not reflect how modern system resolvers actually parse the file. Kubernetes should follow the DNS standard and the behavior of actual resolver implementations, not an outdated specification that contradicts current practice.
+Containerized testing across glibc 2.31, glibc 2.41, musl 1.1.24, musl 1.2.6, and Go confirms consistent behavior: all tested libc parsers tolerate dotted tokens without rejecting lines or breaking subsequent aliases. Note: When both `name` and `name.` are specified on the same `/etc/hosts` line, Go's pure net resolver returns duplicate IP addresses for lookups because Go strips the trailing dot internally before matching. This is purely cosmetic and does not impact connectivity.
 
 ## Design Details
 
@@ -160,55 +170,12 @@ func ValidateHostAliases(hostAliases []core.HostAlias, fldPath *field.Path) fiel
 
 The trailing dot is stored verbatim in etcd. The API server does not normalize or strip it after validation.
 
-#### /etc/hosts Generation with Graceful Degradation
+#### /etc/hosts Generation
 
-The kubelet writes hostnames from `HostAliases` directly into `/etc/hosts` via `hostsEntriesFromHostAliases` using a graceful degradation approach:
-
-**Primary Approach: Separate Lines for Parser Compatibility**
-
-For hostnames containing a trailing dot, generate **two separate lines** in `/etc/hosts` to ensure compatibility with legacy parsers:
-
-```
-10.10.10.10    example.com.
-10.10.10.10    example.com
-```
-
-Preserves FQDN semantics for exact literal matching (RFC 1034), supports both relative and absolute DNS queries, maintains compatibility with legacy `/etc/hosts` parsers.
-
-**Fallback Approach: Single Line with Multiple Aliases**
-
-If generating separate lines fails or is not supported, fall back to a single line with multiple aliases:
-
-```
-10.10.10.10    example.com.    example.com
-```
-
-**Implementation Logic**
+The kubelet writes hostnames from `HostAliases` directly into `/etc/hosts` on a single line per `HostAlias` entry via `hostsEntriesFromHostAliases`:
 
 ```go
 func hostsEntriesFromHostAliases(hostAliases []v1.HostAlias) []byte {
-    var buffer bytes.Buffer
-    buffer.WriteString("\n")
-    buffer.WriteString("# Entries added by HostAliases.\n")
-    for _, hostAlias := range hostAliases {
-        for _, hostname := range hostAlias.Hostnames {
-            if strings.HasSuffix(hostname, ".") && hostname != "." {
-                buffer.WriteString(fmt.Sprintf("%s\t%s\n", hostAlias.IP, hostname))
-                relativeHostname := strings.TrimSuffix(hostname, ".")
-                buffer.WriteString(fmt.Sprintf("%s\t%s\n", hostAlias.IP, relativeHostname))
-            } else {
-                buffer.WriteString(fmt.Sprintf("%s\t%s\n", hostAlias.IP, hostname))
-            }
-        }
-    }
-    return buffer.Bytes()
-}
-```
-
-If the above approach encounters write errors or validation issues, fall back to the legacy approach:
-
-```go
-func hostsEntriesFromHostAliasesLegacy(hostAliases []v1.HostAlias) []byte {
     var buffer bytes.Buffer
     buffer.WriteString("\n")
     buffer.WriteString("# Entries added by HostAliases.\n")
@@ -219,7 +186,25 @@ func hostsEntriesFromHostAliasesLegacy(hostAliases []v1.HostAlias) []byte {
 }
 ```
 
-If the trailing dot were stripped, the entry in `/etc/hosts` would lack it and FQDN resolution would not match, as system resolvers perform exact literal string matching. The two-line approach ensures that applications querying both forms (`example.com.` and `example.com`) receive correct responses.
+For an entry with both bare and dotted hostnames:
+```yaml
+spec:
+  hostAliases:
+  - ip: "10.10.10.10"
+    hostnames:
+    - "example.com"
+    - "example.com."
+```
+the kubelet generates:
+```
+10.10.10.10    example.com    example.com.
+```
+
+**Rationale for Single-Line Format and Ordering:**
+
+1. **Single-line resolution is universally supported**: Containerized testing across glibc (2.31, 2.41) and musl (1.1.24, 1.2.6) under `--network none` demonstrates that placing `IP name name.` on a single line resolves both `name` and `name.` forward queries correctly on every libc tested.
+2. **Ordering preserves canonical reverse lookups**: Reverse lookups (`gethostbyaddr`/`getnameinfo`) return the **first** hostname listed on the line in `/etc/hosts`. By placing the bare name first (`example.com` followed by `example.com.`), reverse lookups continue returning the canonical bare name without a trailing dot, avoiding breaking changes to existing reverse resolution behavior.
+3. **No runtime fallback needed**: In kubelet, `hostsEntriesFromHostAliases` and `managedHostsFileContent` return `[]byte` without an error return path. The only failures in `ensureHostsFile` are filesystem write or permissions errors (`os.WriteFile`, `Chmod`), which fail identically regardless of content formatting. There is no condition where a multi-line format would fail and a fallback would succeed, so no separate fallback path is required.
 
 #### Discrepancy with `man 5 hosts`
 
@@ -241,57 +226,66 @@ Users cannot override the pod's own hostname or localhost via HostAliases in any
 
 ### Feature gate
 
-The feature gate check is added at the caller level in `ValidatePod` and `ValidatePodUpdate`:
+The feature gate `HostAliasesAllowFQDN` controls whether trailing dots are permitted.
 
+On **create** (`ValidatePod`), when the feature gate is disabled:
 ```go
-for i, hostAlias := range pod.Spec.HostAliases {
-    for j, hostname := range hostAlias.Hostnames {
-        if strings.HasSuffix(hostname, ".") && hostname != "." {
-            allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "hostAliases").Index(i).Child("hostnames").Index(j),
-                "trailing dot requires feature gate HostAliasesAllowFQDN"))
+if !utilfeature.DefaultFeatureGate.Enabled(features.HostAliasesAllowFQDN) {
+    for i, hostAlias := range pod.Spec.HostAliases {
+        for j, hostname := range hostAlias.Hostnames {
+            if strings.HasSuffix(hostname, ".") && hostname != "." {
+                allErrs = append(allErrs, field.Forbidden(
+                    field.NewPath("spec", "hostAliases").Index(i).Child("hostnames").Index(j),
+                    "trailing dot requires feature gate HostAliasesAllowFQDN",
+                ))
+            }
         }
     }
 }
 ```
 
+On **update** (`ValidatePodUpdate`), validation uses field ratcheting by comparing against `oldPod.Spec.HostAliases`:
+```go
+if !utilfeature.DefaultFeatureGate.Enabled(features.HostAliasesAllowFQDN) {
+    allErrs = append(allErrs, validateHostAliasesGateOnUpdate(pod.Spec.HostAliases, oldPod.Spec.HostAliases, field.NewPath("spec", "hostAliases"))...)
+}
+```
+
 **Gate enabled**: trailing dots are allowed on create and update.
 
-**Gate disabled**: trailing dots are rejected on create. Updates are not additionally restricted because `ValidateHostAliases` always accepts the trimmed value — ratcheting is automatic: existing hostnames with trailing dots remain updatable after the gate is disabled.
+**Gate disabled**: trailing dots are rejected on create. On update, existing trailing-dot entries already present in `oldPod.Spec.HostAliases` are permitted, allowing metadata updates (e.g., label changes) and non-HostAliases spec updates to succeed even after the feature gate is disabled.
 
 ### Test Plan
 
 ##### Unit tests
 
-| Input | Gate state | Expected |
-|---|---|---|
-| `"example.com."` | enabled | accepted |
-| `"example.com."` | disabled | rejected |
-| `"example.com"` | either | accepted (unchanged) |
-| `"."` | either | rejected (bare dot) |
-| `"example.com.."` | either | rejected (multi-dot) |
-| `".."` | either | rejected |
-| `"localhost."` | enabled | accepted |
-| `"my-server."` | enabled | accepted (single-label FQDN) |
+| Input | Gate state | Operation | Expected |
+|---|---|---|---|
+| `"example.com."` | enabled | create | accepted |
+| `"example.com."` | disabled | create | rejected |
+| `"example.com"` | either | create/update | accepted (unchanged) |
+| `"."` | either | create/update | rejected (bare dot) |
+| `"example.com.."` | either | create/update | rejected (multi-dot) |
+| `".."` | either | create/update | rejected |
+| `"localhost."` | enabled | create | accepted |
+| `"my-server."` | enabled | create | accepted (single-label FQDN) |
+| `"example.com."` (in `oldPod`) | disabled | update (unchanged) | accepted (ratcheted) |
+| `"example.com."` (new) | disabled | update (added) | rejected |
 
 ##### Integration tests
 
-- create pod with trailing dot — accepted with gate enabled, rejected with gate disabled
-- update pod that has trailing dot (created with gate on) after gate is disabled — accepted (ratcheting)
+- create pod with trailing dot — accepted with gate enabled, rejected with gate disabled.
+- update pod with existing trailing dot (created with gate on) after gate is disabled — accepted (ratcheting against `oldPod.Spec.HostAliases`).
+- update pod adding a new trailing dot entry after gate is disabled — rejected.
 
 ##### e2e tests
 
-**Primary approach:**
-- create pod with trailing dot in hostAliases
-- verify `/etc/hosts` contains two separate lines: `IP    example.com.` and `IP    example.com`
-- verify FQDN queries (with trailing dot) resolve correctly
-- verify relative queries (without trailing dot) resolve correctly
-- test with diverse workload types: Python, Java, Node.js, Go
-
-**Fallback approach:**
-- simulate fallback scenario (e.g., write error on separate lines)
-- verify fallback generates single line with multiple aliases: `IP    example.com.    example.com`
-- verify resolution still works (though may be degraded on legacy parsers)
-- document fallback behavior in logs/events
+- create pod with trailing dot in hostAliases alongside bare name (`example.com`, `example.com.`).
+- verify `/etc/hosts` contains single line: `IP\texample.com\texample.com.`.
+- verify FQDN queries (with trailing dot) resolve correctly.
+- verify relative queries (without trailing dot) resolve correctly.
+- verify reverse lookups (`gethostbyaddr`/`getnameinfo`) return canonical `example.com`.
+- test with diverse workload types and runtimes: glibc, musl, pure Go.
 
 ### Graduation Criteria
 
@@ -311,9 +305,11 @@ for i, hostAlias := range pod.Spec.HostAliases {
 
 ### Upgrade / Downgrade Strategy
 
-`ValidateHostAliases` performs `strings.TrimSuffix(hostname, ".")` before DNS validation irrespective of the gate. This means a trailing dot never causes a DNS validation error — it only fails the explicit gate check. When the gate is disabled on update, the per-hostname gate check is skipped entirely, so stored objects with trailing dots remain updatable.
+`ValidateHostAliases` performs `strings.TrimSuffix(hostname, ".")` before DNS validation irrespective of the gate. This means a trailing dot never causes a DNS validation error — it only fails the explicit gate check.
 
-Downgrade safety: if a cluster is downgraded to a release without this change, pods with trailing dots cannot be updated. The risk is limited to pods that explicitly use the feature.
+When the gate is disabled after being previously enabled, `ValidatePodUpdate` compares `pod.Spec.HostAliases` against `oldPod.Spec.HostAliases` so that existing stored objects with trailing dots remain updatable (e.g. for label, annotation, or container status updates).
+
+Downgrade safety: if a cluster is downgraded to a release without this KEP code, pods with trailing dots cannot be updated through the older API server. The risk is limited to pods that explicitly use the feature.
 
 ### Version Skew Strategy
 
@@ -335,7 +331,7 @@ No. Opt-in validation relaxation.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Existing objects with trailing dots remain updatable via automatic ratcheting (the DNS validation always strips the trailing dot).
+Yes. Existing objects with trailing dots remain updatable via field ratcheting against `oldPod.Spec.HostAliases`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -343,7 +339,7 @@ Relaxed validation becomes available again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes — unit and integration tests cover enabling, disabling, and re-enabling.
+Yes — unit and integration tests cover enabling, disabling, and re-enabling, including update ratcheting.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -376,13 +372,11 @@ kubectl get pods -A -o json | jq '.items[] |
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Pod creation succeeds and `/etc/hosts` contains:
-
-**Primary approach:** two separate lines for each FQDN hostname with `IP    example.com.` and `IP    example.com`, with Kubelet logs showing "Generated FQDN entries with separate lines for <namespace>/<pod>"
-
-**Fallback approach:** single line with multiple aliases `IP    example.com.    example.com`, with Kubelet logs showing "Fallback: generated FQDN entries on single line for <namespace>/<pod>" (warning level)
-
-Both approaches ensure FQDN resolution works, but the primary approach provides better compatibility with legacy `/etc/hosts` parsers.
+Pod creation succeeds and `/etc/hosts` contains the specified entries verbatim:
+```
+10.10.10.10    example.com    example.com.
+```
+Forward resolution of both `example.com` and `example.com.` succeeds within the container, and reverse lookup returns `example.com`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -404,7 +398,8 @@ N/A. Validation change within the API server.
 
 - 2026-05-14: Initial KEP draft
 - 2026-05-17: Maintainer feedback on `/etc/hosts` documentation status and use case prevalence
-- 2026-05-18: Major revision with RFC citations, comprehensive resolver analysis, and design update for graceful degradation in `/etc/hosts` generation
+- 2026-05-18: Major revision with RFC citations and comprehensive resolver analysis
+- 2026-10-02: Incorporated test evidence from containerized libc/Go benchmarks (MU5A); refined `/etc/hosts` generation to single-line format with bare-name-first ordering (`IP name name.`) to preserve canonical reverse lookups; removed obsolete fallback path; corrected update ratcheting to compare against `oldPod.Spec.HostAliases`
 
 ## Drawbacks
 
