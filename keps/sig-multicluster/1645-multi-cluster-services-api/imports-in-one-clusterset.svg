@@ -1,0 +1,41 @@
+<svg version="1.1" viewBox="0 0 960 470" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="960" height="470" fill="#ffffff"/>
+
+  <!-- clusterset -->
+  <rect x="40" y="40" width="880" height="390" fill="#eeeeee" stroke="#595959" stroke-width="1"/>
+  <text x="480" y="66" font-family="Arial, sans-serif" font-size="13" fill="#000000" text-anchor="middle">Clusterset</text>
+
+  <!-- two equal circles, slightly offset so both are visible: the same six clusters are in each -->
+  <circle cx="468" cy="245" r="150" fill="#c9daf8" fill-opacity="0.45" stroke="#3c78d8" stroke-width="1.5" stroke-dasharray="6.0,3.0"/>
+  <circle cx="492" cy="245" r="150" fill="#d9ead3" fill-opacity="0.45" stroke="#6aa84f" stroke-width="1.5" stroke-dasharray="6.0,3.0"/>
+  <text x="306" y="249" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#3c78d8" text-anchor="end">exports from A</text>
+  <line x1="310" y1="245" x2="317" y2="245" stroke="#3c78d8" stroke-width="1"/>
+  <text x="654" y="249" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#6aa84f" text-anchor="start">exports from D</text>
+  <line x1="650" y1="245" x2="643" y2="245" stroke="#6aa84f" stroke-width="1"/>
+
+  <!-- export connections: A and D each export to every other cluster -->
+  <line x1="480" y1="157" x2="556" y2="201" stroke="#3c78d8" stroke-width="1"/>
+  <line x1="480" y1="157" x2="556" y2="289" stroke="#3c78d8" stroke-width="1"/>
+  <line x1="480" y1="157" x2="480" y2="245" stroke="#3c78d8" stroke-width="1"/>
+  <line x1="480" y1="157" x2="404" y2="289" stroke="#3c78d8" stroke-width="1"/>
+  <line x1="480" y1="157" x2="404" y2="201" stroke="#3c78d8" stroke-width="1"/>
+  <line x1="480" y1="333" x2="556" y2="201" stroke="#6aa84f" stroke-width="1"/>
+  <line x1="480" y1="333" x2="556" y2="289" stroke="#6aa84f" stroke-width="1"/>
+  <line x1="480" y1="333" x2="480" y2="245" stroke="#6aa84f" stroke-width="1"/>
+  <line x1="480" y1="333" x2="404" y2="289" stroke="#6aa84f" stroke-width="1"/>
+  <line x1="480" y1="333" x2="404" y2="201" stroke="#6aa84f" stroke-width="1"/>
+
+  <!-- clusters -->
+  <rect x="444" y="144" width="72" height="26" rx="4" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="480" y="161.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Cluster A</text>
+  <rect x="520" y="188" width="72" height="26" rx="4" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="556" y="205.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Cluster B</text>
+  <rect x="520" y="276" width="72" height="26" rx="4" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="556" y="293.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Cluster C</text>
+  <rect x="444" y="320" width="72" height="26" rx="4" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="480" y="337.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Cluster D</text>
+  <rect x="368" y="276" width="72" height="26" rx="4" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="404" y="293.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Cluster E</text>
+  <rect x="368" y="188" width="72" height="26" rx="4" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="404" y="205.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Cluster F</text>
+</svg>

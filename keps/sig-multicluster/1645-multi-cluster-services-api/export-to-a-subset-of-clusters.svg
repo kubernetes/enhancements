@@ -1,0 +1,56 @@
+<svg version="1.1" viewBox="0 0 960 585" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#595959"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="960" height="585" fill="#ffffff"/>
+
+  <!-- clusterset -->
+  <rect x="40" y="40" width="880" height="515" fill="#eeeeee" stroke="#595959" stroke-width="1"/>
+  <text x="480" y="66" font-family="Arial, sans-serif" font-size="13" fill="#000000" text-anchor="middle">Clusterset</text>
+
+  <!-- cluster A -->
+  <rect x="80" y="90" width="380" height="130" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="95" y="112" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster A (foo, bar)</text>
+  <rect x="95" y="140" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="150" y="162" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="150" y="180" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+
+  <!-- cluster B -->
+  <rect x="500" y="90" width="380" height="130" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="515" y="112" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster B (foo, bar)</text>
+  <rect x="515" y="140" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="570" y="162" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="570" y="180" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+
+  <!-- cluster C -->
+  <rect x="80" y="310" width="380" height="215" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="95" y="332" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster C (billing)</text>
+  <rect x="220" y="360" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="275" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="275" y="400" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="345" y="360" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="400" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="400" y="400" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="220" y="445" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="275" y="467" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="275" y="485" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="345" y="445" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="400" y="467" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="400" y="485" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+
+  <!-- cluster D -->
+  <rect x="500" y="310" width="380" height="215" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="515" y="332" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster D (billing reports)</text>
+  <rect x="515" y="360" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="570" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="570" y="400" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+
+  <!-- arrows from ServiceImports to ServiceExports -->
+  <line x1="150" y1="198" x2="265" y2="357" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="570" y1="198" x2="310" y2="357" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="512" y1="387.5" x2="458" y2="387.5" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="275" y1="442" x2="275" y2="418" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="400" y1="442" x2="400" y2="418" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+</svg>
