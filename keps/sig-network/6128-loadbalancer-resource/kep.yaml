@@ -1,0 +1,33 @@
+title: LoadBalancer Resource
+kep-number: 6128
+authors:
+  - "@rikatz"
+owning-sig: sig-network
+participating-sigs:
+  - sig-cloud-provider
+status: provisional
+creation-date: 2026-05-29
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-network/4631-loadbalancerstatus"
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+  beta:
+  stable:
+
+feature-gates:
+  - name: LoadBalancerResource
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics:
