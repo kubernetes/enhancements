@@ -1,0 +1,35 @@
+title: PDB Owner-Chain Traversal for Scalable Ancestor
+kep-number: 6358
+authors:
+  - "@ram2valar"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: 2026-09-14
+reviewers:
+  - "@caesarxuchao"
+  - "@0xFelix"
+approvers:
+  - TBD
+
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/139582"
+
+stage: alpha
+
+latest-milestone: "v1.33"
+
+milestone:
+  alpha: "v1.33"
+  beta: "v1.34"
+  stable: "v1.36"
+
+feature-gates:
+  - name: PDBOwnerChainTraversal
+    components:
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - disruption_controller_owner_chain_traversal_depth
