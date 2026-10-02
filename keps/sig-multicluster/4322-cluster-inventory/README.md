@@ -637,10 +637,10 @@ An immutable field set by a cluster manager when this cluster resources
 is created by it. Each cluster manager instance should set a different
 values to this field.
 
-In addition, a predefined label with key "x-k8s.io/cluster-manager" needs
-to be added by the cluster manager upon creation. The value of the label
-MUST be the same as the name of the cluster manager. The purpose of this
-label is to make filter clusters from different cluster managers easier.
+In addition, a cluster manager MAY add the predefined
+`x-k8s.io/cluster-manager` label when creating a ClusterProfile. If present,
+its value MUST equal `spec.clusterManager.name`. This label lets consumers
+filter ClusterProfiles by cluster manager.
 
 ### Status
 
