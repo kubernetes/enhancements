@@ -28,6 +28,7 @@ feature-gates:
   - name: RelaxedHostAliasesValidation
     components:
       - kube-apiserver
+      - kubelet
 disable-supported: true
 
 metrics: []

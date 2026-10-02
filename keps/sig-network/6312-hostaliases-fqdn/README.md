@@ -9,6 +9,7 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [/etc/hosts rendering](#etchosts-rendering)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -61,7 +62,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 `spec.hostAliases[].hostnames` is currently validated as a DNS-1123 subdomain, which
 rejects a trailing dot. This KEP proposes relaxing that validation, behind a feature
 gate, to accept a single trailing dot, so users can express a hostname in FQDN
-notation the same way they already can in a standard Unix hosts file.
+notation the same way they already can in a standard Unix hosts file. The kubelet
+then renders such a hostname into the pod's `/etc/hosts` so that it resolves both
+with and without the trailing dot.
+
+[kubernetes/enhancements#6075](https://github.com/kubernetes/enhancements/pull/6075)
+proposes the same field relaxation. The two proposals overlap, and the differences
+are discussed under [Alternatives](#alternatives).
 
 ## Motivation
 
@@ -78,20 +85,37 @@ the API server, with no workaround: it cannot be baked into the image genericall
 (that breaks portability across environments), and there is no other field that
 accepts a static hosts entry.
 
+Two facts, measured on glibc 2.31, glibc 2.41, musl 1.1.24 and musl 1.2.6
+(scripts and raw output: https://github.com/MU5A/hostaliases-fqdn-evidence), explain
+why this matters in practice:
+
+- **The absolute form avoids a real cost.** With `ndots:5` and the stock three
+  Kubernetes search domains, resolving an external name such as `api.example.com`
+  sends 8 DNS queries (6 of them wasted on search-suffix NXDOMAIN lookups), against 2
+  for `api.example.com.`. With five search domains it is 12 against 2. Applications
+  that care about this use the absolute form.
+- **Today's hostAliases cannot override that form.** Resolvers match `/etc/hosts`
+  names literally. An entry `10.10.10.10 api.example.com` is not returned for a
+  lookup of `api.example.com.`, and an entry for `api.example.com.` is not returned
+  for `api.example.com`. A pod that uses the absolute form therefore cannot be pointed
+  at a different IP (for example a sandbox endpoint in a staging cluster) with
+  `hostAliases`.
+
 - Original report: [kubernetes/kubernetes#135273](https://github.com/kubernetes/kubernetes/issues/135273)
 
 ### Goals
 
 - Allow a single trailing dot on entries in `spec.hostAliases[].hostnames`.
+- Make an alias written with a trailing dot resolve for lookups with and without the
+  trailing dot, without changing the name that reverse lookups return.
 
 ### Non-Goals
 
 - Changing validation for any other hostname-bearing field (Pod `hostname`/`subdomain`,
   Service names, etc.). Those are tracked by their own KEPs if relaxed at all.
 - Changing DNS resolution behavior itself. `hostAliases` only affects the pod's
-  `/etc/hosts` file; it does not touch `resolv.conf` or search-domain configuration,
-  so this is scoped to what string is accepted in that one field, not to how
-  resolution works.
+  `/etc/hosts` file, and only for hostnames that carry a trailing dot; it does not
+  touch `resolv.conf` or search-domain configuration.
 
 ## Proposal
 
@@ -100,6 +124,12 @@ check used for most other Kubernetes name fields, which does not permit a traili
 dot. The proposal is to introduce a feature gate that, when enabled, accepts a
 single trailing dot at the end of a `hostAliases[].hostnames` entry, by stripping it
 before delegating to the existing subdomain validation.
+
+Because resolvers match names literally, a hosts line containing only `name.` would
+answer the absolute lookup but not the relative one. When the gate is enabled, the
+kubelet therefore writes the undotted name followed by the dotted name on the same
+line (`IP name name.`). Both forms resolve, and reverse lookups, which return the
+first name on the line, keep returning the undotted name, as they do today.
 
 ### Risks and Mitigations
 
@@ -111,8 +141,11 @@ before delegating to the existing subdomain validation.
    domains), but the lesson applies directly: correctness has to be verified by
    actually resolving a trailing-dot hostname from inside both a glibc-based and a
    musl-based container, not just by confirming the API server accepts the object and
-   writes the expected line into `/etc/hosts`. This is called out explicitly in the
-   [test plan](#e2e-tests) below.
+   writes the expected line into `/etc/hosts`. The behavior proposed here was
+   measured rather than assumed: dotted tokens parse without rejecting the line,
+   aliases after the dotted token still resolve, and the single-line form resolves
+   both query forms on glibc 2.31, glibc 2.41, musl 1.1.24, musl 1.2.6 and Go's pure
+   resolver. The [e2e test](#e2e-tests) repeats this inside real pods.
 2. **Downstream tooling.** Admission webhooks, policy engines, or client-side
    generators that independently re-validate `hostAliases` entries (e.g. assuming the
    existing DNS-1123 subdomain shape) may reject the new format until updated. This is
@@ -120,6 +153,12 @@ before delegating to the existing subdomain validation.
    [KEP-5311](/keps/sig-network/5311-relaxed-validation-for-service-names) for Service
    names, and mitigated the same way: gated rollout, so nobody is affected until they
    opt in.
+3. **Reverse-lookup output.** `gethostbyaddr` and `getnameinfo` return the first name
+   on the matching line (measured on glibc 2.41 and musl 1.2.6). Writing the dotted
+   name first would make them return a name with a trailing dot, which differs from
+   today's output. Writing the undotted name first avoids that.
+4. **Duplicate addresses in Go.** Go's pure resolver returns the address twice when a
+   line lists both forms. This is cosmetic.
 
 ## Design Details
 
@@ -154,6 +193,31 @@ entirely, regardless of gate state, the same pattern used for Ingress's
 An update that does change `hostAliases` is still validated fresh against
 whatever rules are active at the time of that update.
 
+### /etc/hosts rendering
+
+When the gate is enabled, `hostsEntriesFromHostAliases` in
+`pkg/kubelet/kubelet_pods.go` expands each hostname that ends in a single dot. For a
+hostname `h.` it writes `h` immediately before `h.`, unless `h` is already present in
+the same entry's `hostnames` list. All other hostnames are written unchanged and in
+the order given. When both forms are listed, the user's order is kept.
+
+| `hostnames` in the Pod | Line written to `/etc/hosts` |
+|---|---|
+| `["api.example.com."]` | `10.10.10.10 api.example.com api.example.com.` |
+| `["api.example.com.", "alt"]` | `10.10.10.10 api.example.com api.example.com. alt` |
+| `["api.example.com", "api.example.com."]` | `10.10.10.10 api.example.com api.example.com.` |
+| `["api.example.com."]`, kubelet gate disabled | `10.10.10.10 api.example.com.` |
+
+The rule is a pure function of the hostnames and only changes the output when a
+hostname ends in a dot, so it can be unit tested without a kubelet. It cannot fail:
+the existing generator returns bytes with no error path, and the only failures in
+`ensureHostsFile` are `os.WriteFile` and `Chmod`, which fail identically for any
+content. No fallback path is therefore specified.
+
+The kubelet behavior is controlled by the same `RelaxedHostAliasesValidation` gate,
+so operators can keep the previous verbatim rendering on the kubelet independently of
+the API server.
+
 ### Test Plan
 
 [ ] I/we understand the owners of the involved components may require updates to
@@ -171,6 +235,10 @@ will be updated to cover both the gate-enabled and gate-disabled paths.
 
 - `pkg/apis/core/validation`: coverage to be measured against `main` at KEP
   implementation time.
+
+The `/etc/hosts` rendering in `pkg/kubelet` gets table-driven tests covering the rows
+in the table above, a hostname of `.` (never expanded into an empty token), and the
+gate-disabled verbatim path.
 
 ##### Integration tests
 
@@ -194,17 +262,21 @@ will be updated to cover both the gate-enabled and gate-disabled paths.
 
 **Alpha:**
 
-- Create a Pod with a trailing-dot `hostAliases` entry on both a glibc-based and a
-  musl-based (`alpine`) container image, and confirm the entry actually resolves
-  correctly from inside the container (e.g. via `getent hosts` / `nslookup`), not
-  just that the API server accepted the object. This directly covers the libc risk
-  noted above.
+- Create a Pod with `hostAliases` hostnames `["api.example.test."]` on both a
+  glibc-based and a musl-based (`alpine`) container image. From inside the container,
+  confirm that `getent hosts api.example.test` and `getent hosts api.example.test.`
+  both return the alias IP, and that `getent hosts <alias IP>` returns
+  `api.example.test` without a trailing dot. This checks real resolution, not just
+  that the API server accepted the object, and directly covers the libc risk noted
+  above. The expected results are those of the measurements linked in the
+  Motivation.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind `RelaxedHostAliasesValidation`, disabled by default.
+- Feature implemented behind `RelaxedHostAliasesValidation` in kube-apiserver and
+  kubelet, disabled by default.
 - Initial e2e tests completed and enabled, including the glibc/musl resolution check.
 
 #### Beta
@@ -227,21 +299,22 @@ running unaffected, and, thanks to the update-time ratcheting described in
 [Design Details](#design-details), can still be updated on unrelated fields (e.g.
 labels) without that pre-existing value being re-validated. New pod creation using
 the relaxed format, and any update that actually *changes* `hostAliases`, will fail
-once the gate is disabled, the same downgrade behavior as KEP-5311.
+once the gate is disabled, the same downgrade behavior as KEP-5311. Disabling the gate
+on the kubelet makes it write trailing-dot names verbatim (`IP name.`), which resolves
+absolute lookups but not relative ones; nothing breaks.
 
 ### Version Skew Strategy
 
-kube-apiserver is the only component that validates this field, so a gate flip only
-ever changes what a given apiserver instance accepts. kubelet is nonetheless the
-component that turns an accepted `hostAliases` entry into behavior: it writes the
-raw `IP\thostnames` line into the container's `/etc/hosts`
-(`hostsEntriesFromHostAliases` in `pkg/kubelet/kubelet_pods.go`) without parsing or
-validating the hostname string at all. That means an older kubelet handed a pod
-with a new trailing-dot entry, because a newer, gate-enabled apiserver accepted it,
-writes it through unchanged; there is no kubelet-side validation to skew. Version
-skew is therefore safe in both directions, but "no other component's behavior
-depends on it" undersells kubelet's role, so this section now says so explicitly
-instead.
+Two components are involved: kube-apiserver validates the field and kubelet renders it
+into `/etc/hosts`. kubelet does not validate the hostname string, so there is no
+validation skew.
+
+- **New kube-apiserver, old kubelet:** an accepted trailing-dot name reaches a kubelet
+  that writes it verbatim, producing `IP name.`. Absolute lookups resolve, relative
+  lookups of the same name do not (measured on glibc and musl). Nothing fails, and the
+  pod gets that behavior until the kubelet is upgraded.
+- **Old kube-apiserver, new kubelet:** trailing-dot names are rejected at admission,
+  so the kubelet never renders one and its output is unchanged.
 
 ## Production Readiness Review Questionnaire
 
@@ -251,12 +324,12 @@ instead.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: RelaxedHostAliasesValidation
-  - Components depending on the feature gate: kube-apiserver
+  - Components depending on the feature gate: kube-apiserver, kubelet
 
 ###### Does enabling the feature change any default behavior?
 
-No. This only changes what is accepted by validation; it does not change any
-existing default.
+No. It only affects pods whose `hostAliases` contain a trailing-dot hostname, which
+are rejected when the gate is disabled.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -372,12 +445,15 @@ N/A
 
 - 2026-09-02: KEP created, enhancement tracking issue filed as
   [kubernetes/enhancements#6312](https://github.com/kubernetes/enhancements/issues/6312).
+- 2026-10-02: Design updated to render both name forms into `/etc/hosts`, based on
+  libc and ndots measurements (linked in the Motivation).
 
 ## Drawbacks
 
 Downstream tooling (admission webhooks, policy engines, client-side generators) that
 independently re-validates `hostAliases` entries against the current DNS-1123
-subdomain shape could reject the new trailing-dot format until updated.
+subdomain shape could reject the new trailing-dot format until updated. The kubelet
+also gains a small, gated rendering rule.
 
 ## Alternatives
 
@@ -388,3 +464,15 @@ subdomain shape could reject the new trailing-dot format until updated.
   operates at a different layer (DNS resolution and search domains, not static hosts
   entries) and does not provide an equivalent to a static `/etc/hosts` entry; it also
   requires taking over DNS resolution entirely rather than adding one static entry.
+- **Write only the dotted name (this KEP's original design).** Rejected after
+  measurement: a line containing only `name.` is returned for the absolute lookup but
+  not the relative one, on every libc tested.
+- **Alias only the undotted name (what is possible today).** Does not satisfy absolute
+  lookups, which is the gap this KEP exists to close.
+- **Write one line per form, dotted line first
+  ([#6075](https://github.com/kubernetes/enhancements/pull/6075)).** Resolves both
+  forms, but reverse lookups return the dotted name because it is first on the
+  matching line, and the address is listed twice. A single line with the undotted
+  name first resolves both forms without those effects. #6075 also describes a
+  fallback to a legacy rendering on write errors; the generator has no error path (see
+  [/etc/hosts rendering](#etc-hosts-rendering)), so this KEP specifies none.
