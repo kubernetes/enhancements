@@ -14,6 +14,7 @@
   - [Validation](#validation)
   - [Storage: trailing dot is preserved](#storage-trailing-dot-is-preserved)
     - [/etc/hosts Generation](#etchosts-generation)
+    - [Behavior reference](#behavior-reference)
     - [Discrepancy with <code>man 5 hosts</code>](#discrepancy-with-man-5-hosts)
   - [Interaction with existing HostAliases semantics](#interaction-with-existing-hostaliases-semantics)
   - [Feature gate](#feature-gate)
@@ -172,7 +173,7 @@ The trailing dot is stored verbatim in etcd. The API server does not normalize o
 
 #### /etc/hosts Generation
 
-The kubelet writes hostnames from `HostAliases` directly into `/etc/hosts` on a single line per `HostAlias` entry via `hostsEntriesFromHostAliases`:
+The kubelet is unchanged by this KEP. It writes hostnames from `HostAliases` verbatim, in the order given, on a single line per `HostAlias` entry via `hostsEntriesFromHostAliases`:
 
 ```go
 func hostsEntriesFromHostAliases(hostAliases []v1.HostAlias) []byte {
@@ -203,8 +204,23 @@ the kubelet generates:
 **Rationale for Single-Line Format and Ordering:**
 
 1. **Single-line resolution is universally supported**: Containerized testing across glibc (2.31, 2.41) and musl (1.1.24, 1.2.6) under `--network none` demonstrates that placing `IP name name.` on a single line resolves both `name` and `name.` forward queries correctly on every libc tested.
-2. **Ordering preserves canonical reverse lookups**: Reverse lookups (`gethostbyaddr`/`getnameinfo`) return the **first** hostname listed on the line in `/etc/hosts`. By placing the bare name first (`example.com` followed by `example.com.`), reverse lookups continue returning the canonical bare name without a trailing dot, avoiding breaking changes to existing reverse resolution behavior.
+2. **Ordering preserves canonical reverse lookups**: Reverse lookups (`gethostbyaddr`/`getnameinfo`) return the **first** hostname listed on the line in `/etc/hosts`. By listing the bare name first (`example.com` followed by `example.com.`), reverse lookups continue returning the canonical bare name without a trailing dot, avoiding breaking changes to existing reverse resolution behavior.
 3. **No runtime fallback needed**: In kubelet, `hostsEntriesFromHostAliases` and `managedHostsFileContent` return `[]byte` without an error return path. The only failures in `ensureHostsFile` are filesystem write or permissions errors (`os.WriteFile`, `Chmod`), which fail identically regardless of content formatting. There is no condition where a multi-line format would fail and a fallback would succeed, so no separate fallback path is required.
+
+#### Behavior reference
+
+Because the kubelet writes hostnames verbatim, which lookups resolve is decided by what the user lists. To make an alias resolve both with and without the trailing dot, list both names, bare name first.
+
+Measured on glibc 2.31 and 2.41 and musl 1.1.24 and 1.2.6 for forward lookups, and on glibc 2.41 and musl 1.2.6 for reverse lookups. Forward lookups were also measured from Node.js 22 (`dns.lookup`) and OpenJDK 21 (`InetAddress`) on glibc and musl, with identical results (scripts and raw output: https://github.com/MU5A/hostaliases-fqdn-evidence):
+
+| `hostnames` in the Pod | Line in `/etc/hosts` | Lookup `name` | Lookup `name.` | Reverse lookup returns |
+|---|---|---|---|---|
+| `["name"]` (today) | `IP name` | resolves | does not resolve | `name` |
+| `["name."]` | `IP name.` | does not resolve | resolves | `name.` |
+| `["name", "name."]` | `IP name name.` | resolves | resolves | `name` |
+| `["name.", "name"]` | `IP name. name` | resolves | resolves | `name.` |
+
+The second row is the case this KEP newly allows: it satisfies absolute lookups only. Listing both names, bare name first (third row), satisfies both forms without changing the name that reverse lookups return.
 
 #### Discrepancy with `man 5 hosts`
 
@@ -399,7 +415,7 @@ N/A. Validation change within the API server.
 - 2026-05-14: Initial KEP draft
 - 2026-05-17: Maintainer feedback on `/etc/hosts` documentation status and use case prevalence
 - 2026-05-18: Major revision with RFC citations and comprehensive resolver analysis
-- 2026-10-02: Incorporated test evidence from containerized libc/Go benchmarks (MU5A); refined `/etc/hosts` generation to single-line format with bare-name-first ordering (`IP name name.`) to preserve canonical reverse lookups; removed obsolete fallback path; corrected update ratcheting to compare against `oldPod.Spec.HostAliases`
+- 2026-10-02: Incorporated test evidence from containerized libc/Go benchmarks (MU5A); documented single-line, bare-name-first ordering (`IP name name.`) for entries that list both forms, to preserve canonical reverse lookups (the kubelet is unchanged); removed obsolete fallback path; corrected update ratcheting to compare against `oldPod.Spec.HostAliases`
 
 ## Drawbacks
 
