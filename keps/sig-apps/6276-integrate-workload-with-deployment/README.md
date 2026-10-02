@@ -150,7 +150,9 @@ The key design principles:
   When `spec.scheduling` is omitted, no scheduling objects are created.
 - Gang `minCount` defaults to `spec.replicas` when unset. Users may set `minCount` explicitly,
   but validation rejects values exceeding `replicas`.
-- All `spec.scheduling` fields are immutable after creation.
+- All `spec.scheduling` fields are immutable after creation except `gang.minCount`,
+  which is mutable to support scaling. Setting or unsetting `minCount` is allowed.
+  An unset value auto-tracks `replicas`, while an explicit value acts as a fixed floor.
 - Deployments own the `Workload` for its lifecycle, and ReplicaSets own individual `PodGroups`
   for revision-specific scheduling. Each PodGroup also carries a non-controller ownerReference to
   the Workload for lifecycle management, matching the Job pattern ([KEP-5547]). Supported by
@@ -360,10 +362,11 @@ reports unavailable replicas through its standard status conditions.
   remain Pending.
 - Topology binding is permanent per PodGroup. A replacement pod stuck on a full domain will not
   automatically reschedule to a different domain.
-- At `replicas=0`, the Deployment-owned Workload is retained. If the user set `minCount`
-  explicitly, that value is preserved. Otherwise the controller defaults to `minCount=1`.
-  The ReplicaSet-owned PodGroup is deleted at zero replicas and recreated when the
-  Deployment scales positive again.
+- At `replicas=0`, the `minCount ≤ replicas` validation is skipped because no active PodGroup
+  exists. The Deployment-owned Workload is retained with the user's explicit `minCount` preserved
+  for scale-up, or `minCount=1` when unset. The ReplicaSet-owned PodGroup is deleted at zero
+  replicas and recreated when the Deployment scales positive again. Scaling to any positive value
+  below `minCount` is rejected.
 - Workload and PodGroup informers and listers are used by the Deployment and ReplicaSet
   controllers to reconcile scheduling objects.
 - PodDisruptionBudgets are independent of `spec.scheduling`. `Recreate` rollouts and
@@ -521,7 +524,9 @@ For each scheduling-enabled ReplicaSet revision:
 
 5. **PodGroup creation.** Before creating pods, the ReplicaSet controller calls
    `ensurePodGroupForReplicaSet` (get-or-create) to instantiate the ReplicaSet-owned PodGroup
-   from the Workload's sole PodGroupTemplate. The resulting `gang.minCount` is inherited from
+   from the Workload's sole PodGroupTemplate. If a PodGroup with the deterministic name
+   already exists and is not controlled by this ReplicaSet, the controller does not adopt
+   or wire Pods to it and returns an error. The resulting `gang.minCount` is inherited from
    the Workload template and does not necessarily match the ReplicaSet's desired replica count.
 
 6. **Scale-to-zero cleanup.** When the ReplicaSet has zero desired replicas,
@@ -569,8 +574,10 @@ need HPA-driven scaling could leave `minCount` unset (`gang: {}`) so it auto-tra
    the immutability. Because the Deployment API embeds the versioned
    `scheduling.k8s.io/v1alpha3` building blocks directly, their DV markers apply unchanged.
 2. **Hand-written Deployment validation** covers the cross-cutting rules DV cannot express:
-   - **`gang.minCount` must not exceed `replicas`.** If the user sets `minCount` and it exceeds
-     the current replica count, the request is rejected.
+   - **`gang.minCount` must not exceed `replicas` (when replicas > 0).** If the user sets
+     `minCount` and `replicas` is positive but less than `minCount`, the request is rejected.
+     At `replicas=0` the check is skipped because no PodGroup exists and the retained
+     `minCount` has no runtime effect.
    - **`RollingUpdate` with gang is rejected.** Gang scheduling requires `Recreate` strategy
      for Alpha.
    - **`spec.scheduling` with a pre-existing `schedulingGroup` is rejected.** If the pod template
