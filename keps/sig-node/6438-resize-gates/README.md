@@ -732,6 +732,8 @@ controllers.
   SIG Scheduling participants.
 - 2026-09: Presented at the SIG Scheduling meeting.
 - 2026-09-28: Tracking issue [kubernetes/enhancements#6438](https://github.com/kubernetes/enhancements/issues/6438) opened; KEP opened as provisional.
+- 2026-10-06: KEP PR [kubernetes/enhancements#6459](https://github.com/kubernetes/enhancements/pull/6459)
+  opened; status set to implementable, with @kannon92 as PRR approver for alpha.
 
 ## Drawbacks
 
