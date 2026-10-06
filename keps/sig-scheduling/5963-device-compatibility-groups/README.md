@@ -168,7 +168,7 @@ scheduling cycle that involves DRA devices.
 **Gate-disabled schedulers ignoring devices with compatibilityGroups**
 
 At alpha, if the `DRADeviceCompatibilityGroups` feature-gate is disabled, 
-devices which present the `compatibilityGroups` field will be ignored by `kube-scheduler`.
+slices that contain devices which present the `compatibilityGroups` field are ignored, which leaves their pool incomplete, so none of the pool's devices are allocated.
 This is in order to allow enablement of the feature without user intervention (pod deletion) 
 when graduating to beta. 
 
@@ -765,9 +765,9 @@ Resource drivers are responsible for:
    requirements.
 2. Detecting the `DRADeviceCompatibilityGroups` feature gate status and,
    when the gate is disabled, omitting `compatibilityGroups` from
-   `ResourceSlice` entries. Devices declaring the field on
-   a gate-off cluster will be skipped by the scheduler and remain
-   unschedulable until either the gate is enabled or the field is removed.
+   `ResourceSlice` entries. Slices that contain such devices are ignored by a gate-off
+   scheduler, which leaves their pool incomplete, so none of the pool's devices are
+   allocated until the gate is enabled or the field is removed.
 3. Continuing to validate allocations at resource preparation time for
    version-skew safety and to detect incorrect allocations made by a
    scheduler that does not (or no longer) enforces compatibility.
@@ -780,7 +780,7 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-None. The DRA scheduler plugin, `ResourceSlice` and `ResourceClaim` validation already have
+None. The DRA scheduler plugin and `ResourceSlice` validation already have
 unit and integration coverage; new tests are additive.
 
 ##### Unit tests
@@ -845,10 +845,13 @@ will measure the scheduling-throughput impact of the compatibility check.
 Upon upgrading, no `ResourceSlice` leverages the new optional field 
 yet because DRA drivers should be updated after the cluster upgrade 
 is complete, so the current behavior remains as-is.
-In the unlikely case of a DRA driver trying to use the feature while 
-it's still being rolled out (enabled in apiserver, disabled in scheduler), 
-the scheduler >= 1.37 will ignore the devices instead of doing incorrect
-allocations. They will get used as soon as the feature gets enabled also in the scheduler.
+In the unlikely case of a DRA driver using the feature while the upgrade is
+still rolling out (enabled in the apiserver, disabled in the scheduler), a
+scheduler >= 1.37 ignores every `ResourceSlice` in which a device declares
+`compatibilityGroups`, instead of making allocations it cannot validate. Each
+such pool is then incomplete, so none of its devices are allocated, including
+devices without groups. The pools become usable as soon as the feature is
+enabled in the scheduler as well; no pods need to be deleted.
 
 #### Downgrade
 
@@ -861,8 +864,9 @@ devices that declare `compatibilityGroups`. This makes their pools incomplete,
 so no devices from those pools are allocated until the downgraded DRA driver
 republishes them without `compatibilityGroups`.
 
-Allocated devices that leveraged this new field will remain allocated, and future
-allocations will not take `compatibilityGroups` into consideration.
+Existing allocations are never invalidated by a downgrade: devices allocated
+while the feature was enforced stay allocated, and the DRA driver keeps
+validating at preparation time.
 
 ### Version Skew Strategy
 
@@ -875,37 +879,42 @@ for every combination on a single cluster.
 
 | kube-apiserver ↓ \ kube-scheduler → | old | new, gate off | new, gate on |
 |---|---|---|---|
-| **old**           | Pre-KEP      | Pre-KEP          | Pre-KEP          |
-| **new, gate off** | Pre-KEP      | Pre-KEP          | Pre-KEP          |
-| **new, gate on**  | Driver-only  | Devices skipped  | **Full feature** |
+| **old**                                 | Pre-KEP     | Pre-KEP       | Pre-KEP          |
+| **new, gate off**, slice has no groups  | Pre-KEP     | Pre-KEP       | Pre-KEP          |
+| **new, gate off**, slice kept groups¹   | Driver-only | Pools skipped | **Full feature** |
+| **new, gate on**                        | Driver-only | Pools skipped | **Full feature** |
+
+¹ A gate-off apiserver strips `compatibilityGroups` from new slices and from
+updates of slices that did not carry it, but keeps it on slices that already
+did. After a rollback, a pool stays in this row until the driver republishes
+its slices without the field.
 
 - **Pre-KEP.** The apiserver does not serve the `compatibilityGroups` field
-  on `ResourceSlice`s (it
-  either doesn't know it, or has the gate off, in which case it
-  strips on writes). The scheduler sees no
-  constraints and allocates as before this KEP. Drivers reject
-  incompatible allocations at preparation time.
-- **Driver-only.** The apiserver persists and serves
-  the `compatibilityGroups` field, but an old scheduler doesn't recognise it
-  and allocates without considering it. Pods may be scheduled
-  with incompatible devices; the DRA driver rejects them at preparation
-  time.
-- **Devices skipped.** The apiserver serves the `compatibilityGroups` field, and
-  a new scheduler with the gate off recognises it but is not
-  permitted to enforce it. To avoid allocations it cannot validate, the
-  scheduler ignores `ResourceSlice`s with devices that declare
-  `compatibilityGroups`. Their pools are then treated as incomplete, so no
-  devices from those pools are allocated. Pools without such devices are
-  scheduled normally.
-- **Full feature.** The scheduler filters incompatible candidates
-  during allocation. Drivers continue to validate at preparation time
-  for defense in depth.
+  on `ResourceSlice`s: it does not know the field, or has the gate off and
+  strips it from new slices and from updates of slices that did not already
+  carry it. The scheduler sees no constraints and allocates as before this
+  KEP. Drivers reject incompatible allocations at preparation time.
+- **Driver-only.** The apiserver serves the `compatibilityGroups` field, but
+  an old scheduler does not know it and allocates without considering it.
+  Pods may be scheduled with incompatible devices; the DRA driver rejects
+  them at preparation time.
+- **Pools skipped.** The apiserver serves the `compatibilityGroups` field,
+  and a new scheduler with the gate off recognises it but is not permitted
+  to enforce it. To avoid allocations it cannot validate, the scheduler
+  ignores every `ResourceSlice` in which a device declares
+  `compatibilityGroups`. Each such pool is then incomplete, so none of its
+  devices are allocated, including devices without groups. Pools without
+  such slices are scheduled normally.
+- **Full feature.** The scheduler filters incompatible candidates during
+  allocation. Drivers continue to validate at preparation time for defense
+  in depth.
 
-**Downgrade with in-flight allocations.** Devices already allocated
-under the new rules remain allocated across a downgrade; the
-post-downgrade scheduler will not consider `compatibilityGroups` for
-future allocations, reverting to pre-KEP behavior. No existing
-allocations are invalidated.
+**Downgrade with in-flight allocations.** Devices already allocated under
+the new rules remain allocated across a downgrade and are never invalidated.
+What happens to new allocations depends on the target version, see
+[Downgrade](#downgrade): before 1.37 the scheduler allocates as before this
+KEP; 1.37 with the gate off stops allocating from pools whose slices still
+declare `compatibilityGroups` until the driver republishes them.
 
 ## Production Readiness Review Questionnaire
 
@@ -930,7 +939,7 @@ No, this KEP proposes an additional optional field to the `ResourceSlice` API
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, rolling back the enablement will revert the cluster to its pre-enablement behavior
+Yes. Existing allocations are unaffected. Pools whose ResourceSlices still declare compatibilityGroups are not allocatable by the gate-off scheduler until the driver republishes them without the field.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -971,8 +980,8 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-This feature is not intended for use by workloads, it is intended for DRA Drivers.
-Workloads use it indirectly when they allocate devices which use the feature, which is visible in the allocation result.
+Operators can check whether any ResourceSlice declares `compatibilityGroups`, for
+example by listing slices and filtering on `spec.devices[].consumesCounters[].compatibilityGroups`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
