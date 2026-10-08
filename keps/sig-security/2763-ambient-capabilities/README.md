@@ -349,13 +349,6 @@ and make progress.
 
 ### User Stories (Optional)
 
-<<[UNRESOLVED] How much demand is there for this feature outside of NET_BIND_SERVICE>>
-
-_Blocking for Alpha._
-
-Is there enough demand for this feature today?
-
-<<[/UNRESOLVED]>>
 This might be useful for those who do their own kubernetes installation, and put CNI plugins in the pod, which is a very common practice nowadays. A rarer practice is to load BPF also for networking or security tracking (CAP_BPF is available since linux kernel version 5.8), [for example KubeArmor loads BPF for security purpose (<a href="https://github.com/kubearmor/KubeArmor">https://github.com/kubearmor/KubeArmor</a>)]. There are cases where system components are deployed in Pod which even load a kernel modules. CAP_PTRACE could be used for debugging purpose and CAP_AUDIT could be used by intrusion detection systems.
 
 #### Story 1
@@ -380,26 +373,9 @@ One risk of adding this feature is that it could be used to give non-root users 
 
 ### Changes to kubernetes API (https://pkg.go.dev/k8s.io/api/core/v1)
 
-<<[UNRESOLVED pick how we want to update the K8S APIs]>>
-
 _Blocking for Alpha._
 
-There are 2 options here:-
-- **Option 1:** Reuse Add field in [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
-
-  When a capability gets added explicitly to a non-root container it also gets added to the ambient set in addition to getting added to inheritable, permitted, bounding and effective sets. The default capabilities are not added to the ambient set.
-
-  **Pros and Cons**
-
-  :+1: Simple add and drop API is easy to use from a user perspective.
-
-  :+1: No new field needs to added to the K8S API Capabilities object.
-
-  :-1: How would we tell the difference at API validation time? I assume we'd have to look at mustRunAsNonRoot, because the apiserver has no idea whether a textual runAsUser is root or not. mustRunAsNonRoot it designed to fail at the last minute, in the Kubelet, which is bad UX. This makes this approach very awkward. Different behavior for root vs non-root might be confusing for users.
-
-  :-1: Since we are changing the default behavior for non-root containers we might break existing user containers. Issues with linux capabilities have proven themselves to be very hard to debug in the past.
-
-- **Option 2:** Add new field to [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
+- Add new field to [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
 
   When a capability is added using this field only then does it get added to the ambient set in addition to inheritable, permitted, bounding and effective sets. The behavior is consistent for root and non-root containers.
 
@@ -426,8 +402,6 @@ There are 2 options here:-
   :+1: Ambient caps are useful for root containers as well. A root process can control what caps it gives to child processes that are running as non-root. The capabilities list list for these non-root processes may not be the same as the root caps in Add.
 
   :-1: Requires changes to the K8S API Capabilities object.
-
-<<[/UNRESOLVED]>>
 
 `Ambient` capabilities will adhere to the following rules:
 
