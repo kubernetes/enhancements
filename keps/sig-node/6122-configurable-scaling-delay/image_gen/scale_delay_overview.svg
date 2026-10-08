@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1443" height="1097" viewBox="0 0 1443 1097">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<rect x="207.0" y="10.0" width="798.0" height="89.0" fill="none" stroke="#333333" stroke-width="1.2"/>
+<text x="606.0" y="25.0" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#222222">kubelet</text>
+<rect x="207.0" y="33.0" width="321.3" height="66.0" fill="none" stroke="#333333" stroke-width="1.2"/>
+<text x="367.7" y="48.0" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="bold" fill="#222222">CPU manager</text>
+<line x1="30.0" y1="92.0" x2="30.0" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<line x1="146.6" y1="92.0" x2="146.6" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<line x1="270.0" y1="92.0" x2="270.0" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<line x1="458.4" y1="92.0" x2="458.4" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<line x1="703.4" y1="92.0" x2="703.4" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<line x1="828.5" y1="92.0" x2="828.5" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<line x1="954.6" y1="92.0" x2="954.6" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<line x1="1076.7" y1="92.0" x2="1076.7" y2="1089.0" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="5 4"/>
+<circle cx="30.0" cy="66.0" r="6" fill="none" stroke="#333333" stroke-width="1.2"/>
+<path d="M 30.0 72.0 v 12 M 22.0 76.0 h 16 M 30.0 84.0 l -7 9 M 30.0 84.0 l 7 9" fill="none" stroke="#333333" stroke-width="1.2"/>
+<text x="30.0" y="102.0" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">Actor</text>
+<rect x="100.3" y="62.0" width="92.8" height="30" rx="2" fill="#f4f4f8" stroke="#333333" stroke-width="1.2"/>
+<text x="146.6" y="81.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">API Server</text>
+<rect x="219.0" y="62.0" width="101.9" height="30" rx="2" fill="#f4f4f8" stroke="#333333" stroke-width="1.2"/>
+<text x="270.0" y="81.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">CPU Allocate</text>
+<rect x="400.5" y="62.0" width="115.9" height="30" rx="2" fill="#f4f4f8" stroke="#333333" stroke-width="1.2"/>
+<text x="458.4" y="81.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">Reconcile Loop</text>
+<rect x="640.2" y="62.0" width="126.2" height="30" rx="2" fill="#f4f4f8" stroke="#333333" stroke-width="1.2"/>
+<text x="703.4" y="81.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">Volume Manager</text>
+<rect x="792.5" y="62.0" width="72.0" height="30" rx="2" fill="#f4f4f8" stroke="#333333" stroke-width="1.2"/>
+<text x="828.5" y="81.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">PLEG</text>
+<rect x="916.1" y="62.0" width="76.9" height="30" rx="2" fill="#f4f4f8" stroke="#333333" stroke-width="1.2"/>
+<text x="954.6" y="81.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">SyncPod</text>
+<rect x="1039.7" y="62.0" width="73.9" height="30" rx="2" fill="#f4f4f8" stroke="#333333" stroke-width="1.2"/>
+<text x="1076.7" y="81.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">Runtime</text>
+<rect x="1200.2" y="403.0" width="219.3" height="470.0" rx="2" fill="#ffffff" stroke="#333333" stroke-width="1.2"/>
+<text x="1309.8" y="423.0" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#222222">Container</text>
+<rect x="1216.2" y="435.0" width="187.3" height="42.0" fill="#ffffff" stroke="#1a6fb5" stroke-width="1.1"/>
+<text x="1309.8" y="452.0" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#1a6fb5">downward API file</text>
+<text x="1309.8" y="467.0" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#1a6fb5">/etc/podinfo/assigned_cpuset</text>
+<rect x="141.1" y="139.0" width="11.0" height="56.0" fill="#ffffff" stroke="#333333" stroke-width="1.1"/>
+<rect x="264.5" y="179.0" width="11.0" height="380.0" fill="#ffffff" stroke="#333333" stroke-width="1.1"/>
+<rect x="823.0" y="92.0" width="11.0" height="997.0" fill="#ffffff" stroke="#333333" stroke-width="1.1"/>
+<rect x="452.9" y="92.0" width="11.0" height="997.0" fill="#ffffff" stroke="#333333" stroke-width="1.1"/>
+<rect x="1071.2" y="92.0" width="11.0" height="997.0" fill="#ffffff" stroke="#333333" stroke-width="1.1"/>
+<rect x="949.1" y="92.0" width="11.0" height="997.0" fill="#ffffff" stroke="#333333" stroke-width="1.1"/>
+<rect x="697.9" y="92.0" width="11.0" height="997.0" fill="#ffffff" stroke="#333333" stroke-width="1.1"/>
+<text xml:space="preserve" x="38.0" y="126.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>Scale down</tspan></text>
+<text xml:space="preserve" x="38.0" y="141.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>patch command</tspan></text>
+<line x1="30.0" y1="147.0" x2="141.1" y2="147.0" stroke="#222222" stroke-width="1.2"/>
+<path d="M 141.1 147.0 l -9 -4 l 0 8 z" fill="#222222"/>
+<text xml:space="preserve" x="154.6" y="181.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>Scale down</tspan></text>
+<line x1="152.1" y1="187.0" x2="264.5" y2="187.0" stroke="#222222" stroke-width="1.2"/>
+<path d="M 264.5 187.0 l -9 -4 l 0 8 z" fill="#222222"/>
+<rect x="163.9" y="211.0" width="212.1" height="123.0" fill="#fdfbe4" stroke="#b9b48a" stroke-width="1"/>
+<text xml:space="preserve" x="175.9" y="231.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>1. Allocate the new CPUSet</tspan></text>
+<text xml:space="preserve" x="175.9" y="246.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    into </tspan><tspan font-weight="bold" fill="#14489c">preAssignments</tspan></text>
+<text xml:space="preserve" x="175.9" y="261.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>2. Arm </tspan><tspan font-weight="bold" fill="#14489c">scale_delay_timer</tspan><tspan> for</tspan></text>
+<text xml:space="preserve" x="175.9" y="276.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    </tspan><tspan font-weight="bold" fill="#14489c">scaleDownGracePeriodSeconds</tspan></text>
+<text xml:space="preserve" x="175.9" y="291.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>3. Record preAssignments, the</tspan></text>
+<text xml:space="preserve" x="175.9" y="306.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    deadline and the boot ID</tspan></text>
+<text xml:space="preserve" x="175.9" y="321.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    in the </tspan><tspan font-weight="bold" fill="#14489c">checkpoint</tspan></text>
+<rect x="250.0" y="356.0" width="550.2" height="112.0" fill="#1a6fb5" fill-opacity="0.05" stroke="#1a6fb5" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 250.0 356.0 h 34.4 l 0 11 l -6 6 h -28.4 z" fill="#ffffff" stroke="#1a6fb5" stroke-width="1"/>
+<text x="259.0" y="368.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" font-weight="bold" fill="#1a6fb5">opt</text>
+<text x="294.4" y="368.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" fill="#1a6fb5">[scope of KEP-6369: expose the new cpuset to the container]</text>
+<text xml:space="preserve" x="278.0" y="395.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#1a6fb5"><tspan>Get cpuset</tspan></text>
+<text xml:space="preserve" x="278.0" y="410.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#1a6fb5"><tspan>(preAssignments)</tspan></text>
+<line x1="275.5" y1="416.0" x2="697.9" y2="416.0" stroke="#1a6fb5" stroke-width="1.2"/>
+<path d="M 697.9 416.0 l -9 -4 l 0 8 z" fill="#1a6fb5"/>
+<text xml:space="preserve" x="711.4" y="450.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#1a6fb5"><tspan>write cpuset</tspan></text>
+<line x1="708.9" y1="456.0" x2="1200.2" y2="456.0" stroke="#1a6fb5" stroke-width="1.2"/>
+<path d="M 1200.2 456.0 l -9 -4 l 0 8 z" fill="#1a6fb5"/>
+<rect x="299.6" y="492.0" width="387.8" height="201.0" fill="none" fill-opacity="0.05" stroke="#555555" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 299.6 492.0 h 40.9 l 0 11 l -6 6 h -34.9 z" fill="#ffffff" stroke="#555555" stroke-width="1"/>
+<text x="308.6" y="504.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" font-weight="bold" fill="#555555">loop</text>
+<text x="350.5" y="504.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" fill="#555555">[for each container with a scale_delay_timer]</text>
+<rect x="311.6" y="523.0" width="363.8" height="160.0" fill="none" fill-opacity="0.05" stroke="#555555" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 311.6 523.0 h 31.6 l 0 11 l -6 6 h -25.6 z" fill="#ffffff" stroke="#555555" stroke-width="1"/>
+<text x="320.6" y="535.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" font-weight="bold" fill="#555555">alt</text>
+<text x="353.2" y="535.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" fill="#555555">[scale_delay_timer exceeds the grace period]</text>
+<rect x="372.0" y="552.0" width="172.7" height="123.0" fill="#fdfbe4" stroke="#b9b48a" stroke-width="1"/>
+<text xml:space="preserve" x="384.0" y="572.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>1. Release removed_CPUs</tspan></text>
+<text xml:space="preserve" x="384.0" y="587.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    to </tspan><tspan font-weight="bold" fill="#14489c">defaultCPUSet</tspan></text>
+<text xml:space="preserve" x="384.0" y="602.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>2. Set </tspan><tspan font-weight="bold" fill="#14489c">assignments</tspan><tspan> from</tspan></text>
+<text xml:space="preserve" x="384.0" y="617.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    preAssignments</tspan></text>
+<text xml:space="preserve" x="384.0" y="632.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>3. Update the </tspan><tspan font-weight="bold" fill="#14489c">checkpoint</tspan></text>
+<text xml:space="preserve" x="384.0" y="647.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>4. Clear </tspan><tspan font-weight="bold" fill="#14489c">scale_delay_timer</tspan></text>
+<text xml:space="preserve" x="384.0" y="662.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    and the pending entry</tspan></text>
+<rect x="299.6" y="717.0" width="387.8" height="184.0" fill="none" fill-opacity="0.05" stroke="#555555" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 299.6 717.0 h 40.9 l 0 11 l -6 6 h -34.9 z" fill="#ffffff" stroke="#555555" stroke-width="1"/>
+<text x="308.6" y="729.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" font-weight="bold" fill="#555555">loop</text>
+<text x="350.5" y="729.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" fill="#555555">[for each container]</text>
+<rect x="311.6" y="748.0" width="363.8" height="143.0" fill="none" fill-opacity="0.05" stroke="#555555" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 311.6 748.0 h 31.6 l 0 11 l -6 6 h -25.6 z" fill="#ffffff" stroke="#555555" stroke-width="1"/>
+<text x="320.6" y="760.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" font-weight="bold" fill="#555555">alt</text>
+<text x="353.2" y="760.0" font-family="Helvetica, Arial, sans-serif" font-size="11.0" fill="#555555">[assignments differ from the last applied ones]</text>
+<text xml:space="preserve" x="466.4" y="787.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>updateContainerCPUSet</tspan></text>
+<line x1="463.9" y1="793.0" x2="1071.2" y2="793.0" stroke="#222222" stroke-width="1.2"/>
+<path d="M 1071.2 793.0 l -9 -4 l 0 8 z" fill="#222222"/>
+<text xml:space="preserve" x="1084.7" y="827.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>apply cpuset</tspan></text>
+<line x1="1082.2" y1="833.0" x2="1200.2" y2="833.0" stroke="#222222" stroke-width="1.2"/>
+<path d="M 1200.2 833.0 l -9 -4 l 0 8 z" fill="#222222"/>
+<rect x="389.9" y="859.0" width="136.9" height="26" fill="#ffffff" stroke="#333333" stroke-width="1.2"/>
+<text x="458.4" y="876.0" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222">Trigger PLEG event</text>
+<text xml:space="preserve" x="534.8" y="866.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>SetPodWatchCondition</tspan></text>
+<line x1="526.8" y1="872.0" x2="823.0" y2="872.0" stroke="#222222" stroke-width="1.2"/>
+<path d="M 823.0 872.0 l -9 -4 l 0 8 z" fill="#222222"/>
+<text xml:space="preserve" x="836.5" y="933.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>SyncLoop (PLEG)</tspan></text>
+<line x1="834.0" y1="939.0" x2="949.1" y2="939.0" stroke="#222222" stroke-width="1.2"/>
+<path d="M 949.1 939.0 l -9 -4 l 0 8 z" fill="#222222"/>
+<rect x="848.4" y="963.0" width="212.3" height="108.0" fill="#fdfbe4" stroke="#b9b48a" stroke-width="1"/>
+<text xml:space="preserve" x="860.4" y="983.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>If </tspan><tspan font-weight="bold" fill="#14489c">assignments</tspan><tspan> equals lastCPUSet</tspan></text>
+<text xml:space="preserve" x="860.4" y="998.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>and no </tspan><tspan font-weight="bold" fill="#14489c">scale_delay_timer</tspan><tspan> is active</tspan></text>
+<text xml:space="preserve" x="860.4" y="1013.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>1. Clear the Pod Resize</tspan></text>
+<text xml:space="preserve" x="860.4" y="1028.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    InProgress status</tspan></text>
+<text xml:space="preserve" x="860.4" y="1043.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>2. Update container</tspan></text>
+<text xml:space="preserve" x="860.4" y="1058.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="#222222"><tspan>    actual resources</tspan></text>
+</svg>
