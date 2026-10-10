@@ -1,0 +1,38 @@
+title: Graduate custom.metrics.k8s.io to Stable
+kep-number: 5270
+authors:
+  - "@rexagod"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-instrumentation
+status: implementable
+creation-date: "2025-05-02"
+reviewers:
+  - "@dgrisonnet"
+approvers:
+  - "@dgrisonnet"
+
+see-also:
+  - "https://github.com/kubernetes/metrics/tree/master/pkg/apis/custom_metrics"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.34"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha:  "v1.16"   # No alpha graduation KEP exists
+  beta:   "v1.16"   # No beta graduation KEP exists
+  stable: "v1.35"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:  # Not gated since the (beta) custom.metrics.k8s.io has been in
+                # production for a good while now.
+disable-supported: false
