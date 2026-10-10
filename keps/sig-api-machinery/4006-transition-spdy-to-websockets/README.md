@@ -700,31 +700,49 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 The existing `kubectl exec`, `cp`, `attach`, and `port-forward` e2e tests exercise
 the WebSocket code path by default, since both the `kubectl` environment variables
 and the API Server feature gates have been enabled by default since v1.30/v1.31.
-In addition, the following tests target the WebSocket path explicitly:
+They do not, however, prove that the KEP's protocols are in use: `kubectl` falls
+back to SPDY when a WebSocket upgrade is refused, and the raw-WebSocket
+port-forward tests in `test/e2e/kubectl/portforward.go` negotiate the legacy
+`v4.channel.k8s.io` channel protocol rather than the tunnel this KEP added.
 
-- `RemoteCommand` (`exec`/`attach`) over WebSockets with fallback to SPDY:
-  [`test/e2e/kubectl/kubectl.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/kubectl.go)
-  - `[sig-cli] Kubectl client Simple pod should support inline execution and attach with websockets or fallback to spdy`
-  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20support%20inline%20execution%20and%20attach%20with%20websockets)
-- `PortForward` over WebSockets:
-  [`test/e2e/kubectl/portforward.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/portforward.go)
-  - `[sig-cli] Kubectl Port forwarding With a server listening on 0.0.0.0 should support forwarding over websockets`
-  - `[sig-cli] Kubectl Port forwarding With a server listening on localhost should support forwarding over websockets`
-  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20support%20forwarding%20over%20websockets)
-- Existing WebSocket conformance tests which cover the API Server `pods/exec`
-  and `pods/log` endpoints from a raw WebSocket client:
-  [`test/e2e/common/node/pods.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/pods.go)
-  - `[sig-node] Pods should support remote command execution over websockets [NodeConformance] [Conformance]`
-  - `[sig-node] Pods should support retrieving logs from the container over websockets [NodeConformance] [Conformance]`
-  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=over%20websockets)
+The following tests exercise the KEP's protocols directly, with no SPDY fallback,
+so a cluster that does not serve them fails
+([`test/e2e/apimachinery/websocket_streaming.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apimachinery/websocket_streaming.go),
+added in [kubernetes/kubernetes#142898](https://github.com/kubernetes/kubernetes/pull/142898)):
 
-For GA, the three `[sig-cli]` WebSocket tests above are promoted to conformance,
-so that the `pods/exec`, `pods/attach`, and `pods/portforward` endpoints are all
-exercised over the WebSocket subprotocols (`v5.channel.k8s.io` and
-`v2.portforward.k8s.io`) by conformance. Because these tests pass through the
-API Server to the Kubelet, they also exercise the `ExtendWebSocketsToKubelet`
-path when the target node advertises the feature, and the API Server
-translation/tunneling path when it does not.
+- `RemoteCommand` over `v5.channel.k8s.io`, using the client-go WebSocket
+  executor restricted to v5:
+  - `[sig-api-machinery] WebSocket streaming should exec over the WebSocket v5.channel.k8s.io subprotocol with stdin close and exit code`
+    (the command only returns once the client's `CLOSE` signal ends its stdin,
+    and the exit code arrives on the status channel)
+  - `[sig-api-machinery] WebSocket streaming should attach over the WebSocket v5.channel.k8s.io subprotocol`
+- `PortForward` over the SPDY-over-WebSocket tunnel (subprotocol
+  `SPDY/3.1+portforward.k8s.io`, the wire name of the `v2.portforward.k8s.io`
+  proposal above), using the client-go tunneling dialer and driving the
+  port-forward streams directly:
+  - `[sig-api-machinery] WebSocket streaming port forwarding over the WebSocket tunnel should forward to a server listening on 0.0.0.0`
+  - `[sig-api-machinery] WebSocket streaming port forwarding over the WebSocket tunnel should forward to a server listening on localhost`
+- [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=WebSocket%20streaming)
+
+Because these tests pass through the API Server to the Kubelet, they exercise the
+`ExtendWebSocketsToKubelet` path when the target node advertises the feature,
+and the API Server translation/tunneling path when it does not.
+
+Existing WebSocket conformance tests cover the API Server `pods/exec` and
+`pods/log` endpoints from a raw WebSocket client over the pre-KEP channel
+protocols
+([`test/e2e/common/node/pods.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/pods.go)):
+
+- `[sig-node] Pods should support remote command execution over websockets [NodeConformance] [Conformance]`
+- `[sig-node] Pods should support retrieving logs from the container over websockets [NodeConformance] [Conformance]`
+- [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=over%20websockets)
+
+For GA, the four `[sig-api-machinery] WebSocket streaming` tests are promoted to
+conformance in a separate PR once they have run for at least two weeks, per the
+[conformance test process](https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md),
+so that `pods/exec`, `pods/attach`, and `pods/portforward` are exercised over
+the KEP's subprotocols by conformance. The `[sig-cli]` tests remain as
+regression coverage of `kubectl`'s behavior, including its fallback.
 
 ### Graduation Criteria
 
@@ -886,14 +904,17 @@ that has been enabled by default for at least two releases in every component:
   window.
 - WebSocket support for HTTPS proxies shipped in v1.33
   (https://github.com/kubernetes/kubernetes/issues/126134).
-- The following e2e tests have been promoted to conformance, and have been stable
-  and non-flaky for at least two weeks before code freeze:
-  - `RemoteCommand`: `[sig-cli] Kubectl client Simple pod should support inline
-    execution and attach with websockets or fallback to spdy`
-  - `PortForward`: `[sig-cli] Kubectl Port forwarding With a server listening on
-    0.0.0.0 should support forwarding over websockets`
-  - `PortForward`: `[sig-cli] Kubectl Port forwarding With a server listening on
-    localhost should support forwarding over websockets`
+- The following e2e tests, which exercise the KEP's subprotocols with no SPDY
+  fallback (see [e2e tests](#e2e-tests)), have been promoted to conformance after
+  running stable and non-flaky for at least two weeks, before code freeze:
+  - `RemoteCommand`: `[sig-api-machinery] WebSocket streaming should exec over
+    the WebSocket v5.channel.k8s.io subprotocol with stdin close and exit code`
+  - `RemoteCommand`: `[sig-api-machinery] WebSocket streaming should attach over
+    the WebSocket v5.channel.k8s.io subprotocol`
+  - `PortForward`: `[sig-api-machinery] WebSocket streaming port forwarding over
+    the WebSocket tunnel should forward to a server listening on 0.0.0.0`
+  - `PortForward`: `[sig-api-machinery] WebSocket streaming port forwarding over
+    the WebSocket tunnel should forward to a server listening on localhost`
 - The Kubelet continues to advertise `ExtendWebSocketsToKubelet` in
   `Node.Status.declaredFeatures`, and the API Server continues to check for it,
   until the oldest supported Kubelet version has the gate locked on (see
