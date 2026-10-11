@@ -560,6 +560,14 @@ action the scheduler takes:
    whole pool; admission-time validation of CEL syntax, cost, and
    length catches most errors before a slice is accepted.
 
+   Errors the API server cannot see — a duplicate key name, or a cost
+   overrun that only appears once a pool's metadata slices are taken
+   together — are caught before publication by the cross-slice
+   validation in the [ResourceSlice controller helper](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/dynamic-resource-allocation/resourceslice/validation.go)
+   that DRA drivers use to publish slices, so a driver using the
+   helper sees them at publish time rather than when the allocator
+   later rejects the pool.
+
    The canonical extractor idiom — guard with
    `apiVersion` / `kind` (or `has(...)`) and return `""` from the
    non-applicable branch — distinguishes "this object
@@ -886,9 +894,11 @@ type ResourceSliceSpec struct {
 // every entry for a device in that pool to be viable.
 type SharingAffinityExtractor struct {
     // Name is the sharing-affinity key name (for example "subnet").
-    // Must be unique within the pool.
+    // It must be a DNS label and must be unique within the pool.
     //
     // +required
+    // +k8s:required
+    // +k8s:format=k8s-short-name
     Name string
 
     // Expression is the CEL expression evaluated for this key, over
@@ -898,19 +908,26 @@ type SharingAffinityExtractor struct {
     // ignore opaque-config objects whose apiVersion / kind it does
     // not handle.
     //
-    // The length of the expression must be smaller or equal to 10 Ki.
-    // The cost of evaluating it is also limited based on the
-    // estimated number of logical steps; the combined cost of all
-    // extractors in a pool is capped by a shared CEL cost budget.
+    // The length of the expression must be smaller or equal to
+    // SharingAffinityCELExpressionMaxLength (10 Ki). The cost of
+    // evaluating it is also limited based on the estimated number of
+    // logical steps; the combined cost of all extractors in a pool is
+    // capped by SharingAffinityCELMaxCost, which admission can only
+    // enforce one slice at a time.
     //
     // +required
+    // +k8s:required
+    // +k8s:maxLength=10240
     Expression string
 }
 
 const SharingAffinityMaxEntries = 8
 
-// Expression length reuses the existing DRA limit,
-// CELSelectorExpressionMaxLength (10 Ki).
+// SharingAffinityCELExpressionMaxLength is the maximum length of a
+// sharing-affinity CEL expression string. It deliberately duplicates
+// the value of CELSelectorExpressionMaxLength rather than reusing that
+// constant, so the two limits can evolve independently.
+const SharingAffinityCELExpressionMaxLength = 10 * 1024
 
 // SharingAffinityCELMaxCost is the maximum combined execution cost
 // allowed for all sharing-affinity expressions in a single pool,
@@ -918,6 +935,17 @@ const SharingAffinityMaxEntries = 8
 // collective cost of a pool's extractors to the cost allowed for one
 // CEL selector keeps worst-case Filter latency comparable to existing
 // device selection.
+//
+// Because the API server validates each ResourceSlice in isolation, it
+// can only reject a slice whose own extractors already exceed this
+// budget. A pool that exceeds the budget only in aggregate, across
+// several metadata slices, is accepted at admission and rejected later
+// by the allocator's pool validation, which fails closed for every
+// device in the pool.
+//
+// As with CELSelectorExpressionMaxCost, the scheduler also enforces
+// this limit at runtime, so an expression accepted by validation can
+// still fail after an up- or downgrade.
 const SharingAffinityCELMaxCost = 1000000
 ```
 
@@ -1126,9 +1154,9 @@ any device is evaluated — not a per-device runtime condition.
 Each extractor's CEL expression is bounded the same way DRA already
 bounds its other driver-published CEL:
 
-- **Length**: at most `CELSelectorExpressionMaxLength` (10 Ki) per
-  expression — the limit already applied to `CELDeviceSelector` and
-  `DeviceDerivedAttribute` expressions.
+- **Length**: at most `SharingAffinityCELExpressionMaxLength` (10 Ki)
+  per expression — the same bound DRA applies to `CELDeviceSelector`
+  and `DeviceDerivedAttribute` expressions.
 - **Cost**: the estimated evaluation cost of a pool's extractors is
   capped by a shared budget, `SharingAffinityCELMaxCost` (1,000,000,
   roughly 0.1 s), mirroring `DeviceClaimDerivedAttributeCELMaxCost`.
@@ -1137,13 +1165,20 @@ bounds its other driver-published CEL:
   which matters because Filter runs every extractor against every
   in-scope opaque config for every candidate device.
 
-Both limits are validated at admission per slice, and the shared
-budget is re-checked across a pool's metadata slices by the same pool
-validation that enforces key-name uniqueness. Following the existing
-DRA convention, validation happens only when an expression is set or
-changed, so changing the limits in a future release leaves already
-published expressions valid; the scheduler additionally enforces the
-cost limit at runtime.
+Both limits are validated at admission, which only ever sees one
+slice: a slice whose own extractors exceed the budget is rejected,
+but a pool under the budget in every slice yet over it in aggregate
+is still admitted. That overrun is caught by the same pool validation
+that enforces key-name uniqueness, which fails closed for the pool.
+
+Validation runs only when an expression is set or changed, so raising
+a limit in a later release never invalidates a published expression.
+For length, validation is the only enforcement. For cost it is not:
+the scheduler also enforces at runtime, so an expression admitted
+under a raised limit can fail after a downgrade, where the older
+scheduler still enforces the old one. DRA accepts that trade-off for
+`CELSelectorExpressionMaxCost`; sharing affinity follows rather than
+adding a ratcheting scheme.
 
 ##### Reserve Phase: Tentative Locking
 
@@ -1502,7 +1537,7 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   republishes with the colliding key renamed, the next scheduling
   cycle succeeds.
 - Expression limits: an expression one byte over
-  `CELSelectorExpressionMaxLength` (10 Ki) is rejected at admission
+  `SharingAffinityCELExpressionMaxLength` (10 Ki) is rejected at admission
   and one at exactly the limit is accepted; a set of extractors whose
   combined estimated cost exceeds `SharingAffinityCELMaxCost` is
   rejected, both within one slice and across a pool's metadata
