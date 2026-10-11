@@ -1361,19 +1361,38 @@ their existing opaque configs), no separate API-only gate is needed.
 #### ResourceSlice with Sharing Affinity
 
 ```yaml
+# Metadata slice: carries sharingAffinity, no devices.
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
 metadata:
-  name: node1-nics
+  name: node1-nics-meta
 spec:
   driver: networking.example.com
   nodeName: node1
+  pool:
+    name: node1-nics
+    generation: 1
+    resourceSliceCount: 2
   sharingAffinity:
     - name: subnet
       apiGroup: networking.example.com
       kind: NICConfig
       cel:
         expression: parameters.subnetID
+---
+# Device slice: carries devices, no sharingAffinity. Joined to the
+# metadata slice by the (driver, pool.name, generation) tuple.
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: node1-nics-0
+spec:
+  driver: networking.example.com
+  nodeName: node1
+  pool:
+    name: node1-nics
+    generation: 1
+    resourceSliceCount: 2
   devices:
     - name: eth1
       allowMultipleAllocations: true
@@ -1445,11 +1464,18 @@ A driver advertises shared RDMA-capable NICs where both subnet and PKey
 must match for pods to share the same device:
 
 ```yaml
+# Metadata slice: carries sharingAffinity, no devices.
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
+metadata:
+  name: node1-rdma-meta
 spec:
   driver: networking.example.com
   nodeName: node1
+  pool:
+    name: node1-rdma
+    generation: 1
+    resourceSliceCount: 2
   sharingAffinity:
     - name: subnet
       apiGroup: networking.example.com
@@ -1461,6 +1487,20 @@ spec:
       kind: NICConfig
       cel:
         expression: parameters.ibPKey
+---
+# Device slice: carries devices, no sharingAffinity. Joined to the
+# metadata slice by the (driver, pool.name, generation) tuple.
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: node1-rdma-0
+spec:
+  driver: networking.example.com
+  nodeName: node1
+  pool:
+    name: node1-rdma
+    generation: 1
+    resourceSliceCount: 2
   devices:
     - name: mlx5_0
       allowMultipleAllocations: true
