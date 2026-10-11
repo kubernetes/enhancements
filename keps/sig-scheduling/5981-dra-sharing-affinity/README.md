@@ -241,14 +241,18 @@ Without this KEP, drivers must use a "placeholder pattern" today:
 
 Add a `sharingAffinity` field to `ResourceSlice.spec` that publishes
 a list of driver-defined CEL extractors. Each entry names one
-affinity key and carries the CEL expression that produces its value,
-and every entry applies to every device in the pool. The scheduler
-evaluates an entry's expression once for each opaque config in the
-claim, binding that config to a CEL variable named `object` — its JSON
+affinity key, declares which opaque-config schema it applies to via
+`apiGroup` and `kind`, and carries the CEL expression that produces
+the key's value; every entry applies to every device in the pool. The
+scheduler evaluates an entry's expression once for each opaque config
+in the claim whose schema matches that entry, binding the config's
+`opaque.parameters` to a CEL variable named `parameters` — its JSON
 payload decoded into a nested map. (DRA already requires the payload
-to be valid JSON, so this KEP adds no new constraint.) The expression
+to be valid JSON, so this KEP adds no new constraint.) Configs that do
+not match are skipped without evaluating CEL. The expression
 returns either a string value — the affinity key for that config — or
-the empty string `""`, meaning the extractor does not apply to it. A
+the empty string `""`, meaning that config carries nothing for that
+key. A
 request satisfies an extractor when it produces a non-empty value
 across the request's in-scope opaque configs, and the device is viable
 only if **every** extractor in the pool is satisfied. The non-empty
@@ -293,15 +297,15 @@ spec:
     resourceSliceCount: 2
   sharingAffinity:
     - name: subnet
-      expression: |
-        object.apiVersion == "networking.example.com/v1"
-          && object.kind == "NICConfig"
-          ? object.subnetID : ""
+      apiGroup: networking.example.com
+      kind: NICConfig
+      cel:
+        expression: parameters.subnetID
     - name: pkey
-      expression: |
-        object.apiVersion == "networking.example.com/v1"
-          && object.kind == "NICConfig"
-          ? object.ibPKey : ""
+      apiGroup: networking.example.com
+      kind: NICConfig
+      cel:
+        expression: parameters.ibPKey
 ---
 # Device slice: carries devices, no sharingAffinity. Joined to the
 # metadata slice by the (driver, pool.name, generation) tuple.
@@ -324,33 +328,53 @@ spec:
           value: "16"
 ```
 
-Each CEL expression is responsible for returning the empty string when
-the opaque-config object is not one it applies to. How it decides is
-the driver's choice; guarding on `object.apiVersion` and `object.kind`
-is the recommended convention, not a requirement. This contract
-gives drivers full control over which opaque-config schemas a given
-extractor applies to, and avoids forcing the scheduler to know
-anything about driver schema taxonomies. CEL runtime errors (for
-example, dereferencing a field that does not exist on the parsed
-config) are *not* equivalent to returning `""` — they are ResourceSlice
-authoring errors, and the scheduler aborts allocation and fails
-scheduling for the Pod rather than skipping the device (see
-[Extraction failure modes](#extraction-failure-modes)). An
-`apiVersion`/`kind` guard is the simplest way to avoid this for configs
-that belong to other schemas.
+Every extractor must state which opaque-config schemas it applies to.
+`apiGroup` and `kind` are required, and the scheduler evaluates an
+extractor's CEL only against configs whose `kind` and `apiVersion`
+group match — the version portion is ignored. Either field may be
+`"*"` to match any value, which is how a driver opts out of
+pre-filtering and keeps its own guard in CEL. Making the fields
+required rather than optional means an extractor cannot match broadly
+by accident: matching everything remains available, but it has to be
+written down, and it is visible in the published slice.
 
-If a driver supports multiple opaque-config schemas where the
-extracted fields live at the same path on each, one extractor can
-handle them all:
+Because irrelevant configs never reach CEL, most extractors need no
+guard. An expression still returns `""` for "matched my schema, but
+nothing to extract." A CEL runtime error is not equivalent: it is a
+ResourceSlice authoring error, and the scheduler fails the Pod rather
+than skipping the device (see
+[Extraction failure modes](#extraction-failure-modes)).
+
+Extractors needing version logic read `parameters.apiVersion` in CEL.
+Parameters with no `apiVersion`, or no group in it, match only
+`apiGroup: "*"`.
+
+If a driver supports multiple opaque-config schema versions where the
+extracted fields live at the same path on each, one extractor covers
+them all with no version logic, because `apiGroup` matching ignores
+the version:
 
 ```yaml
 sharingAffinity:
   - name: subnet
-    expression: |
-      (object.apiVersion == "networking.example.com/v1" ||
-       object.apiVersion == "networking.example.com/v1beta1")
-        && object.kind == "NICConfig"
-        ? object.subnetID : ""
+    apiGroup: networking.example.com
+    kind: NICConfig
+    cel:
+      expression: parameters.subnetID
+```
+
+A driver supporting several *kinds* that share a field path widens
+`kind` instead and narrows in CEL:
+
+```yaml
+sharingAffinity:
+  - name: subnet
+    apiGroup: networking.example.com
+    kind: "*"
+    cel:
+      expression: |
+        (parameters.kind == "NICConfig" || parameters.kind == "NICConfig2")
+          ? parameters.subnetID : ""
 ```
 
 All extractors published by a pool apply to every device in that
@@ -438,19 +462,22 @@ can be added later if a driver ever needs them.
 
 The scheduler does not interpret driver-private fields — it only
 evaluates the CEL expressions the driver has explicitly published as
-extraction logic. Each extractor is responsible for recognizing the
-schema(s) it applies to (typically by inspecting `object.apiVersion`
-/ `object.kind` and returning `""` when it does not).
+extraction logic. Each extractor declares the schema it applies to
+with the required `apiGroup` and `kind` fields; the scheduler skips
+configs that do not match without evaluating CEL.
 
 ```go
-// SharingAffinityExtractor declares one CEL expression that produces
-// one sharing-affinity key from a driver's opaque device config.
+// SharingAffinityExtractor declares one extractor that produces one
+// sharing-affinity key from a driver's opaque device config.
 // Every entry in a pool's `sharingAffinity` list applies to every
 // device in the pool. See Design Details → API Enhancement for the
 // canonical godoc.
+// +union
 type SharingAffinityExtractor struct {
-    Name       string // affinity key name; unique within the pool
-    Expression string // CEL over `object`; must return a string
+    Name     string // affinity key name; unique within the pool
+    APIGroup string // opaque-config API group to match, or "*"
+    Kind     string // opaque-config kind to match, or "*"
+    CEL      *SharingAffinityCELExtractor // union member; only type in alpha
 }
 ```
 
@@ -468,6 +495,12 @@ Properties of this design:
   extracted. The scheduler cannot inadvertently lock on
   hardware-configuration fields (qos, mtu, vlan) that drivers want
   to keep within their domain.
+- **Matching is independent of the extraction mechanism**:
+  `apiGroup` and `kind` sit beside `cel`, not inside it, so "which
+  configs does this apply to" stays separate from "how is the value
+  pulled out." Every extractor type added later — a JSON path, say —
+  reuses the same matching fields and the same validation, and is
+  evaluated only against the configs it declares.
 
 **Extractor evaluation contract**
 
@@ -478,9 +511,9 @@ opaque-config, key) triple:
 - A **non-empty string** return contributes that `key → value` to
   the request's effective affinity map.
 - An **empty string** return contributes nothing for that key from
-  that object. This is the idiom drivers use to express "this
-  extractor does not handle this opaque-config schema." Empty returns
-  are not errors.
+  that config. This is the idiom drivers use to express "this
+  extractor matched this schema but has nothing to contribute." Empty
+  returns are not errors.
 
 After evaluating every extractor against every
 opaque-config object, the scheduler checks whether each extractor
@@ -540,17 +573,18 @@ action the scheduler takes:
      key set.
    - **Cost-budget exhaustion**: CEL evaluation exceeds the
      per-eval cost budget.
-   - **Missing field on the parsed object**: a CEL expression
-     dereferences a field absent from `object` (e.g.,
-     `object.subnet` on an object with no `subnet`), raising a
+   - **Missing field on the parsed parameters**: a CEL expression
+     dereferences a field absent from `parameters` (e.g.,
+     `parameters.subnet` on a config with no `subnet`), raising a
      CEL runtime error. Indicates the extractor's CEL did not
      defensively guard the access (e.g., should be
-     `has(object.subnet) ? object.subnet : ""`). Typical causes:
-     typo (wrong field name) or schema evolution where the driver
-     renamed or removed a field across versions. Inapplicable-object
-     cases (driver-tuning config, config for a different driver
-     kind) should be expressed via `has()` guards returning `""`,
-     not surfaced as errors.
+     `has(parameters.subnet) ? parameters.subnet : ""`). Typical
+     causes: typo (wrong field name) or schema evolution where the
+     driver renamed or removed a field across versions. Configs
+     belonging to another schema no longer reach CEL at all — they
+     are excluded by `apiGroup`/`kind` matching — so this error
+     indicates a genuine mismatch within a schema the extractor
+     claims to handle.
 
    In every ResourceSlice-author-error case the scheduler **aborts
    allocation and fails scheduling for the Pod** instead of skipping
@@ -568,13 +602,13 @@ action the scheduler takes:
    helper sees them at publish time rather than when the allocator
    later rejects the pool.
 
-   The canonical extractor idiom — guard with
-   `apiVersion` / `kind` (or `has(...)`) and return `""` from the
-   non-applicable branch — distinguishes "this object
-   intentionally does not contribute" (`""`) from "this object
-   should have contributed but the schema does not match"
-   (runtime error). Only the latter is treated as a slice authoring
-   error.
+   Declarative `apiGroup`/`kind` matching removes the most common
+   source of these errors: an extractor never sees a config from
+   another schema. Within a matched schema, `has(...)` guards
+   returning `""` remain the idiom for "this config intentionally
+   does not contribute," which stays distinct from "this config
+   should have contributed but the field is missing" (runtime
+   error). Only the latter is treated as a slice authoring error.
 
 **Alpha scope**
 
@@ -633,7 +667,7 @@ extension path.
 A user runs a distributed training job where every Pod must share the same
 RDMA Partition Key (PKey) to communicate. The NIC supports 16 VFs. The driver
 publishes `sharingAffinity` on the slice with a CEL expression pulling the
-PKey out of its existing opaque config (e.g., `pkey: "object.ibPKey"`). The
+PKey out of its existing opaque config (e.g., `pkey: "parameters.ibPKey"`). The
 scheduler only co-allocates Pods whose claimed PKey matches the NIC's current
 lock (or selects an unlocked NIC and establishes the lock from the first claim).
 
@@ -647,7 +681,7 @@ lock (or selects an unlocked NIC and establishes the lock from the first claim).
 An inference service uses FPGAs to accelerate a specific model. Loading a
 bitstream takes several seconds. The driver publishes a CEL expression on
 the slice that extracts the bitstream identifier from its opaque config
-(e.g., `bitstream: "object.bitstreamID"`). The scheduler only co-allocates
+(e.g., `bitstream: "parameters.bitstreamID"`). The scheduler only co-allocates
 Pods that request a compatible bitstream onto an already-locked FPGA;
 affinity-aware *preference* for FPGAs that already have the bitstream loaded
 (over fresh ones) is delivered in beta.
@@ -662,7 +696,7 @@ affinity-aware *preference* for FPGAs that already have the bitstream loaded
 A network DRA driver advertises NICs that can be shared across up to 16 pods,
 but only if pods belong to the same subnet. The driver publishes a CEL
 expression on the slice that extracts the subnet from its opaque config
-(e.g., `subnet: "object.subnetID"`).
+(e.g., `subnet: "parameters.subnetID"`).
 
 - Pod A (subnet-X) is allocated to eth1 → eth1 is now locked to subnet-X
 - Pod B (subnet-X) arrives → matches affinity, is eligible to share eth1
@@ -771,9 +805,9 @@ is the deliberate alpha trade-off: the scheduler refuses to silently
 downgrade its safety guarantee in the face of an asymmetric extraction
 change. Drivers that need to evolve `sharingAffinity` for in-use slices
 should drain affected devices before publishing the change, or stage
-schema evolution by adding a new extractor entry (e.g., one whose CEL
-guards on a new `apiVersion`) and migrating workloads to author against
-the new schema before retiring the old extractor.
+schema evolution by adding a new extractor entry (e.g., one whose
+`apiGroup`/`kind` match a new config schema) and migrating workloads
+to author against the new schema before retiring the old extractor.
 
 **Driver responsibility**: drivers should avoid hot-swapping
 `sharingAffinity` entries on slices with active allocations. When
@@ -888,10 +922,15 @@ type ResourceSliceSpec struct {
 }
 
 // SharingAffinityExtractor declares one sharing-affinity key and the
-// CEL expression that produces its value from a driver's opaque
+// extraction logic that produces its value from a driver's opaque
 // device config. Every entry in a pool's `sharingAffinity` list
 // applies to every device in the pool, and a request must satisfy
 // every entry for a device in that pool to be viable.
+//
+// Exactly one extractor type must be set. CEL is the only one defined
+// in alpha.
+//
+// +union
 type SharingAffinityExtractor struct {
     // Name is the sharing-affinity key name (for example "subnet").
     // It must be a DNS label and must be unique within the pool.
@@ -901,12 +940,61 @@ type SharingAffinityExtractor struct {
     // +k8s:format=k8s-short-name
     Name string
 
+    // APIGroup is the API group of the opaque-config schema this
+    // extractor applies to. It is matched against the group portion
+    // of the config's apiVersion field; the version portion is
+    // ignored, so an extractor keeps matching across schema versions
+    // that preserve the field paths it reads. "*" matches any group,
+    // including configs whose parameters carry no apiVersion at all.
+    //
+    // Required: an extractor must state what it matches. Declaring
+    // "*" is how a driver opts out of pre-filtering, which keeps the
+    // broad behavior available but explicit and visible in the
+    // published slice. Validation accepts either the literal "*" or a
+    // valid DNS subdomain.
+    //
+    // +required
+    // +k8s:required
+    // +k8s:maxLength=253
+    APIGroup string
+
+    // Kind is the kind of the opaque-config schema this extractor
+    // applies to, matched against the config's kind field. "*"
+    // matches any kind, including configs whose parameters carry no
+    // kind at all. Validation accepts either the literal "*" or a
+    // valid kind name.
+    //
+    // +required
+    // +k8s:required
+    // +k8s:maxLength=253
+    Kind string
+
+    // CEL holds the extraction logic applied to configs that match
+    // APIGroup and Kind. It is a nested struct rather than a bare
+    // expression field so that alternative extractor types can be
+    // added later as sibling fields without a breaking change, and
+    // so that CEL-specific additions such as variable definitions
+    // have somewhere to live. It is a union member rather than a
+    // required field for the same reason: adding a sibling then
+    // stays purely additive, with no field changing from required to
+    // optional. DeviceSelector.CEL is the existing single-member
+    // union precedent.
+    //
+    // +optional
+    // +k8s:optional
+    // +k8s:unionMember
+    CEL *SharingAffinityCELExtractor
+}
+
+// SharingAffinityCELExtractor holds the CEL expression that produces
+// a sharing-affinity key's value.
+type SharingAffinityCELExtractor struct {
     // Expression is the CEL expression evaluated for this key, over
-    // the claim's opaque-config object bound as `object`. It must
-    // return a string. An empty-string return means "no contribution
-    // for this key from this object" — the idiom an extractor uses to
-    // ignore opaque-config objects whose apiVersion / kind it does
-    // not handle.
+    // the matched config's opaque.parameters bound as `parameters`.
+    // It must return a string. An empty-string return means "no
+    // contribution for this key from this config" — the idiom an
+    // extractor uses when a config matches its schema but carries
+    // nothing to extract.
     //
     // The length of the expression must be smaller or equal to
     // SharingAffinityCELExpressionMaxLength (10 Ki). The cost of
@@ -1282,10 +1370,10 @@ spec:
   nodeName: node1
   sharingAffinity:
     - name: subnet
-      expression: |
-        object.apiVersion == "networking.example.com/v1"
-          && object.kind == "NICConfig"
-          ? object.subnetID : ""
+      apiGroup: networking.example.com
+      kind: NICConfig
+      cel:
+        expression: parameters.subnetID
   devices:
     - name: eth1
       allowMultipleAllocations: true
@@ -1307,12 +1395,12 @@ spec:
 
 The `sharingAffinity` block declares a single key (`subnet`) to be
 pulled from any opaque-config object that identifies itself as
-`networking.example.com/v1 / NICConfig`. The CEL guard on
-`object.apiVersion` and `object.kind` ensures the expression returns
-`""` (no contribution) when applied to an opaque-config object from
-a different schema, rather than failing with a missing-field runtime
-error. See the Proposal section for the canonical guard idiom and
-the multi-version variant.
+belonging to the `networking.example.com` group with kind
+`NICConfig`. The declarative `apiGroup`/`kind` match ensures the
+expression is never evaluated against a config from a different
+schema, so no CEL guard is needed and a missing-field runtime error
+cannot arise from an unrelated config. See the Proposal section for
+the wildcard and multi-kind variants.
 
 #### ResourceClaim (status quo opaque config)
 
@@ -1342,7 +1430,7 @@ spec:
 > **Note**: The claim shape is unchanged from pre-KEP-5981 DRA — the
 > workload author writes the driver's existing opaque config. The
 > scheduler runs the slice-declared CEL expression against the parsed
-> `parameters` — the `apiVersion`/`kind` guard matches, so the
+> `parameters` — the extractor's `apiGroup`/`kind` match succeeds, so the
 > expression returns `subnet-X` and the scheduler records
 > `subnet: subnet-X` for affinity lock evaluation. The driver-private
 > fields (`vlanId`, `mtu`) flow through to `NodePrepareResources`
@@ -1364,15 +1452,15 @@ spec:
   nodeName: node1
   sharingAffinity:
     - name: subnet
-      expression: |
-        object.apiVersion == "networking.example.com/v1"
-          && object.kind == "NICConfig"
-          ? object.subnetID : ""
+      apiGroup: networking.example.com
+      kind: NICConfig
+      cel:
+        expression: parameters.subnetID
     - name: pkey
-      expression: |
-        object.apiVersion == "networking.example.com/v1"
-          && object.kind == "NICConfig"
-          ? object.ibPKey : ""
+      apiGroup: networking.example.com
+      kind: NICConfig
+      cel:
+        expression: parameters.ibPKey
   devices:
     - name: mlx5_0
       allowMultipleAllocations: true
@@ -1408,7 +1496,7 @@ Alpha matching behavior:
   0x8002` makes the device not a viable option because all declared
   keys must match.
 - A claim whose opaque config has no `ibPKey` field will cause
-  `object.ibPKey` to error during CEL evaluation; this is a
+  `parameters.ibPKey` to error during CEL evaluation; this is a
   ResourceSlice authoring error and aborts scheduling for the Pod.
 - The `vlan` field is ignored because the driver did not declare a CEL
   expression for it. It flows through opaquely to the driver.
@@ -1475,6 +1563,8 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
     (parse-check only; runtime cost is bounded per-eval at the scheduler)
   - Validation: a single `ResourceSlice` with both `devices` and
     `sharingAffinity` set is rejected (mutual exclusion)
+  - Validation: an extractor with no extractor type set is rejected
+    (declarative `+k8s:unionMember` on `cel`)
   - Round-trip serialization of `SharingAffinityExtractor`
 
 ##### Integration tests
@@ -1609,8 +1699,7 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 - Scheduler tracks affinity in `AllocatedState.AffinityStates`
 - Unit and integration tests
 - Documentation for driver authors covering CEL expression authoring,
-  multi-version guard idioms (e.g., `object.apiVersion == "x/v1" && object.kind == "Foo" ? ... : ""`),
-  and rollout guidance
+  schema matching via `apiGroup`/`kind`, wildcard use, and rollout guidance
 - Alpha documentation explicitly calls out the lack of lock-breaking
   preemption semantics for incompatible locks
 - Alpha documentation explicitly calls out string-only affinity matching
@@ -1744,12 +1833,12 @@ recommended playbook depends on the kind of change:
 | Upgrade class | Recommended action |
 |---|---|
 | Driver patch with **no schema change, same CEL** | None. Driver republishes an identical slice; transparent to the scheduler. |
-| Driver release with **additive schema fields**, same extracted keys | None. Existing CEL guards on `apiVersion`/`kind` continue to match; new fields are unread by the extractor and flow through to the driver. |
-| Driver release adds **v2 schema alongside v1** | Extend each extractor's CEL with a `v1 OR v2` apiVersion guard reading the same field path (the canonical multi-version idiom). Both old and new workloads extract identically. After workloads have migrated off v1, a later driver release drops the v1 guard. |
-| Driver release with **breaking schema rename** (e.g., `subnetID` → `subnet`) — *affects opaque-config field path only; declared key set unchanged* | Republish the slice with an extractor that reads both paths into the same key, e.g. `has(object.subnet) ? object.subnet : object.subnetID`. Both old and new workloads extract identically; the legacy branch can be dropped in a later driver release once workloads have migrated, or kept indefinitely (the cost is one ternary in the CEL string). Existing locks remain valid — no `Unreconstructable` transitions. |
+| Driver release with **additive schema fields**, same extracted keys | None. The extractor's `apiGroup`/`kind` match is unaffected; new fields are unread by the extractor and flow through to the driver. |
+| Driver release adds **v2 schema alongside v1** | None, as long as the extracted field paths are unchanged. `apiGroup` matching ignores the version portion of `apiVersion`, so a single extractor covers both schemas with no CEL change and no republish. If v2 also moves a field, use the breaking-rename row below. |
+| Driver release with **breaking schema rename** (e.g., `subnetID` → `subnet`) — *affects opaque-config field path only; declared key set unchanged* | Republish the slice with an extractor that reads both paths into the same key, e.g. `has(parameters.subnet) ? parameters.subnet : parameters.subnetID`. Both old and new workloads extract identically; the legacy branch can be dropped in a later driver release once workloads have migrated, or kept indefinitely (the cost is one ternary in the CEL string). Existing locks remain valid — no `Unreconstructable` transitions. |
 | Driver release with **renamed extracted key** (e.g., `subnet` → `vpc-subnet`) — *affects the declared key set itself* | This is a `sharingAffinity` mutation: re-extraction against bound claims yields a different key map than the stored `LockedAffinity`. Devices with active legacy claims transition to `AffinityStates[deviceID].Status == AffinityStatusUnreconstructable` until they drain. Drivers should prefer to drain affected slices first (per the rollout sequence above) and stage the change to off-hours. |
 | **DaemonSet rolling upgrade** across nodes | Each node's slice flips when its driver pod restarts. Transient heterogeneity across slices is bounded by the rollout window. Strict Gating plus `Unreconstructable` quarantine make the window safe but capacity-stranding; rolling-update `maxSurge` / `maxUnavailable` should be tuned with this in mind. |
-| **Workload-side schema lag** (workloads behind driver) | Drivers should keep multi-version-guard CEL through at least one workload rollout cycle. Otherwise workloads hit "no keys produced → Strict Gating → Pending" until they upgrade. |
+| **Workload-side schema lag** (workloads behind driver) | Version skew alone is harmless, since `apiGroup` matching ignores the version. Drivers that rename or move extracted field paths should keep a dual-path CEL read through at least one workload rollout cycle; otherwise lagging workloads hit "no keys produced → Strict Gating → Pending" until they upgrade. |
 | **Driver pod removed or unhealthy** | Existing DRA behavior applies — the slice eventually becomes stale and is garbage-collected by the kubelet plugin manager. Devices in a stale slice are unschedulable regardless of `sharingAffinity`. No additional handling is introduced by this KEP. |
 
 **Handling requests that produce no keys**: The scheduler treats a slice with
@@ -2161,7 +2250,7 @@ Recommended debugging flow:
    expressions, expected key names).
 2. Inspect the `ResourceClaim` and confirm at least one of its
    opaque-config objects has the shape the slice's CEL expressions
-   expect (matching `apiVersion`/`kind` guards, populated fields).
+   expect (matching `apiGroup`/`kind`, populated fields).
 3. Mentally (or via `kubectl` + a CEL test harness) run each CEL
    expression against the claim's parsed opaque parameters and verify
    it returns a non-empty string value.
