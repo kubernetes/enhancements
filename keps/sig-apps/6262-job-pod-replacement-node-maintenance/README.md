@@ -395,13 +395,26 @@ decisions.
 
 #### Non-indexed Jobs
 
-For non-indexed Jobs, no equivalent duplicate-reconciliation logic is needed:
-if the stuck original Pod eventually reaches a terminal phase (e.g., after
-being cleaned up by PodGC or an autoscaler), it is handled exactly like any
-other concurrently-running Pod in a non-indexed Job today. If it succeeds, it
-increments `.status.succeeded`; if it fails, it
-consumes a `backoffLimit` retry like any other failure. No new logic is
-required for this case.
+For non-indexed Jobs, this KEP adds no duplicate-reconciliation logic. If
+the stuck original Pod eventually reaches a terminal phase (e.g., after being
+cleaned up by PodGC or an autoscaler) while its replacement is running, it is
+handled exactly like any other Pod in a non-indexed Job today. This has two
+consequences that users should be aware of in Alpha:
+
+- **Late `Failed`.** The original counts as a failure and consumes a
+  `backoffLimit` retry. For a Job with `backoffLimit: 0`, the original
+  reaching `Failed` makes `.status.failed` exceed the limit and fails the Job
+  while the replacement is still running. A `podFailurePolicy` rule that
+  matches the Pod's conditions can ignore such a failure, but a Pod that
+  never ran to completion has no container exit code to match.
+- **Late `Succeeded`.** The original increments `.status.succeeded`. In a
+  non-indexed Job the original and the replacement are two Pods for the same
+  unit of work, so both succeeding is counted as two completions. Indexed
+  Jobs are not affected, because completions are counted per index.
+
+This is a known limitation of this design. The alternative
+[Fail the stuck Pod, then replace it](#alternative-fail-the-stuck-pod-then-replace-it)
+avoids both cases by giving the original Pod exactly one terminal transition.
 
 ### Accounting
 
@@ -489,9 +502,11 @@ None.
   both indexed and non-indexed Jobs.
 - Verify an indexed Job's stuck completion index becomes eligible for a new
   Pod, and the replacement can satisfy that index once it succeeds.
-- Verify the stuck Pod later reaching a terminal phase is reconciled
-  correctly, without double-counting against `backoffLimit` or
-  `.status.succeeded`.
+- Verify the stuck Pod later reaching a terminal phase is counted as
+  documented in
+  [Reconciling the eventual duplicate](#reconciling-the-eventual-duplicate):
+  for indexed Jobs, without double-counting the index; for non-indexed Jobs,
+  as an ordinary failure or success.
 
 ##### e2e tests
 
