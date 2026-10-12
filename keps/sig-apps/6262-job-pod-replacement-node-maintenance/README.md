@@ -414,6 +414,7 @@ on a node with `MaintenanceInProgress=True`, compared to today's behavior.
 | `.status.terminating` | Includes the stuck Pod (it has `deletionTimestamp` set, not yet terminal). | Unchanged: the stuck Pod still has `deletionTimestamp` set, so it is still reported in `.status.terminating`. This KEP only changes whether that count *blocks* replacement creation, not whether the Pod is reported as terminating. |
 | `.status.failed` / `backoffLimit` | Not incremented while the Pod is merely terminating; only incremented once/if the Pod actually reaches the `Failed` phase. | Unchanged. The stuck Pod does not consume `backoffLimit` budget by virtue of this KEP; it is only counted as failed if and when it eventually reaches a terminal phase (e.g., after PodGC or an autoscaler removes it). |
 | `.status.succeeded` | Unaffected unless the Pod reaches `Succeeded`. | Unchanged. |
+| `backoffLimitPerIndex` (`batch.kubernetes.io/job-index-failure-count`) | The failure count is carried from the last failed Pod of an index to its replacement through `podsWithDelayedDeletionPerIndex`, which only contains Pods in the `Failed` phase. | The stuck Pod is not in the `Failed` phase, so it is not in that map. To avoid resetting the index's failure history, the replacement Pod inherits the stuck Pod's `job-index-failure-count` annotation (and `job-index-ignored-failure-count`, if present) **without incrementing it**. The stuck Pod has not failed, so this KEP does not charge a retry for it. For example, a stuck Pod for index 5 with a failure count of 2 is replaced by a Pod for index 5 with a failure count of 2. If the stuck Pod later reaches `Failed`, it is counted according to the rules in the row above. |
 | Completion index (indexed Jobs) | An indexed Job assigns each Pod a completion index (e.g., index 3 of 10). Today, as long as the stuck Pod for index 3 still exists (even though it's terminating and stuck), the controller thinks that index is "handled" and never creates a new Pod for it, so index 3 cannot make progress. | Once `MaintenanceInProgress=True` is observed on the stuck Pod's node, the controller creates a replacement Pod for index 3. If that replacement reaches `Succeeded`, index 3 can be counted as completed using the same indexed-Job rules as today. The original stuck Pod never itself counts as index 3's completion; it only stops blocking the replacement from being created. Final Job completion may still wait for external cleanup of non-terminal Pods, consistent with [Non-Goals](#non-goals). |
 
 **Net effect**: this KEP does not change how or when a Pod is counted as
@@ -467,6 +468,12 @@ None.
 - Unit tests verifying a Pod on a `MaintenanceInProgress=True` node that is
   still within its deletion grace period is not replaced, and that the Job is
   requeued for the remaining grace period.
+- Unit tests verifying the requeue uses the minimum remaining grace period
+  across terminating Pods on `MaintenanceInProgress=True` nodes only, and
+  that terminating Pods on other nodes do not affect it.
+- Unit tests verifying that, with `backoffLimitPerIndex`, the replacement for
+  a stuck Pod inherits the stuck Pod's `job-index-failure-count` without
+  incrementing it.
 
 ##### Integration tests
 
@@ -743,6 +750,11 @@ healthy and up to date.
   Asia/Europe meeting; Alpha can proceed without scheduler changes, while
   `NoSchedule` taint and toleration-based handling remain considerations for
   Beta
+- 2026-09-30: WG Node Lifecycle discussed the interaction of a stuck Pod that
+  never reaches a terminal phase with `podFailurePolicy`, Job status, and
+  failed indexes. @atiratree suggested failing the Pod first so that it
+  reaches a terminal state. This is captured as the alternative design
+  [Fail the stuck Pod, then replace it](#alternative-fail-the-stuck-pod-then-replace-it)
 
 ## Drawbacks
 
@@ -837,7 +849,9 @@ For a Job using `podReplacementPolicy: Failed`, when a Pod:
 the Job controller patches the Pod's `status` to `phase: Failed` and adds a
 `DisruptionTarget=True` condition with a distinct reason (for example
 `NodeMaintenanceGracePeriodExpired`). The Pod is then handled as any other
-failed Pod. The Job controller does not force-delete the Pod. The Job tracking
+failed Pod. This alternative was suggested by @atiratree at the WG Node
+Lifecycle meeting on 2026-09-30. The Job controller does not force-delete the
+Pod. The Job tracking
 finalizer keeps the object until the Job has counted it, and removal of the
 leftover object stays with PodGC or the administrator.
 
