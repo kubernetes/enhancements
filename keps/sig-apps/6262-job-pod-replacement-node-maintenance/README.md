@@ -41,6 +41,12 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Alternative: Fail the stuck Pod, then replace it](#alternative-fail-the-stuck-pod-then-replace-it)
+    - [Description](#description)
+    - [How it would work](#how-it-would-work)
+    - [Behavior for existing Job features](#behavior-for-existing-job-features)
+    - [Pros](#pros)
+    - [Cons](#cons)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -119,7 +125,7 @@ This KEP closes that gap: the Job controller becomes a consumer of `MaintenanceI
 
 ### Non-Goals
 
-- **Automatic Pod deletion.** This KEP does not force-delete or force-fail Pods stuck on unreachable nodes. Deletion and cleanup of the original Pod are owned by existing mechanisms (for example, PodGC reacting to the `out-of-service` taint, or a cloud/cluster autoscaler's own node-termination logic, such as [Karpenter's termination controller](https://github.com/kubernetes-sigs/karpenter/tree/main/pkg/controllers/node/termination/terminator)).
+- **Automatic Pod deletion.** This KEP does not force-delete or force-fail Pods stuck on unreachable nodes. Deletion and cleanup of the original Pod are owned by existing mechanisms (for example, PodGC reacting to the `out-of-service` taint, or a cloud/cluster autoscaler's own node-termination logic, such as [Karpenter's termination controller](https://github.com/kubernetes-sigs/karpenter/tree/main/pkg/controllers/node/termination/terminator)). Marking the stuck Pod `Failed` from the Job controller is described as an alternative in [Fail the stuck Pod, then replace it](#alternative-fail-the-stuck-pod-then-replace-it).
 - **Guaranteeing final Job completion while the original Pod remains
   non-terminal.** This KEP unblocks replacement creation and lets the
   replacement Pod make progress, but it does not force the original Pod to
@@ -806,6 +812,114 @@ healthy and up to date.
   `backoffLimit`, completion index tracking for indexed Jobs) described in
   [Design Details](#design-details), which can only be fixed inside the
   Job controller itself.
+
+### Alternative: Fail the stuck Pod, then replace it
+
+#### Description
+
+Instead of excluding the stuck Pod from the replacement-blocking count, the
+Job controller moves the original Pod to a terminal state and lets the
+existing failed-Pod path create the replacement.
+
+For a Job using `podReplacementPolicy: Failed`, when a Pod:
+
+- has `metadata.deletionTimestamp` set,
+- is still in a non-terminal phase,
+- has passed its `deletionTimestamp` (the deletion grace period has expired),
+  and
+- is on a node with `MaintenanceInProgress=True`,
+
+the Job controller patches the Pod's `status` to `phase: Failed` and adds a
+`DisruptionTarget=True` condition with a distinct reason (for example
+`NodeMaintenanceGracePeriodExpired`). The Pod is then handled as any other
+failed Pod. The Job controller does not force-delete the Pod. The Job tracking
+finalizer keeps the object until the Job has counted it, and removal of the
+leftover object stays with PodGC or the administrator.
+
+This follows the approach PodGC already uses for Pods that cannot reach a
+terminal phase on their own:
+[`markFailedAndDeletePodWithCondition`](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podgc/gc_controller.go)
+marks the Pod `Failed` before cleanup so that owning controllers have a
+terminal state to react to. PodGC then force-deletes the Pod; this
+alternative would not.
+
+The grace-period rule, the node-condition check, and the requeue for the
+remaining time are the same as in the proposed design. Only the action taken
+once a Pod qualifies differs.
+
+#### How it would work
+
+- The Job controller evaluates the rule during `syncJob`, before it classifies
+  Pods as active, terminating, failed, or succeeded. After the status patch,
+  the Pod is seen as `Failed` in the same sync.
+- The replacement is then created through the existing paths. No node-aware
+  exclusion is needed in the `terminating` count used by
+  `diff := wantActive - terminating - active`, or in the covered-index set in
+  `firstPendingIndexes`.
+- The Job controller needs a node lister (as in the proposed design) and
+  permission to patch `pods/status`, which it does not have today.
+- The decision is recomputed on every sync and stores no state. A Pod that
+  has already been marked `Failed` is not patched again.
+
+#### Behavior for existing Job features
+
+| Feature | Behavior with this alternative |
+|---|---|
+| `backoffLimit` | The original is counted as failed exactly once, when it becomes `Failed`. It consumes one retry unless a `podFailurePolicy` rule says otherwise. |
+| `podFailurePolicy` | Rules with `onPodConditions` can match `DisruptionTarget`. An `Ignore` rule keeps these Pods out of the `backoffLimit` budget. `onExitCodes` rules cannot match, because the Pod has no terminated container status. |
+| `backoffLimitPerIndex` | The Pod enters the existing per-index failure tracking. The replacement inherits `batch.kubernetes.io/job-index-failure-count` from it (incremented, unless an `Ignore` rule applies, in which case the ignored-failure count is incremented instead). The per-index backoff delay is measured from the Pod's finish time, which for a Pod without terminated containers falls back to its `deletionTimestamp`. Most of the delay has therefore already elapsed. |
+| Indexed Jobs | The failed Pod no longer covers its index, so the index is eligible for a replacement through the normal path. |
+| `.status.failed` and `.status.terminating` | The Pod moves from `terminating` to `failed`. |
+| Late terminal transition of the original | Not possible. The Pod already has its one terminal transition, so a later `Failed` or `Succeeded` cannot be double-counted. |
+| Condition flaps or gate disabled | Nothing to undo. A Pod already marked `Failed` stays `Failed`. |
+
+#### Pros
+
+- The original Pod gets exactly one terminal transition. This avoids a late
+  `Failed` aborting a `backoffLimit: 0` Job, and a late `Succeeded`
+  double-counting a completion in a non-indexed Job.
+- The stuck Pod is tracked by the existing per-index failure accounting, so
+  the replacement keeps its failure history and respects the per-index
+  backoff, with no special case.
+- Users control whether these Pods consume the retry budget, using existing
+  `podFailurePolicy` rules on `DisruptionTarget`.
+- The replacement logic needs no node-aware predicate in the `terminating`
+  count or in `firstPendingIndexes`, so the non-indexed and indexed paths
+  cannot diverge.
+- It follows an existing precedent: PodGC and the taint eviction controller
+  already mark Pods `Failed` or add `DisruptionTarget` before cleanup.
+- Job status stays consistent with Pod state: a Pod that will not return is
+  reported as failed, not as terminating indefinitely.
+- Fewer cases need explanation in the Accounting and flapping sections, since
+  the decision is a one-time state change.
+
+#### Cons
+
+- The Job controller would write Pod status. Today that is done by the
+  kubelet, the scheduler, PodGC, the taint eviction controller, and similar
+  components. This needs agreement from SIG Node and SIG Apps on ownership.
+- The Job controller would need a new RBAC permission, `patch` on
+  `pods/status`.
+- A live kubelet may still be running the Pod and may write its own status
+  back, so the phase may not stay `Failed` unless the kubelet is unreachable.
+  This needs verification.
+- Containers may still be running on the node after the Pod is marked
+  `Failed`. The Job then treats the slot as free while the workload keeps
+  running.
+- By default, the Pod consumes a `backoffLimit` retry (or a per-index retry),
+  and the replacement may wait for a per-index backoff window. Users who do
+  not want this must add an `Ignore` rule on `DisruptionTarget`. This is a
+  behavior change relative to the proposed design.
+- A force-failed Pod has no container exit codes, so `onExitCodes` rules
+  cannot distinguish it.
+- `MaintenanceInProgress=True` is a weaker signal than the one PodGC uses for
+  the same action (a node that is not Ready and has the `out-of-service`
+  taint). It may need to be combined with a node-readiness check.
+- Writing Pod status from the Job controller duplicates behavior that exists
+  in PodGC, and it applies only to Job Pods. Other workloads that stall on
+  stuck terminating Pods do not benefit.
+- If the patch fails or is delayed, replacement is delayed with it, because
+  replacement depends on the Pod having been marked `Failed`.
 
 ## Infrastructure Needed (Optional)
 
