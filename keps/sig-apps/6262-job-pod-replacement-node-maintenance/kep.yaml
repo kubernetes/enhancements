@@ -9,8 +9,11 @@ status: provisional
 creation-date: 2026-07-29
 reviewers:
   - "@rthallisey"
+  - "@janetkuo"
+  - "@soltysh"
 approvers:
-  - TBD
+  - "@janetkuo"
+  - "@soltysh"
 
 see-also:
   - "/keps/sig-node/5683-lifecycle-conditions"

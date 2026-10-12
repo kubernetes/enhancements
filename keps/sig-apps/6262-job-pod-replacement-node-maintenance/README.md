@@ -1,4 +1,4 @@
-# KEP-6262: SLM: Job Pod replacement during node maintenance
+# KEP-6262: Job Pod replacement during node maintenance
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -304,11 +304,16 @@ is treated as stuck.
 This uses only existing Pod and Node fields. No new Pod or Node health
 signal is required from SIG Node for Alpha.
 
-When the Job controller finds a terminating Pod on a
-`MaintenanceInProgress=True` node whose grace period has not yet expired, it
-requeues the Job using the existing `enqueueSyncJobWithDelay` mechanism for
-the remaining time until `deletionTimestamp`, so the replacement decision is
-not delayed until an unrelated event or resync.
+To avoid delaying the replacement decision until an unrelated event or
+resync, the Job controller schedules a requeue for the moment the first
+grace period expires. For each terminating Pod of the Job, it first checks
+whether the Pod's node has `MaintenanceInProgress=True`. Only for Pods on such
+nodes whose `deletionTimestamp` is still in the future does it compute the
+remaining time. It then calls the existing `enqueueSyncJobWithDelay` once, with
+the minimum remaining time across those Pods. A terminating Pod on a node
+without `MaintenanceInProgress=True` does not contribute to the requeue, so
+ordinary terminating Pods behave exactly as they do today and are not
+requeued by this feature.
 
 ### Node awareness
 
