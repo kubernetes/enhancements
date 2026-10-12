@@ -896,12 +896,10 @@ that has been enabled by default for at least two releases in every component:
   after the standard deprecation window (no earlier than v1.41).
 - The `ExtendWebSocketsToKubelet` dependency, `NodeDeclaredFeatures`
   ([KEP-5328](https://kep.k8s.io/5328)), reached GA and was locked on in v1.37.
-- `kubectl` no longer consults the `KUBECTL_REMOTE_COMMAND_WEBSOCKETS` and
-  `KUBECTL_PORT_FORWARD_WEBSOCKETS` environment variables. WebSockets is always
-  attempted first, with the existing automatic fallback to SPDY. If either
-  variable is set, `kubectl` emits a deprecation warning and ignores it. The
-  variables are removed from the `kubectl` code base after the standard deprecation
-  window.
+- The `KUBECTL_REMOTE_COMMAND_WEBSOCKETS` and `KUBECTL_PORT_FORWARD_WEBSOCKETS`
+  environment variables are removed, following the `kubectl` convention for
+  graduated feature gates; the release note announces the removal. WebSockets is
+  always attempted first, with the existing automatic fallback to SPDY.
 - WebSocket support for HTTPS proxies shipped in v1.33
   (https://github.com/kubernetes/kubernetes/issues/126134).
 - The following e2e tests, which exercise the KEP's subprotocols with no SPDY
