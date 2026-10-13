@@ -24,7 +24,7 @@ approvers:
 - '@macsko' # SIG-Scheduling
 - '@jackfrancis' # SIG-Autoscaling
 - '@towca' # SIG-Autoscaling
-status: implementable
+status: implemented
 stage: stable
 latest-milestone: "v1.37"
 milestone:
