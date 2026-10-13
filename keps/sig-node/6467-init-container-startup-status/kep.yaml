@@ -1,0 +1,22 @@
+title: Improve Init Container Startup Status Visibility
+kep-number: 6467
+authors:
+  - "@panpan0000"
+owning-sig: sig-node
+participating-sigs:
+  - sig-cli
+status: provisional
+creation-date: 2026-10-13
+reviewers:
+  - TBD
+approvers:
+  - TBD
+editor: TBD
+# Proposed alpha gate; name and rollout require SIG Node agreement.
+# No release milestone is targeted yet.
+stage: alpha
+feature-gates:
+  - name: InitContainerStartupStatus
+    components:
+      - kubelet
+disable-supported: true
