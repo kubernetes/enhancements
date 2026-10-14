@@ -360,7 +360,7 @@ sharingAffinity:
     apiGroup: networking.example.com
     kind: NICConfig
     cel:
-      expression: parameters.subnetID
+      expression: parameters.?subnetID.orValue("")
 ```
 
 A driver supporting several *kinds* that share a field path widens
