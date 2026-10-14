@@ -55,7 +55,7 @@ release target are not yet agreed.
 ## Summary
 
 **Users should be able to tell whether an init container is being prepared to
-start, is running, or is waiting for an earlier init container to finish, using
+start, is running, or is waiting for earlier init containers, using
 the same status semantics as regular containers.**
 
 Use `ContainerCreating` for an init container being prepared to start and retain
@@ -85,12 +85,13 @@ outside this KEP.
 
 ## Proposal
 
-For an init container eligible to start, kubelet uses `ContainerCreating` as the
-default waiting reason. Later containers waiting for earlier init containers
-retain `PodInitializing`. Observed states and specific errors take precedence.
+When an init container has no more specific state or error, kubelet uses
+`PodInitializing` if an earlier init container still blocks it under the existing
+startup rules. Otherwise, it uses `ContainerCreating` as the default waiting
+reason.
 
-For a Pod with two ordinary init containers, the expected status excerpt while
-preparing `init-0` is:
+For a Pod with one regular container and two ordinary init containers, the
+expected status excerpt while preparing `init-0` is:
 
 ```yaml
 status:
@@ -105,7 +106,7 @@ status:
           reason: PodInitializing
 ```
 
-The proposed Pod table output is:
+Using the existing server-side Pod printer, the output is:
 
 ```console
 $ kubectl get po demo
@@ -124,9 +125,10 @@ The following examples assume no startup errors or restarts:
 
 ### Risks and Mitigations
 
-Clients matching `PodInitializing` or `Init:0/N` may see different startup
-output. Document the change and test it with the feature gate enabled and
-disabled.
+Scripts, alerts, and controllers matching `state.waiting.reason` or Pod table
+output may need updates. Use `state.running` and `state.terminated` to identify
+execution states. Checks for these waiting defaults must accept both values
+during rollout. Test the change with the gate enabled and disabled.
 
 `ContainerCreating` is a general startup waiting reason. It can include image
 pulling; it does not prove that a CRI `CreateContainer` call is in progress.
@@ -140,12 +142,13 @@ errors, including `ErrImagePull`, `ImagePullBackOff`, and `CrashLoopBackOff`,
 keep their existing precedence. Regular containers retain their existing
 status behavior.
 
-Startup eligibility must follow the same dependency rules kubelet uses to start
-containers. An ordinary init container must complete successfully before the
-next starts. A restartable init container follows the existing `started` and
-startup-probe rules; `Running` alone is not enough to release the next container.
-Container restarts, sandbox recreation, and init resets must follow those rules
-rather than treating stale status as completed initialization.
+Startup eligibility follows kubelet's existing initialization progress.
+An ordinary init container must exit successfully before the next starts.
+A restartable init container must first satisfy the existing `started` rules:
+it is running and any configured startup probe has succeeded. A later sidecar
+restart alone must preserve initialization progress already made in the same sandbox.
+Sandbox recreation and init resets follow existing kubelet rules; stale status
+must not bypass them.
 
 No new Pod fields or CRI interfaces are needed. The existing Pod printer already
 displays `Init:ContainerCreating` for this waiting reason. No new table column
