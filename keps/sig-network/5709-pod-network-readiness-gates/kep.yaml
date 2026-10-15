@@ -1,0 +1,37 @@
+title: Add a well-known pod network readiness gate
+kep-number: 5709
+authors:
+  - "@tssurya"
+owning-sig: sig-network
+participating-sigs:
+  - N/A
+status: implementable
+creation-date: 2026-04-05
+reviewers:
+  - "@adrianmoisey"
+  - "@danwinship"
+approvers:
+  - "@danwinship"
+
+see-also:
+  - "/keps/sig-network/580-pod-readiness-gates"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: MyFeature
+    components:
+      - N/A
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
