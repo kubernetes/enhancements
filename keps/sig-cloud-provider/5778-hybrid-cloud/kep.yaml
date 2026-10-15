@@ -1,0 +1,28 @@
+title: Introduce explicit node ownership to allow multiple CCMs in a single Kubernetes cluster
+kep-number: 5778
+authors:
+  - "@sergelogvinov"
+owning-sig: sig-cloud-provider
+participating-sigs:
+  - sig-architecture
+status: provisional
+creation-date: 2026-01-11
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-cloud-provider/837-cloud-provider-labels"
+
+stage: alpha
+latest-milestone: "0.0"
+
+feature-gates:
+  - name: CloudProviderNodeOwnership
+    components:
+      - cloud-controller-manager
+disable-supported: true
+
+metrics:
+  - cloudprovider_node_ownership_skipped_total
