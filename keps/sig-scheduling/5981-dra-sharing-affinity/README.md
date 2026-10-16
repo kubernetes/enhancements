@@ -299,13 +299,11 @@ spec:
     - name: subnet
       apiGroup: networking.example.com
       kind: NICConfig
-      cel:
-        expression: parameters.subnetID
+      expression: parameters.subnetID
     - name: pkey
       apiGroup: networking.example.com
       kind: NICConfig
-      cel:
-        expression: parameters.ibPKey
+      expression: parameters.ibPKey
 ---
 # Device slice: carries devices, no sharingAffinity. Joined to the
 # metadata slice by the (driver, pool.name, generation) tuple.
@@ -332,7 +330,8 @@ Every extractor must state which opaque-config schemas it applies to.
 `apiGroup` and `kind` are required, and the scheduler evaluates an
 extractor's CEL only against configs whose `kind` and `apiVersion`
 group match — the version portion is ignored. Either field may be
-`"*"` to match any value, which is how a driver opts out of
+`"*"` to match any value, including configurations which don't have
+such a value, which is how a driver opts out of
 pre-filtering and keeps its own guard in CEL. Making the fields
 required rather than optional means an extractor cannot match broadly
 by accident: matching everything remains available, but it has to be
@@ -359,8 +358,7 @@ sharingAffinity:
   - name: subnet
     apiGroup: networking.example.com
     kind: NICConfig
-    cel:
-      expression: parameters.?subnetID.orValue("")
+    expression: parameters.?subnetID.orValue("")
 ```
 
 A driver supporting several *kinds* that share a field path widens
@@ -371,10 +369,9 @@ sharingAffinity:
   - name: subnet
     apiGroup: networking.example.com
     kind: "*"
-    cel:
-      expression: |
-        (parameters.kind == "NICConfig" || parameters.kind == "NICConfig2")
-          ? parameters.subnetID : ""
+    expression: |
+      (parameters.kind == "NICConfig" || parameters.kind == "NICConfig2")
+        ? parameters.subnetID : ""
 ```
 
 All extractors published by a pool apply to every device in that
@@ -472,12 +469,11 @@ configs that do not match without evaluating CEL.
 // Every entry in a pool's `sharingAffinity` list applies to every
 // device in the pool. See Design Details → API Enhancement for the
 // canonical godoc.
-// +union
 type SharingAffinityExtractor struct {
-    Name     string // affinity key name; unique within the pool
-    APIGroup string // opaque-config API group to match, or "*"
-    Kind     string // opaque-config kind to match, or "*"
-    CEL      *SharingAffinityCELExtractor // union member; only type in alpha
+    Name       string // affinity key name; unique within the pool
+    APIGroup   string // opaque-config API group to match, or "*"
+    Kind       string // opaque-config kind to match, or "*"
+    Expression string // CEL expression; required
 }
 ```
 
@@ -496,7 +492,7 @@ Properties of this design:
   hardware-configuration fields (qos, mtu, vlan) that drivers want
   to keep within their domain.
 - **Matching is independent of the extraction mechanism**:
-  `apiGroup` and `kind` sit beside `cel`, not inside it, so "which
+  `apiGroup` and `kind` sit beside `expression`, so "which
   configs does this apply to" stays separate from "how is the value
   pulled out." Every extractor type added later — a JSON path, say —
   reuses the same matching fields and the same validation, and is
@@ -926,11 +922,6 @@ type ResourceSliceSpec struct {
 // device config. Every entry in a pool's `sharingAffinity` list
 // applies to every device in the pool, and a request must satisfy
 // every entry for a device in that pool to be viable.
-//
-// Exactly one extractor type must be set. CEL is the only one defined
-// in alpha.
-//
-// +union
 type SharingAffinityExtractor struct {
     // Name is the sharing-affinity key name (for example "subnet").
     // It must be a DNS label and must be unique within the pool.
@@ -969,26 +960,6 @@ type SharingAffinityExtractor struct {
     // +k8s:maxLength=253
     Kind string
 
-    // CEL holds the extraction logic applied to configs that match
-    // APIGroup and Kind. It is a nested struct rather than a bare
-    // expression field so that alternative extractor types can be
-    // added later as sibling fields without a breaking change, and
-    // so that CEL-specific additions such as variable definitions
-    // have somewhere to live. It is a union member rather than a
-    // required field for the same reason: adding a sibling then
-    // stays purely additive, with no field changing from required to
-    // optional. DeviceSelector.CEL is the existing single-member
-    // union precedent.
-    //
-    // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-    CEL *SharingAffinityCELExtractor
-}
-
-// SharingAffinityCELExtractor holds the CEL expression that produces
-// a sharing-affinity key's value.
-type SharingAffinityCELExtractor struct {
     // Expression is the CEL expression evaluated for this key, over
     // the matched config's opaque.parameters bound as `parameters`.
     // It must return a string. An empty-string return means "no
@@ -1377,8 +1348,7 @@ spec:
     - name: subnet
       apiGroup: networking.example.com
       kind: NICConfig
-      cel:
-        expression: parameters.subnetID
+      expression: parameters.subnetID
 ---
 # Device slice: carries devices, no sharingAffinity. Joined to the
 # metadata slice by the (driver, pool.name, generation) tuple.
@@ -1480,13 +1450,11 @@ spec:
     - name: subnet
       apiGroup: networking.example.com
       kind: NICConfig
-      cel:
-        expression: parameters.subnetID
+      expression: parameters.subnetID
     - name: pkey
       apiGroup: networking.example.com
       kind: NICConfig
-      cel:
-        expression: parameters.ibPKey
+      expression: parameters.ibPKey
 ---
 # Device slice: carries devices, no sharingAffinity. Joined to the
 # metadata slice by the (driver, pool.name, generation) tuple.
@@ -1603,8 +1571,8 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
     (parse-check only; runtime cost is bounded per-eval at the scheduler)
   - Validation: a single `ResourceSlice` with both `devices` and
     `sharingAffinity` set is rejected (mutual exclusion)
-  - Validation: an extractor with no extractor type set is rejected
-    (declarative `+k8s:unionMember` on `cel`)
+  - Validation: an extractor with a missing or empty `expression`
+    is rejected
   - Round-trip serialization of `SharingAffinityExtractor`
 
 ##### Integration tests
