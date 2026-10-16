@@ -1,0 +1,31 @@
+title: Digest-Aware ImagePullPolicy Defaulting
+kep-number: 6083
+authors:
+  - "@lcarva"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: 2026-05-15
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-node/2535-ensure-secret-pulled-images"
+
+stage: alpha
+latest-milestone: "v1.34"
+
+milestone:
+  alpha: "v1.34"
+  beta: "v1.35"
+  stable: "v1.36"
+
+feature-gates:
+  - name: DigestAwareImagePullPolicyDefaulting
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics: []
