@@ -1,0 +1,30 @@
+title: "TopologySpreadConstraint skew excludes fully-tainted domains"
+kep-number: 5980
+authors:
+  - "@DerekFrank"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-autoscaling
+status: provisional
+creation-date: "2026-06-09"
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - "/keps/sig-scheduling/895-pod-topology-spread"
+  - "/keps/sig-scheduling/3022-min-domains-in-pod-topology-spread"
+  - "/keps/sig-scheduling/3094-pod-topology-spread-considering-taints"
+replaces: []
+stage: alpha
+latest-milestone: "v1.38"
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.40"
+feature-gates:
+  - name: TaintedDomainExclusionInPodTopologySpread
+    components:
+      - kube-scheduler
+disable-supported: true
+metrics: []
