@@ -1,0 +1,48 @@
+title: DRA Variables in CEL
+kep-number: 5259
+authors:
+  - "@vishalanarase"
+owning-sig: sig-node
+participating-sigs:
+  - sig-scheduling
+status: provisional
+creation-date: 2026-05-28
+reviewers:
+  - "@pohly"
+  - "@johnbelamaric"
+  - "@cici37"
+approvers:
+  - TBD  # sig-node DRA approvers (e.g. @pohly)
+see-also:
+  - "/keps/sig-node/3063-dynamic-resource-allocation/README.md"
+replaces: []
+superseded-by: []
+
+# KEP states: provisional, implementable, implemented, deferred, rejected, withdrawn, replaced
+latest-milestone: "v1.38"
+stage: alpha
+feature-gates:
+  - name: DRAVariablesInCEL
+    components:
+      - kube-apiserver
+      - kube-scheduler
+disable-supported: true
+metrics: []
+
+# The following fields are only required for KEPs targeting a release milestone.
+milestone:
+  alpha: "v1.38"
+  beta: ""
+  stable: ""
+
+# The following fields are only required for KEPs that have graduated to beta or stable.
+feature-gates-stable: []
+
+# The following fields are only required for KEPs that have graduated to GA.
+feature-gates-removed: []
+
+# The following fields are only required for KEPs that have been promoted to beta or stable.
+stable-version: ""
+
+# The following fields are only required for KEPs that have been promoted to GA.
+removed-version: ""
