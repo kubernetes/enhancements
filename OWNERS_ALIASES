@@ -63,7 +63,7 @@ aliases:
     - dgrisonnet
     # - logicalhan
     - pohly
-    - rexagod
+    # - rexagod
     - richabanker
   sig-k8s-infra-leads:
     - ameukam
