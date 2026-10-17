@@ -506,10 +506,10 @@ The following scenarios will be tested:
 | 3 | Validate Scale-Up Before Timer Expiry | Initiate a scale-down request and, before the delay timer expires, send a scale-up request for the container CPU. | • Verify the pending scale-down request is cleared<br />• The downward API volume reflects the current (scaled-up) cpuset<br />• Verify the pod scales up as requested<br />• Verify the resources allocated to the pod match the latest requested scale-up configuration |
 | 4 | Validate Repeated Scale-Down Before Timer Expiry | Initiate a scale-down request and, before the delay timer expires, send another, different scale-down request for the container CPU. | • Verify the initial pending scale-down request is cleared<br />• The downward API volume reflects the cpuset from the latest scale-down request<br />• Verify the pod scales down following the latest request after the timer expires<br />• Verify the resources allocated to the pod match the final scaled-down configuration |
 | 5 | Validate Kubelet Restart Before Timer Expiry | Initiate a scale-down request and restart the Kubelet before the delay timer expires. | • Verify the scale-down is reprocessed after the kubelet restarts<br />• Once the Kubelet restarts, verify the downward API volume exposes the new cpuset for the pending scale-down<br />• Verify the Pod scales down after the `scale-delay-time` has elapsed |
-| 6 | Feature gate `DownwardAPIAssignedResources` Rollback | Enable the feature gate and initiate a scale-down request. After scale-down actuation, disable the feature gate and perform another scale-down request. | • Verify CPU manager states are exposed through the Downward API when the feature gate is enabled<br />• Verify the pod scales down after timer expiry<br />• Restart kubelet and kube-apiserver with the feature gate disabled, verify existing pods with `assigned.cpuset` continue running without errors (field is silently ignored)<br />• Perform pod downscaling again and verify the pod still scales down after timer expiry (but `assigned.cpuset` is not exposed) |
-| 7 | Feature gate `DownwardAPIAssignedResources` Rollout | Disable the feature gate and initiate a scale-down request. After scale-down actuation, enable the feature gate and perform another scale-down request. | • Verify the pod scales down after timer expiry<br />• Restart kubelet and kube-apiserver with the feature gate enabled, patch the pod to add downwardAPI and verify the pod comes in Running state without errors<br />• Perform pod downscaling again and verify CPU manager states are exposed through the Downward API, while the pod scales down after timer expiry<br />• Verify pods created with `assigned.cpuset` while feature gate was disabled are admitted (field silently ignored) and start receiving correct values after enabling the feature gate |
-| 8 | Kubelet Version Rollback | Start with version v1.37 and initiate a scale-down request. Before scale-down completes (i.e. before timer expiry), downgrade kubelet to v1.36. | Before Downgrade:<br />• Verify CPU manager states are exposed through the Downward API<br />After Downgrade:<br />• Patch the pod to remove downward-API, verify the pod comes in Running state and the pending scale-down request is rejected since scaling exclusive cpus are not supported in v1.36 |
-| 9 | Kubelet Version Rollout | Start with version v1.36, deploy a pod with exclusive cpu, upgrade to v1.37, enable the `DownwardAPIAssignedResources` feature gate, and initiate a scale-down request. | • Verify the pod remains in Running state<br />• Patch the pod to add downward-API and verify CPU manager states are exposed through the Downward API<br />• Verify the pod scales down after the scale-delay timer expires |
+| 6 | Feature gate `DownwardAPIAssignedResources` Rollback | Enable the feature gate and create a pod. Then disable the feature gate and create another pod. | • Verify CPU manager states are exposed through the Downward API for pods created when the feature gate is enabled, and states remain exposed after the feature gate is disabled<br />• Verify CPU manager states are NOT exposed through the Downward API for pods created when the feature gate is disabled |
+| 7 | Feature gate `DownwardAPIAssignedResources` Rollout | Disable the feature gate and create a pod. Then enable the feature gate and create another pod. | • Verify CPU manager states are NOT exposed through the Downward API for pods created when the feature gate is disabled, and states remain hidden after the feature gate is enabled<br />• Verify CPU manager states are exposed through the Downward API for pods created when the feature gate is enabled |
+| 8 | Kubelet Version Rollback | Start with version v1.37 and initiate a scale-down request. Before scale-down completes (i.e. before timer expiry), downgrade kubelet to v1.36. | Before Downgrade:<br />• Verify CPU manager states are exposed through the Downward API<br />After Downgrade:<br />• Verify the pod is still in Running state and the pending scale-down request is rejected since scaling exclusive cpus are not supported in v1.36 (and kubelet logs report "unsupported container resource" for assigned.cpuset) |
+| 9 | Kubelet Version Rollout | Start with version v1.36, deploy a pod with exclusive cpu, upgrade to v1.37, enable the `DownwardAPIAssignedResources` feature gate, and initiate a scale-down request. | • Verify the pod remains in Running state<br />• Verify CPU manager states are not exposed through the Downward API<br />• Verify the pod scales down after the scale-delay timer expires |
 
 
 ### Graduation Criteria
@@ -567,13 +567,15 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-The scale-down delay functionality doesn't store any information in kubelet checkpoints or any other persistent storage. This makes upgrades and downgrades seamless.
+The scale-down delay functionality doesn't store any information in kubelet checkpoints or any other persistent storage. This means that `preAssignments` and active `scale_delay_timer` states are lost when kubelet restarts or is downgraded to a version that doesn't support this feature. If kubelet is downgraded to a version below v1.37, it no longer supports Exclusive CPU resize (introduced in [KEP-5554](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5554-in-place-update-pod-resources-alongside-static-cpu-manager-policy/README.md)). Therefore, it is recommended that administrators avoid downgrading kubelet to a version below v1.37 while pod resize operations are in progress. If a downgrade must be performed during an active resize, restarting the affected pods is recommended as a mitigation to resynchronize cpusets with allocations.
 
 The new field `assigned.cpuset` is exposed behind the `DownwardAPIAssignedResources` feature gate. Field validation in kube-api-server depends on this gate. Kubelet handles file creation and updates based on pod spec (no dependency on feature gate).
 
 The feature gate is Alpha and disabled by default. The documentation states: "Only enable this feature gate when all kubelets in the cluster support this feature." The operator must upgrade all kubelets first, then enable the feature gate.
 
 This documentation entry guarantees that, in both upgrades and downgrades, if one of the kubelet versions does not yet support this feature, the feature gate must remain disabled.
+
+
 
 
 ### Version Skew Strategy
@@ -779,21 +781,20 @@ Note: The `DownwardAPIAssignedResources` feature gate is configured on kube-apis
 1. Deploy cluster with `DownwardAPIAssignedResources` feature gate disabled on kube-apiserver.
 2. Create a pod with `assigned.cpuset` downward API volume.
    - Verify the pod is admitted (field is silently ignored by apiserver).
-   - Verify kubelet creates the downward API volume file (empty or with current cpuset).
+   - Verify kubelet doesn't creates the downward API volume file.
 3. Initiate a pod downscaling request.
    - Verify the pod scales down after timer expiry.
-   - Verify the downward API volume file is updated with the new cpuset by kubelet.
 4. Enable the feature gate on kube-apiserver (restart apiserver) and initiate another pod downscaling request.
    - Verify the pod remains in `Running` state without errors.
-   - Verify CPU manager states are exposed through the Downward API.
-   - Verify new pods with `assigned.cpuset` are accepted by apiserver.
+   - Verify CPU manager states are not exposed through the Downward API for pods created when feature gate was disabled.
+   - Verify new pods with `assigned.cpuset` are accepted by apiserver and have cpusets exposed through the Downward API.
 5. Disable the feature gate on kube-apiserver again and initiate another pod downscaling request.
-   - Verify existing pods with `assigned.cpuset` continue running without errors (field is silently ignored).
+   - Verify existing pods with `assigned.cpuset` continue running without errors.
    - Verify the pod still scales down after timer expiry.
-   - Verify kubelet continues to update the downward API volume file (kubelet behavior is independent of the feature gate).
+   - Verify kubelet continues to update the downward API volume file (kubelet behavior is independent of the feature gate) for pods created when feature was enabled, and continues not to expose assigned cpusets for pods created when feature gate was disabled.
 6. Finally, re-enable the feature gate on kube-apiserver and initiate another pod downscaling request.
    - Verify the pod remains in `Running` state without errors.
-   - Verify CPU manager states are exposed through the Downward API.
+   - Verify CPU manager states are exposed through the Downward API for pods created when feature was enabled, and continues not to expose assigned cpusets for pods created when feature gate was disabled.
 
 **Test `scale-delay-time` feature upgrade and rollback**
 
