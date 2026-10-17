@@ -188,7 +188,7 @@ A good summary is probably at least a paragraph in length.
 
 Allow specifying whether to unshare cgroup namespaces.
 
-So far, cgroup namespaces have been unshared only for non-privileged pods on cgroup v2 nodes.
+So far, cgroup namespaces have been unshared only for non-privileged containers on cgroup v2 nodes.
 
 See the `cgroup namespace` paragraph in [KEP-2254: Cgroups v2](../2254-cgroup-v2/README.md) for the reason:
 
@@ -214,7 +214,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-The motivation is to allow privileged pods to unshare cgroup namespaces.
+The motivation is to allow privileged containers to unshare cgroup namespaces.
 This will make resource accounting and enforcements accurate, especially when running nested containers.
 
 See [Story 1: BuildKit](#story-1-buildkit) in [User Stories](#user-stories-optional).
@@ -250,8 +250,8 @@ nitty-gritty.
 
 ### Core API
 
-- Add `HostCgroupNamespace *bool` to [`PodSpec`](https://pkg.go.dev/k8s.io/api/core/v1#PodSpec).
-  On cgroup v2 nodes, the default value is `true` for privileged pods, and `false` for non-privileged pods.
+- Add `HostCgroupNamespace *bool` to [`Container`](https://pkg.go.dev/k8s.io/api/core/v1#Container).
+  On cgroup v2 nodes, the default value is `true` for privileged containers, and `false` for non-privileged containers.
   On cgroup v1 (deprecated) nodes, the default value is always `true`.
   This field could be alternatively named `HostCgroups` (`HostCgroup`?) for consistency with `HostNetwork`, `HostUsers`, etc.,
   however, it might be confusing as the field actually relates to cgroup namespaces, not to cgroups per se.
@@ -262,9 +262,19 @@ nitty-gritty.
 ### CRI API
 
 - Add `CgroupnsOptions *CgroupNamespace` to [`NamespaceOption`](https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1#NamespaceOption).
-  `CgroupnsOptions.Mode` can be set to either `POD` or `NODE`.
+  `CgroupnsOptions.Mode` can be set to either `CONTAINER` or `NODE`.
+  `POD` doesn't make much sense here, as each of containers in a pod has their own cgroup.
   Similar to [`UsernsOptions *UserNamespace`](https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1#UserNamespace),
   the `CgroupnsOptions` field can be nil for backward compatibility.
+  i.e.,
+  - `CONTAINER` for non-privileged containers on cgroup v2 nodes.
+  - `NODE` for other cases.
+
+> [!NOTE]
+> The default behavior in containerd and CRI-O can be verified here:
+> - https://github.com/containerd/containerd/blob/v2.4.1/internal/cri/server/container_create.go#L765-L771
+> - https://github.com/cri-o/cri-o/blob/v1.37.1/server/container_create.go#L971
+>   (`createSandboxContainer` in CRI-O is called per a container, not per a pod)
 
 - Add `CgroupNamespaces bool` to [`RuntimeHandlerFeatures`](https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1#RuntimeHandlerFeatures)
   for indicating the presence of the feature.
@@ -318,8 +328,8 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-Setting `HostCgroupNamespace` to `true` will make other cgroups visible to the pod,
-however, they are not modifiable unless the pod is running with privileged mode.
+Setting `HostCgroupNamespace` to `true` will make other cgroups visible to the container,
+however, they are not modifiable unless the container is running with privileged mode.
 
 ## Design Details
 
@@ -378,7 +388,7 @@ extending the production code to implement this enhancement.
 - `k8s.io/kubernetes/pkg/securitycontext`: `2025-12-03` - `71.1%`
 
 ~<https://github.com/kubernetes/kubernetes/blob/master/pkg/securitycontext/accessors_test.go>
-will be updated to test the default value for privileged and non-privileged pods.~
+will be updated to test the default value for privileged and non-privileged containers.~
 In the default mode, kubelet will just pass `CgroupnsOptions = nil` to the CRI.
 CRI runtimes will have unit tests for resolving the default cgroup namespace mode.
 
@@ -643,10 +653,10 @@ Yes
 
 <!-- Some sentences were taken from ../2837-pod-level-resource-spec/README.md -->
 
-If the feature is re-enabled after being previously disabled, any new pods will
+If the feature is re-enabled after being previously disabled, any new containers will
 again have the specified cgroup namespace configuration.
 
-Pods that are already running with the cgroup namespace configuration will continue running
+Containers that are already running with the cgroup namespace configuration will continue running
 with the configuration at the time of execution.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -889,7 +899,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Yes, but negligible. Just a single boolean for each of pods and nodes.
+Yes, but negligible. Just a single boolean for each of containers and nodes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
