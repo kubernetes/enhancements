@@ -103,6 +103,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Contents](#contents-1)
       - [Consumers](#consumers-1)
   - [Additional Properties](#additional-properties)
+    - [Property Ladder](#property-ladder)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
     - [Note: On ClusterProperty.value max length validation](#note-on-clusterpropertyvalue-max-length-validation)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -486,6 +487,52 @@ following suffixes are reserved for Kubernetes and related projects: `.k8s.io`,
 free to use non-namespaced properties (e.g. `fingerprint`) as they see fit, but
 any shared tooling should use appropriately namespaced names.
 
+We foresee that there will be more properties that the community wants to adopt as "well known" properties. Thus, we want to define a process for adopting a property to be a well known property in the future.
+First, we would like to propose a template for everyone to fill in order to propose a new property,
+and then we will define a "property ladder" that describes the process of adopting a property to be a well known property.
+
+#### New property proposal template
+<form>
+Here is the requirements below use the keywords **must, should,** and **may**
+purposefully in accordance with [RFC-2119](https://tools.ietf.org/html/rfc2119).
+
+<label for="property-name">Property Name</label><br>
+<input type="text" id="property-name" name="property-name" placeholder="[INSERT PROPERTY NAME HERE]" style="width:20%; height:auto;"><br><br>
+
+<label for="uniqueness">Uniqueness</label><br>
+<textarea id="uniqueness" name="uniqueness" placeholder="Describe the uniqueness requirements" style="width:50%; height:auto;"></textarea><br><br>
+
+<label for="background">Background</label><br>
+<textarea id="background" name="background" placeholder="Describe the motivation and context of this property" style="width:50%; height:auto;"></textarea><br><br>
+
+<label for="notable-scenarios">Notable Scenarios</label><br>
+<textarea id="notable-scenarios" name="notable-scenarios" placeholder="Describe the targeted scenario" style="width:50%; height:auto;"></textarea><br><br>
+
+<label for="consumers">Consumers</label><br>
+<textarea id="consumers" name="consumers" placeholder="Describe how consumers should use this property" style="width:50%; height:auto;"></textarea><br><br>
+
+<label for="special-note">Special note (optional):</label><br>
+<textarea id="special-note" name="special-note" placeholder="Describe any other speical note to this property" style="width:50%; height:auto;"></textarea><br><br>
+
+</form>
+
+
+#### Property Ladder
+Here is the three-tiered approach to adopting a property to be a well known property in the About API:
+
+1. **Extension Property Stage**: A property is implemented as an extension property if the implementer has no intent to elevate it to a standard property. This property cannot use the reserved suffixes and is not required to be implemented by all implementers.
+
+2. **Standard Property Stage**: The implementor can propose to add a property to be a **standard** property which means if anyone implements the property with the same name, it must follow the same definition and rules described in the KEP. Not all implementers are required to implement the property.
+   The process for proposing a standard property is as follows:
+    * The property sponsor must present a discussion agenda with clear use cases and motivation at a Multi-cluster SIG meeting.
+    * The community will vote on the proposal, and if it receives approval from at least 2/3 of voters, the property becomes a standard property and is incorporated into the About API KEP.
+
+3. **Core Property Stage**: After a property has maintained standard status for at least 6 months and has 3 or more implementations, one can propose to elevate it to a **core** property which means it must be implemented by every implementer that implements the About API.
+   The process for proposing a core property is as follows:
+    * SIG leads may initiate another vote to determine if there is consensus to elevate the property to the **core** group.
+    * The community will vote on the proposal, and if it receives approval from at least 2/3 of voters, the property becomes a core property and is incorporated into the About API KEP.
+
+This three-tiered approach ensures that properties are thoroughly vetted before becoming required components of the About API.
 
 ### Notes/Constraints/Caveats
 
@@ -640,7 +687,7 @@ this time (see the Non-Goals section).
 # An example object of `cluster.clusterset.k8s.io ClusterProperty` 
 # using a kube-system ns uuid as the id value (recommended above):
 
-apiVersion: about.k8s.io/v1
+apiVersion: about.k8s.io/v1beta1
 kind: ClusterProperty
 metadata:
   name: cluster.clusterset.k8s.io
@@ -652,7 +699,7 @@ spec:
 # An example object of `cluster.clusterset.k8s.io ClusterProperty` 
 # using a human-readable string as the id value:
 
-apiVersion: about.k8s.io/v1
+apiVersion: about.k8s.io/v1beta1
 kind: ClusterProperty
 metadata:
   name: cluster.clusterset.k8s.io
@@ -701,7 +748,7 @@ valid.
 ```
 # An example object of `clusterset.k8s.io ClusterProperty`:
 
-apiVersion: about.k8s.io/v1
+apiVersion: about.k8s.io/v1beta1
 kind: ClusterProperty
 metadata:
   name: clusterset.k8s.io
