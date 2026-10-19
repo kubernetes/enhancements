@@ -7,7 +7,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Evidence and scope](#evidence-and-scope)
-  - [User Stories](#user-stories)
+  - [Illustrative scenarios (not validated user stories)](#illustrative-scenarios-not-validated-user-stories)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
@@ -80,6 +80,13 @@ replicas with `maxUnavailable: 5` produce a threshold of 5. I ran
 `GOTMPDIR=/home/krosci/tmp-go-build go test ./pkg/controller/deployment/util -run '^TestMinAvailable$' -count=1`
 against upstream Kubernetes commit `bbf142898f3`; it passed.
 
+I also ran the existing controller status tests at the same commit:
+[`TestSyncRolloutStatus`], [`TestStatefulSetStatusUpdate`], and
+[`TestNumberReadyStatus`]; all passed. These tests verify current status and
+rollout behavior. None exercises `minAvailableReplicas`, which is not
+implemented in that source tree; they are baseline evidence, not validation of
+the proposed field.
+
 The HPA replica calculator counts Pods that are Running and PodReady in
 [`getReadyPodsCount`]; it does not consume the Deployment `Available`
 condition. kube-proxy builds endpoint state from EndpointSlice/Pod readiness,
@@ -88,7 +95,14 @@ the proposed condition is a status signal only.
 
 The reported user story about delaying traffic until a threshold is met is not demonstrated by this proposal. A `Deployment` condition does not change Pod readiness or Service endpoint eligibility, and the HPA does not consume this condition. The field is therefore proposed only for consumers that explicitly observe the workload status. Before implementation, a concrete consumer must show why reading the existing replica counters or configuring `maxUnavailable` is insufficient; this KEP does not claim a built-in traffic or HPA effect.
 
-### User Stories
+### Illustrative scenarios (not validated user stories)
+
+No concrete consumer for a status-only threshold has been identified in the
+issue discussion or this KEP review. The following scenarios are hypothetical
+examples of what a consumer might do; they are not evidence that this API is
+needed. The proposal must not advance to implementation until a real consumer
+shows why reading existing replica counters or configuring `maxUnavailable` is
+insufficient.
 
 **Story 1: Threshold during initial scale-up**
 
@@ -504,5 +518,8 @@ replica count, and a percentage would be a different API contract.
 
 [Deployment controller]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/deployment/sync.go#L523
 [`TestMinAvailable`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/deployment/util/deployment_util_test.go#L1378
+[`TestSyncRolloutStatus`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/deployment/progress_test.go#L196
+[`TestStatefulSetStatusUpdate`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/statefulset/stateful_set_control_test.go#L3184
+[`TestNumberReadyStatus`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/daemon/daemon_controller_test.go#L1643
 [`getReadyPodsCount`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/podautoscaler/replica_calculator.go#L323
 [issue #134336]: https://github.com/kubernetes/kubernetes/issues/134336
