@@ -113,8 +113,11 @@ KEP does not present the conntrack unit test as an end-to-end reproduction.
 
 The source reproduction verifies conntrack reconciliation only; it does not
 prove an end-to-end SIP transaction survives. A multi-node packet-level test
-is required before claiming that result. I could not run such a cluster here
-because this environment lacks `kind`, a container runtime, and `CAP_NET_ADMIN`.
+is required before claiming that result. I could not run such a cluster here:
+`kind` and `kubectl` are absent, host network-namespace creation is denied, and
+the host has no effective `CAP_NET_ADMIN`. Rootless Podman can grant
+`NET_ADMIN` inside an isolated container, but that does not supply the
+Kubernetes cluster and multi-node packet path needed for this test.
 
 ### Goals
 
