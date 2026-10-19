@@ -109,11 +109,14 @@ against upstream Kubernetes commit `bbf142898f3`; it passed with both cases:
 The synthetic `Ready=false, Serving=true` fixture does not prove that a
 selector-backed Pod can currently produce that state. In current upstream,
 [`podToEndpoint`] derives `Serving` from Pod readiness. The proposed container
-probe and EndpointSlice propagation are therefore required parts of the design; this
-KEP does not present the conntrack unit test as an end-to-end reproduction.
+probe and EndpointSlice propagation are therefore required parts of the
+design. The conntrack unit test is only source-level evidence; the packet
+reproduction below separately verifies the current user-visible failure.
 
-I also reproduced the user-visible UDP failure in a two-node kind cluster using
-rootless Podman, kind v0.30.0, and Kubernetes v1.33.1. A client on the
+I reproduced the user-visible UDP failure in a two-node kind cluster using
+rootless Podman, kind v0.30.0, and Kubernetes v1.32.1, the server version
+reported in [kubernetes/kubernetes#134143]. I repeated the same scenario on
+v1.33.1. A client on the
 control-plane node opened UDP flows through a ClusterIP Service to one of two
 backend Pods on the worker. The Service used `sessionAffinity: ClientIP` so the
 unconnected and connected client sockets selected the same backend. That
@@ -128,15 +131,15 @@ drained. This reproduces the source-tuple change and application-visible loss
 without depending on a SIP implementation. It does not claim that a full SIP
 transaction or customer deployment was tested.
 
-The v1.33.1 implementation has an additional edge case relevant to test
-coverage: when the only endpoint becomes non-serving, it skips cleanup because
-the retained serving-endpoint set is empty ([v1.33.1 cleanup code]). The
-reported issue describes a Deployment with multiple replicas; the reproduction
-above keeps another backend serving and exercises the path that deletes the
-stale endpoint's mappings. The current upstream [`CleanStaleEntries`] code at
-`bbf142898f3` handles an empty serving set differently. Tests for this KEP must
-cover both zero and non-zero remaining serving endpoints, in addition to the
-processing=true retention path.
+In a separate v1.33.1 run with only one backend, the old cleanup code skipped
+the flow cleanup when that sole endpoint became non-serving because its
+retained serving-endpoint set was empty ([v1.33.1 cleanup code]). The issue
+reports multiple Deployment replicas; the main reproduction keeps another
+backend serving and exercises cleanup of the stale backend's mappings. The
+current upstream [`CleanStaleEntries`] code at `bbf142898f3` handles an empty
+serving set differently. Tests for this KEP must cover both zero and
+non-zero remaining serving endpoints, in addition to the processing=true
+retention path.
 
 ### Goals
 
