@@ -70,6 +70,15 @@ ConfigMap updates. The absence of a user-facing update contract does not
 eliminate the compatibility impact of changing behavior that the repository
 itself tests.
 
+The test is evidence of an implemented behavior, not evidence that kube-proxy
+can reliably apply configuration updates: it checks process exit, not successful
+application of the new configuration or safe cluster-wide rollout. The test
+must be changed in the same implementation to assert the proposed contract:
+changing the file alone does not terminate the process, and an explicit process
+restart reads the changed file. The implementation must preserve coverage for
+startup parsing and validation; it must not simply delete `TestConfigChange`
+and leave the new behavior untested.
+
 ## Motivation
 
 kube-proxy does not apply a new configuration to its running proxy in place.
@@ -198,6 +207,20 @@ update API, does not reload the running proxy, and behaves differently for
 direct writes and projected ConfigMap updates. Keeping a compatibility mode
 would perpetuate that ambiguous contract and add lifecycle cost without making
 ConfigMap updates reliable.
+
+A feature gate is rejected for this change. With the gate disabled, the old
+event-triggered exit remains the default and the KEP's contract is not delivered
+to ordinary users; enabling it by default would still require a rollout that
+temporarily permits different process lifecycle behavior across nodes. Either
+mode would add a second supported behavior, gate configuration and version-skew
+cases, and an eventual gate-removal migration, without making file updates
+reliable or providing cluster-wide rollout control. A gate would be justified
+only if the project required users to retain the old behavior during a defined
+transition; this proposal rejects that transition because it prolongs the
+implicit behavior while providing no safe update workflow. The compatibility
+cost is instead handled explicitly through release notes, migration guidance,
+and tests for the new contract. This is a deliberate compatibility tradeoff,
+not a claim that the change has no compatibility impact.
 
 This is a discussion draft, not ready to merge until SIG Network identifies a
 sponsor and reviews the proposal. Its status is **provisional** because the
@@ -350,10 +373,17 @@ this KEP's implementation:
 There is no deprecation release or compatibility switch. The watcher is not a
 hot-reload implementation and does not reliably observe projected ConfigMap
 updates, but its direct-write process-exit behavior is asserted by an existing
-upstream test. This KEP explicitly proposes changing that tested behavior. A
-transition switch would preserve two runtime behaviors and require eventual
-removal; the proposal instead accepts the compatibility cost, calls it out in
-release notes, and provides replacement workflows.
+upstream test and is used by some downstream deployments. This KEP explicitly
+proposes changing that tested behavior. The test is to be rewritten to verify
+the new startup-snapshot contract, with separate coverage for explicit restart
+and configuration validation; deleting the test without equivalent replacement
+coverage is out of scope. A transition switch would preserve two runtime
+behaviors and require eventual removal; the proposal instead accepts the
+compatibility cost, calls it out in release notes, and provides replacement
+workflows. This choice makes the first release containing the implementation
+the migration boundary; operators who require the old event-triggered exit
+must remain on a release that contains the watcher or implement restart policy
+in their configuration manager.
 
 ### Test Plan
 
