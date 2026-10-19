@@ -82,12 +82,26 @@ with source `10.16.0.2`. The report also demonstrates that inserting a
 expected source for that setup. See the full [reproducer and packet captures].
 
 I reviewed the reported trace and workaround against the described rule path.
-I could not rerun the cluster locally: this environment has no `kind` binary,
-container runtime, or `CAP_NET_ADMIN` for creating network namespaces or
-changing netfilter rules. The report is direct evidence for that Cilium setup,
-not proof that excluding arbitrary Pod CIDRs is safe for every CNI or routing
-mode. The integration tests below are required to establish that boundary for
-the implementation.
+I could not rerun the cluster locally. The published reproducer requires
+`kind`, Cilium CLI, and containerlab; none is installed here, and its setup
+script invokes `sudo containerlab`. Podman is available in rootless mode and a
+container can change its own netfilter rules with `NET_ADMIN`, but the host has
+no effective `CAP_NET_ADMIN`, `unshare -n` is denied, and `sudo` requires a
+password. That is not the reported three-node topology. The report is direct
+evidence for that Cilium setup, not proof that excluding arbitrary Pod CIDRs is
+safe for every CNI or routing mode. The integration tests below are required to
+establish that boundary for the implementation.
+
+I separately exercised the relevant Linux iptables primitive in a rootless
+Podman network namespace: a UDP packet addressed to a synthetic Service IP was
+DNATed in `OUTPUT` to a loopback listener; in `POSTROUTING`, a rule matching
+the post-DNAT destination and `--src-type LOCAL` returned before a following
+`MASQUERADE` rule. The listener received the packet, the DNAT and `RETURN`
+counters each increased by one, and the `MASQUERADE` counter stayed at zero.
+This verifies the local-source match and post-DNAT destination ordering for a
+locally generated packet. It does not exercise kube-proxy's masquerade mark,
+remote Pod sources, real node interfaces, or the reported Cilium routing
+topology, and is not a substitute for the integration cases below.
 
 The reported source-based workaround and this destination-CIDR proposal are
 not interchangeable in all networks. This KEP chooses a destination exclusion
