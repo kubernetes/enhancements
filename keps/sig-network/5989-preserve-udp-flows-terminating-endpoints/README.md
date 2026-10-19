@@ -53,6 +53,7 @@
 [`CleanStaleEntries`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/proxy/conntrack/cleanup.go#L47
 [`TestCleanStaleEntries`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/proxy/conntrack/cleanup_test.go#L89
 [`podToEndpoint`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/staging/src/k8s.io/endpointslice/utils.go#L33-L54
+[v1.33.1 cleanup code]: https://github.com/kubernetes/kubernetes/blob/v1.33.1/pkg/proxy/conntrack/cleanup.go#L75-L93
 
 ## Summary
 
@@ -111,13 +112,31 @@ selector-backed Pod can currently produce that state. In current upstream,
 probe and EndpointSlice propagation are therefore required parts of the design; this
 KEP does not present the conntrack unit test as an end-to-end reproduction.
 
-The source reproduction verifies conntrack reconciliation only; it does not
-prove an end-to-end SIP transaction survives. A multi-node packet-level test
-is required before claiming that result. I could not run such a cluster here:
-`kind` and `kubectl` are absent, host network-namespace creation is denied, and
-the host has no effective `CAP_NET_ADMIN`. Rootless Podman can grant
-`NET_ADMIN` inside an isolated container, but that does not supply the
-Kubernetes cluster and multi-node packet path needed for this test.
+I also reproduced the user-visible UDP failure in a two-node kind cluster using
+rootless Podman, kind v0.30.0, and Kubernetes v1.33.1. A client on the
+control-plane node opened UDP flows through a ClusterIP Service to one of two
+backend Pods on the worker. The Service used `sessionAffinity: ClientIP` so the
+unconnected and connected client sockets selected the same backend. That
+backend remained alive and sent periodic datagrams after its HTTP readiness
+endpoint was switched to not-ready; the other backend remained serving. The
+EndpointSlice reported the selected endpoint as `ready=false`,
+`serving=false`, `terminating=false`. kube-proxy logged
+`entriesDeleted=2` during conntrack reconciliation. The unconnected socket then
+received a datagram sourced from the backend Pod IP rather than the Service IP,
+and the connected socket timed out after queued pre-transition datagrams were
+drained. This reproduces the source-tuple change and application-visible loss
+without depending on a SIP implementation. It does not claim that a full SIP
+transaction or customer deployment was tested.
+
+The v1.33.1 implementation has an additional edge case relevant to test
+coverage: when the only endpoint becomes non-serving, it skips cleanup because
+the retained serving-endpoint set is empty ([v1.33.1 cleanup code]). The
+reported issue describes a Deployment with multiple replicas; the reproduction
+above keeps another backend serving and exercises the path that deletes the
+stale endpoint's mappings. The current upstream [`CleanStaleEntries`] code at
+`bbf142898f3` handles an empty serving set differently. Tests for this KEP must
+cover both zero and non-zero remaining serving endpoints, in addition to the
+processing=true retention path.
 
 ### Goals
 
