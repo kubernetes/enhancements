@@ -471,7 +471,4 @@ consistent or provide operators with control over restart timing.
 
 ## Implementation History
 
-- 2026-10-19: Provisional draft prepared for SIG Network review, tracking
-  [enhancements issue #6470].
-
-[enhancements issue #6470]: https://github.com/kubernetes/enhancements/issues/6470
+- 2026-10-19: Provisional draft prepared for SIG Network review.
