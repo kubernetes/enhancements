@@ -61,6 +61,14 @@ release note, and document controlled restart procedures. It is provisional
 because SIG Network has not yet accepted the design; review should assess this
 specific proposal and either approve it or request concrete revisions.
 
+This change also reverses an existing code-level expectation: upstream's
+`TestConfigChange` asserts that a direct write makes kube-proxy's run loop
+return an error ([existing test]). That test has been present since 2022, so
+removing the watcher is not merely deleting incidental behavior. The test
+covers a direct file write, not projected ConfigMap updates. The absence of a
+user-facing update contract does not eliminate the compatibility impact of
+changing behavior that the repository itself tests.
+
 ## Motivation
 
 kube-proxy does not apply a new configuration to its running proxy in place.
@@ -115,6 +123,7 @@ does not define file-change or restart semantics.
 [kubernetes/kubernetes#139204]: https://github.com/kubernetes/kubernetes/pull/139204
 [kubernetes/kubernetes#132877]: https://github.com/kubernetes/kubernetes/issues/132877
 [kubernetes/kubernetes#94022]: https://github.com/kubernetes/kubernetes/issues/94022
+[existing test]: https://github.com/kubernetes/kubernetes/blob/bbf142898f357d8ba4642748afdc4b7d70479021/cmd/kube-proxy/app/server_linux_test.go#L97-L168
 [reproduction and rollout report]: https://github.com/kubernetes/kubernetes/pull/139204#issuecomment-5998997887
 [downstream report]: https://github.com/kubernetes/kubernetes/pull/139204#issuecomment-6001988032
 
@@ -336,12 +345,13 @@ this KEP's implementation:
    have different behavior until all kube-proxy instances are upgraded or
    rolled back.
 
-There is no deprecation release or compatibility switch. The present watcher
-is an undocumented and incomplete process-exit mechanism, not a supported hot
-reload contract; a transition switch would preserve the same ambiguity and
-require eventual removal. The known compatibility cost is addressed with an
-explicit release note and actionable replacement workflows, rather than by
-maintaining two runtime behaviors.
+There is no deprecation release or compatibility switch. The watcher is not a
+hot-reload implementation and does not reliably observe projected ConfigMap
+updates, but its direct-write process-exit behavior is asserted by an existing
+upstream test. This KEP explicitly proposes changing that tested behavior. A
+transition switch would preserve two runtime behaviors and require eventual
+removal; the proposal instead accepts the compatibility cost, calls it out in
+release notes, and provides replacement workflows.
 
 ### Test Plan
 
@@ -349,6 +359,10 @@ These tests are required before implementation is considered complete. Exact
 test locations and release targeting will be added after SIG Network accepts
 the design.
 
+- Replace the existing direct-write test expectation explicitly: a changed
+  config file must leave the running process alive, and a newly started process
+  must load the new contents. Preserve separate tests for proxy-server error
+  propagation.
 - Unit tests: configuration changes by write, rename, removal, invalid content,
   and unchanged content do not terminate a running kube-proxy process; a new
   process reads and validates the latest file contents.
