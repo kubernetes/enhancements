@@ -353,6 +353,11 @@ The controller abides by the following principals:
   controller-defined parsing middle-ware that processes the configuration before
   it is consumed (by the resolvers), in order to cut down on unnecessary
   complexity as much as possible.
+* No custom resolver functions: The controller will **not** maintain custom
+  functions for any of the resolvers in its codebase by default, and relies on
+  existing, trusted, and popular libraries in the ecosystem instead. If such a
+  library is missing something, the fix is driven there, instead of in Resource
+  State Metrics itself.
 
 [metrics stability]: https://kubernetes.io/blog/2021/04/23/kubernetes-release-1.21-metrics-stability-ga
 
@@ -394,8 +399,21 @@ generation.
 
 - At its core, the controller relies on its managed resource,
   `ResourceMetricsMonitor` to fetch the metric generation configuration. Parts
-  of the configuration may be defined using different `resolver`s, such as
-  `unstructured` or `CEL` (more resolvers may be added in the future).
+  of the configuration may be defined using one of three `resolver`s:
+  `unstructured`, `CEL`, or `starlark`. `CEL` is the default resolver, owing to
+  its successful adoption across Kubernetes. Users may tone it down to the
+  `unstructured` resolver if a larger set of their queries are simple, and they
+  do not want to set the resolver on each one of them. Similarly, they may
+  switch to `starlark` if their queries are more demanding. These three
+  resolvers are expected to cover all complexities, and we do not anticipate
+  adding a fourth resolver in the foreseeable future.
+- We expect `CEL` to be the predominant resolver of the three. If any gaps are
+  found in `CEL`, the recommended path is for users to make use of either of the
+  other two resolvers for the time being, while the patch is driven upstream and
+  pulled back down. No custom resolver functions will be maintained in the
+  codebase by default; the controller relies on existing, trusted, and popular
+  libraries in the ecosystem instead. If such a library is missing something,
+  the fix is driven there, instead of in Resource State Metrics itself.
 - Once fetched, the controller `unmarshal`s the configuration YAML directly into
   `stores` which are a set of metric `families`, which in turn are a set of
   `metrics`.
@@ -445,7 +463,7 @@ generators: # Set of metrics stores for each CR we want to generate metrics for.
           - resolver: "cel" # Preferred resolver to parse the value expressions.
                             # MAY BE SPECIFIED AT ANY LEVEL.
                             # INNER RESOLVERS OVERRIDE THE OUTER ONES.
-                            # NO RESOLVER DEFAULTS TO THE "UNSTRUCTURED" ONE.
+                            # NO RESOLVER DEFAULTS TO "CEL".
             # Set of label-sets to generate for the current metric.
             labelKeys: # Set of ordered label-keys, static in nature.
               - "name"
@@ -733,6 +751,8 @@ in back-to-back releases.
   addition to mainstream DSLs seen across the ecosystem for similar use-cases,
   such as `jq` and `jsonpath` ([`prometheus-community/json_exporter`],
   [`openmcp-project/metrics-operator`], etc.).
+- Enforce `CEL` as the default resolver, and settle on the three-resolver set
+  (`unstructured`, `CEL`, `starlark`) with no plans for a fourth.
 
 [`openmcp-project/metrics-operator`]: https://github.com/openmcp-project/metrics-operator#metric
 [`prometheus-community/json_exporter`]: https://github.com/prometheus-community/json_exporter 
@@ -745,6 +765,7 @@ in back-to-back releases.
 - Introduce benchmark tests (against the earlier [script-based `bench` target])
   to ensure Resource State Metrics doesn't perform worse than Kube State
   Metrics in the future, and to have a baseline in general.
+- Identify leaks and investigate guardrails, for `starlark` especially.
 
 [script-based `bench` target]: https://github.com/kubernetes-sigs/resource-state-metrics/commit/9b6ea2dcb05185431190af91ae90f79d4397251e#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R9-R20
 [expfmt.MetricFamilyToOpenMetrics]: https://pkg.go.dev/github.com/prometheus/common@v0.67.5/expfmt#MetricFamilyToOpenMetrics
