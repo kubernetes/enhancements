@@ -55,11 +55,15 @@ depends on how the file is updated.
 The proposed direction is to make configuration a startup snapshot and require
 an explicit, operator-controlled kube-proxy restart to apply changes. This is a
 behavior change for update methods that currently trigger process exit, and it
-does not make a mutable ConfigMap update take effect. The proposal selects a
-direct transition: remove the watcher without a compatibility mode, publish a
-release note, and document controlled restart procedures. It is provisional
-because SIG Network has not yet accepted the design; review should assess this
-specific proposal and either approve it or request concrete revisions.
+does not make a mutable ConfigMap update take effect. Because the direct-write
+exit behavior is user-visible and asserted by an upstream test, this KEP treats
+it as a significant behavior removal: announce deprecation, preserve the
+behavior for at least one year after that announcement, then remove it in the
+first release after the minimum period has elapsed. During the transition,
+release notes, documentation, and a kube-proxy warning on the triggering file
+event direct operators to explicit restart workflows. This is a fixed migration
+path, not an open choice of end state. SIG review is still needed to validate
+the proposal and the deprecation classification.
 
 This change also reverses an existing code-level expectation: upstream's
 `TestConfigChange` asserts that a direct write makes kube-proxy's run loop
@@ -134,6 +138,7 @@ does not define file-change or restart semantics.
 [kubernetes/kubernetes#132877]: https://github.com/kubernetes/kubernetes/issues/132877
 [kubernetes/kubernetes#94022]: https://github.com/kubernetes/kubernetes/issues/94022
 [existing test]: https://github.com/kubernetes/kubernetes/blob/bbf142898f357d8ba4642748afdc4b7d70479021/cmd/kube-proxy/app/server_linux_test.go#L97-L168
+[watcher event handler]: https://github.com/kubernetes/kubernetes/blob/bbf142898f357d8ba4642748afdc4b7d70479021/cmd/kube-proxy/app/options.go#L309-L313
 [original test commit]: https://github.com/kubernetes/kubernetes/commit/af77381e01775a288fb8c5fb101837a197295315
 [reproduction and rollout report]: https://github.com/kubernetes/kubernetes/pull/139204#issuecomment-5998997887
 [downstream report]: https://github.com/kubernetes/kubernetes/pull/139204#issuecomment-6001988032
@@ -148,6 +153,7 @@ mechanisms and must not be conflated.
 
 [ConfigMap volume update documentation]: https://kubernetes.io/docs/tutorials/configuration/updating-configuration-via-a-configmap/
 [DaemonSet rollout documentation]: https://kubernetes.io/docs/tasks/manage-daemon/update-daemon-set/
+[Kubernetes deprecation policy]: https://kubernetes.io/docs/reference/deprecation-policy/#deprecating-a-feature-or-behavior
 [kubeadm kube-proxy reconfiguration procedure]: https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-reconfigure/
 
 ### Goals
@@ -201,26 +207,23 @@ consistent with the intended kube-proxy configuration. The versioned ConfigMap
 workflow applies to deployments that manage their DaemonSet and configuration
 references directly; it is not a prerequisite imposed on kubeadm users.
 
-The implementation will remove the file watcher without adding a feature gate
-or preserving a legacy mode. The watcher is not a documented configuration
-update API, does not reload the running proxy, and behaves differently for
-direct writes and projected ConfigMap updates. Keeping a compatibility mode
-would perpetuate that ambiguous contract and add lifecycle cost without making
-ConfigMap updates reliable.
+The implementation will remove the file watcher after a deprecation period of
+at least one year, measured from the first release that announces the removal.
+The watcher is not a reload mechanism and behaves differently for direct writes
+and projected ConfigMap updates, so the steady-state contract remains a startup
+snapshot with explicit process restart. The transition preserves the tested,
+observable direct-write behavior for the full required period while giving
+operators time to migrate.
 
-A feature gate is rejected for this change. With the gate disabled, the old
-event-triggered exit remains the default and the KEP's contract is not delivered
-to ordinary users; enabling it by default would still require a rollout that
-temporarily permits different process lifecycle behavior across nodes. Either
-mode would add a second supported behavior, gate configuration and version-skew
-cases, and an eventual gate-removal migration, without making file updates
-reliable or providing cluster-wide rollout control. A gate would be justified
-only if the project required users to retain the old behavior during a defined
-transition; this proposal rejects that transition because it prolongs the
-implicit behavior while providing no safe update workflow. The compatibility
-cost is instead handled explicitly through release notes, migration guidance,
-and tests for the new contract. This is a deliberate compatibility tradeoff,
-not a claim that the change has no compatibility impact.
+A feature gate is not used as the deprecation mechanism. Feature gates follow
+the lifecycle of experimental features; they do not replace the Kubernetes
+deprecation policy for removal of a significant user-visible behavior. During
+the deprecation period, the existing behavior remains active and emits a
+warning when the watcher observes a triggering change. The release that removes
+the watcher must be no earlier than 12 months after the release announcing
+deprecation. No compatibility gate or second long-term runtime mode is added.
+The direct-write behavior is not claimed to be harmless or undocumented merely
+because the watcher does not reload configuration.
 
 This is a discussion draft, not ready to merge until SIG Network identifies a
 sponsor and reviews the proposal. Its status is **provisional** because the
@@ -254,9 +257,8 @@ forward change.
 
 As an operator currently editing a mutable ConfigMap and expecting kube-proxy
 to apply changes, I need the release notes and documentation to state plainly
-that this proposal does not make that update effective, that direct-write
-restart behavior is removed without a compatibility period, and what
-replacement workflow is supported.
+that this proposal does not make that update effective, when direct-write
+restart behavior will be removed, and what replacement workflow is supported.
 
 ### Notes, Constraints, and Caveats
 
@@ -303,7 +305,7 @@ replacement workflow is supported.
 | Risk | Consequence | Mitigation / evidence required |
 | --- | --- | --- |
 | A user expects a mutable ConfigMap edit to apply new settings | Under the cited reproduction, the existing watcher did not restart kube-proxy for this update; the proposed behavior makes the need for a restart explicit | State that this KEP does not implement projected-ConfigMap reload; document the versioned ConfigMap and DaemonSet rollout path |
-| A user relies on direct file writes to trigger a process restart | The proposed change removes an observable behavior and leaves the process on its startup configuration | Call out the behavior change in release notes and documentation; document how external lifecycle managers can validate and restart kube-proxy |
+| A user relies on direct file writes to trigger a process restart | The behavior is removed after the deprecation period, leaving the process on its startup configuration | Preserve it for at least 12 months after announcement; warn when it is triggered; document explicit restart workflows and the removal release |
 | The same file update event is observed by kube-proxy processes on many nodes | Process restarts may occur outside rollout control; new or changed Services may not be reconciled while a replacement process is unhealthy | Remove event-triggered exits and use explicit DaemonSet rollout pacing; validate this path in multi-node tests and state that the rollout is not atomic |
 | A rollout loads invalid configuration | Replacement processes fail; existing dataplane rules may remain while kube-proxy cannot reconcile subsequent changes | Validate before rollout where possible, surface startup errors, and document rollback; do not claim automatic rollback or uniform dataplane behavior |
 | Startup-only behavior is mistaken for hot reload | Operator assumes settings took effect when they did not | State plainly that file changes are ignored until process restart; add appropriate startup and rollout documentation |
@@ -340,74 +342,95 @@ that update. Separate downstream patches that poll and restart on valid content
 changes are evidence of deployments that expect automatic application, but
 they do not establish a portable upstream contract.
 
-The migration policy is a direct change in the first release that includes
-this KEP's implementation:
+The migration policy has two stages:
 
-1. Remove the file watcher and do not add a feature gate or legacy mode.
-2. Add a release note stating that changes to the `--config` file do not restart
+1. In the first release announcing deprecation, retain the existing watcher
+   behavior. Emit a clear warning when a triggering event causes the current
+   process-exit behavior from the existing watcher event handler, and publish
+   release notes and migration guidance ([watcher event handler]).
+   The warning must not imply that configuration was reloaded or validated.
+2. Keep that behavior functional for at least 12 months after the deprecation
+   announcement. Remove the watcher only in the first release whose release
+   date is at least 12 months after the announcement release. With the usual
+   Kubernetes release cadence this is expected to be no earlier than the third
+   subsequent minor release; the elapsed-time requirement takes precedence.
+
+This schedule follows the Kubernetes rule for significant user-visible
+behaviors being removed: the deprecated behavior must function for at least one
+year after announcement ([Kubernetes deprecation policy]). The downstream
+reports and upstream regression test make treating this as significant the
+conservative, evidence-based classification. The proposal does not add an
+experimental feature gate as a substitute for that policy.
+
+The removal release must:
+
+1. Add a release note stating that changes to the `--config` file do not restart
    kube-proxy, and that a process restart is required to apply them.
-3. For deployments whose operators manage the kube-proxy DaemonSet and its
+2. For deployments whose operators manage the kube-proxy DaemonSet and its
    configuration references directly, document the versioned ConfigMap path:
    publish configuration under a new, immutable or versioned ConfigMap name,
    update the DaemonSet Pod template to reference it, and use `RollingUpdate`
    availability and readiness settings appropriate to the cluster. Keep the
    previous ConfigMap version available until the rollout succeeds so the
    DaemonSet can be rolled back.
-4. For kubeadm-managed clusters, follow the kubeadm reconfiguration procedure:
+3. For kubeadm-managed clusters, follow the kubeadm reconfiguration procedure:
    update the `kube-system/kube-proxy` ConfigMap's `data.config.conf` and
    restart kube-proxy Pods to apply it. Where using a DaemonSet RollingUpdate,
    configure and verify the availability and readiness behavior; keep the
    kubeadm source configuration aligned so upgrades do not restore stale
    settings. This procedure is distinct from changing ConfigMap data alone,
    which does not restart a running kube-proxy process.
-5. Document the external-manager path: publish a complete file, validate it
+4. Document the external-manager path: publish a complete file, validate it
    with tooling compatible with the target kube-proxy version where available,
    then restart kube-proxy through that manager. A manager that requires
    automatic application may watch revisions and trigger a restart only after
    validation; this remains outside kube-proxy.
-6. State that rollback to a Kubernetes release containing the watcher restores
+5. State that rollback to a Kubernetes release containing the watcher restores
    its previous event-triggered behavior. A mixed-version rollout can therefore
    have different behavior until all kube-proxy instances are upgraded or
    rolled back.
 
-There is no deprecation release or compatibility switch. The watcher is not a
-hot-reload implementation and does not reliably observe projected ConfigMap
-updates, but its direct-write process-exit behavior is asserted by an existing
-upstream test and is used by some downstream deployments. This KEP explicitly
-proposes changing that tested behavior. The test is to be rewritten to verify
-the new startup-snapshot contract, with separate coverage for explicit restart
-and configuration validation; deleting the test without equivalent replacement
-coverage is out of scope. A transition switch would preserve two runtime
-behaviors and require eventual removal; the proposal instead accepts the
-compatibility cost, calls it out in release notes, and provides replacement
-workflows. This choice makes the first release containing the implementation
-the migration boundary; operators who require the old event-triggered exit
-must remain on a release that contains the watcher or implement restart policy
-in their configuration manager.
+The existing upstream `TestConfigChange` must continue to pass during the
+deprecation period and verify the legacy direct-write exit behavior. The
+implementation in the removal release must replace that assertion with tests
+for the startup-snapshot contract, explicit restart, and configuration
+validation; deleting the test without equivalent coverage is out of scope.
+Downstream users who rely on direct-write process exit have at least the full
+one-year transition to move restart policy into their lifecycle manager. A
+rollback to a release containing the watcher restores the old behavior.
 
 ### Test Plan
 
-These tests are required before implementation is considered complete. Exact
-test locations and release targeting will be added after SIG Network accepts
-the design.
+Tests are phased with the migration. In the deprecation release, the existing
+`TestConfigChange` and equivalent process-level tests continue to verify the
+legacy direct-write exit, and new assertions verify the warning text and that
+the behavior remains enabled. Do not change the contract during this period.
+In the removal release, replace those assertions with tests for startup-only
+behavior. Exact test locations and release targeting will be added after SIG
+Network accepts the design.
 
-- Replace the existing direct-write test expectation explicitly: a changed
-  config file must leave the running process alive, and a newly started process
-  must load the new contents. Preserve separate tests for proxy-server error
+- During deprecation: test direct writes, replacement, and other currently
+  triggering events against the supported platforms; verify the watcher still
+  exits as before and emits a deprecation warning before exit. The warning must
+  not claim reload or validation.
+- In the removal release: change `TestConfigChange` to assert that a changed
+  config file leaves the running process alive and a newly started process
+  loads the new contents. Preserve separate tests for proxy-server error
   propagation.
-- Unit tests: configuration changes by write, rename, removal, invalid content,
-  and unchanged content do not terminate a running kube-proxy process; a new
-  process reads and validates the latest file contents.
-- Process-level tests on every supported operating system: direct writes,
-  replacement, and removal do not terminate a running kube-proxy; a new process
-  reads and validates the current file. Where file update mechanisms differ by
-  operating system, exercise the native mechanism rather than assuming Linux
-  filesystem semantics.
+- In the removal release: test that configuration changes by write, rename,
+  removal, invalid content, and unchanged content do not terminate a running
+  kube-proxy process; a new process reads and validates the latest file.
+- Process-level tests on every supported operating system must cover the
+  behavior applicable to that release phase. Where file update mechanisms
+  differ by operating system, exercise the native mechanism rather than
+  assuming Linux filesystem semantics.
 - Linux integration test: use a projected ConfigMap volume layout (symlink
-  indirection and atomic target swap) to verify that the running process
-  remains alive and a restarted process sees the updated contents.
-- Integration test: an invalid staged configuration does not affect the
-  running process, while a deliberate restart reports validation failure.
+  indirection and atomic target swap) to verify the transition-period behavior
+  and, after removal, that the process remains alive and reads new contents
+  only after restart.
+- In the removal release, test that an invalid staged configuration does not
+  affect the running process, while a deliberate restart reports validation
+  failure.
 - Multi-node e2e or equivalent rollout test: change a versioned config
   reference and verify that a DaemonSet applies the change according to its
   rollout availability settings, with readiness checks preventing premature
@@ -502,3 +525,7 @@ consistent or provide operators with control over restart timing.
 ## Implementation History
 
 - 2026-10-19: Provisional draft prepared for SIG Network review.
+- 2026-10-20: Replaced the proposed immediate removal with a fixed one-year
+  deprecation period and warning, following the policy for significant
+  user-visible behavior removals; retained `TestConfigChange` until the
+  removal release and defined the test transition.
