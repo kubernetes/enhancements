@@ -1,4 +1,4 @@
-title: MinReadyReplicas for Workload Controllers
+title: Configurable Available Thresholds for Workload Controllers
 kep-number: 6078
 authors:
   - "@kairosci"
@@ -20,7 +20,7 @@ milestone:
   beta: ""
   stable: ""
 feature-gates:
-  - name: MinReadyReplicas
+  - name: MinAvailableReplicas
     components:
       - kube-apiserver
       - kube-controller-manager

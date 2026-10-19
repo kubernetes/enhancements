@@ -1,4 +1,4 @@
-# KEP-6078: MinReadyReplicas for Workload Controllers
+# KEP-6078: Configurable Available Thresholds for Workload Controllers
 
 <!-- toc -->
 - [Summary](#summary)
@@ -6,6 +6,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Evidence and scope](#evidence-and-scope)
   - [User Stories](#user-stories)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -15,9 +16,15 @@
   - [Deployment Controller](#deployment-controller)
   - [StatefulSet Controller](#statefulset-controller)
   - [DaemonSet Controller](#daemonset-controller)
-  - [HPA Integration](#hpa-integration)
+  - [Consumer behavior](#consumer-behavior)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -34,53 +41,83 @@
 
 ## Summary
 
-Add a `minReadyReplicas` field to the spec of Deployment, StatefulSet, and DaemonSet. When set to a positive integer, the controller is considered Available once at least that many replicas are Ready, rather than waiting for all replicas. This gives operators control over the availability signal used by higher-level systems (HPA, network controllers, rollouts).
+Add a `minAvailableReplicas` field to Deployment, StatefulSet, and DaemonSet. When set to a positive value, it defines the absolute number of replicas that must be Available before the workload's `Available` condition is True. Deployment keeps its existing condition when unset or zero; StatefulSet and DaemonSet publish the new condition only when a positive threshold is configured. The field controls a status signal only; it does not gate Pod readiness, Service endpoints, HPA decisions, or rollout progression.
 
 ## Motivation
 
-Controllers today expose a binary Available condition: True only when all replicas are Ready, False otherwise. This all-or-nothing signal is too coarse for operators and higher-level systems that make rollout, rollback, or scaling decisions based on partial availability.
+The current Deployment `Available` condition does not mean that all replicas are Ready. The Deployment controller sets it when `availableReplicas >= spec.replicas - maxUnavailable`; StatefulSet exposes `availableReplicas`, and DaemonSet exposes `numberAvailable`. These counters and conditions do not provide a common, user-selected absolute threshold across all three workload types.
 
-During a rolling update of a controller with many replicas that take time to warm up, there is a long gap between "some replicas Ready" and "all replicas Ready" where no intermediate signal exists. Consumers of the Available condition — such as progressive delivery controllers, automated rollback tools, and rollouts — have no way to distinguish "still progressing, partially available" from "not yet available."
+The motivating [issue #134336] describes traffic imbalance during workload startup and asks for a rule for when a controller's replicas are available. The existing Deployment threshold is coupled to `maxUnavailable`, which also controls rollout behavior; changing it to obtain a status threshold changes the rollout policy too. For StatefulSets and DaemonSets, consumers can inspect the replica counters, but there is no common `Available` condition with an independently configured threshold.
 
-Adding a configurable threshold (`minReadyReplicas`) lets operators define when the controller is considered Available, giving consumers an intermediate signal while preserving the existing all-or-nothing behavior as the default (0).
+This proposal adds an independent status threshold. It is intentionally limited to reporting workload availability. It does not solve the reported traffic imbalance by itself: Services route according to Pod readiness and EndpointSlice state, not a workload's `Available` condition. A consumer that wants to gate traffic must explicitly watch and act on the condition; that integration is outside this KEP.
 
 ### Goals
 
-- Introduce `minReadyReplicas` on Deployment, StatefulSet, DaemonSet specs
-- Controller Available condition becomes True once at least `minReadyReplicas` replicas are Ready
-- Backward compatible: default 0 preserves existing behavior (all replicas must be Ready)
+- Introduce `minAvailableReplicas` on Deployment, StatefulSet, and DaemonSet specs
+- Define a common `Available` condition threshold using each controller's existing Available replica count when the field is positive
+- Preserve existing behavior when the field is omitted
 - Feature gated across alpha/beta/stable graduation
 
 ### Non-Goals
 
 - Changing pod-level readiness probes or readiness gates
-- Changing Service endpoint selection or kube-proxy behavior
-- Adding new condition types to existing controllers
+- Changing Pod readiness, Service endpoint selection, or kube-proxy behavior
+- Changing rollout strategy or rollout progression
 - Implementing per-zone or per-node availability rules
 
 ## Proposal
 
-Add an optional `minReadyReplicas` field to `DeploymentSpec`, `StatefulSetSpec`, and `DaemonSetSpec`. When the value is zero (default), existing behavior is preserved. When set to a positive integer N, the controller sets its Available condition to True once at least N replicas in the current owner ReplicaSet or controller are Ready.
+Add an optional `minAvailableReplicas` field to `DeploymentSpec`, `StatefulSetSpec`, and `DaemonSetSpec`. If omitted, each controller retains its existing status behavior. If set to a positive integer N, the controller sets `Available=True` when its total Available replica count is at least `min(N, desiredReplicas)`. `AvailableReplicas` accounts for `minReadySeconds`; the field does not count merely Ready Pods.
 
-For Deployments this means the Deployment controller reports Available as soon as the latest ReplicaSet reaches `max(Replicas, minReadyReplicas)` available replicas (clamped to the actual replica count). For StatefulSets and DaemonSets the same threshold applies to the controller's own ready/available replica count.
+For Deployments the count includes Available replicas across the Deployment's owned ReplicaSets, matching the existing `AvailableReplicas` status field. For StatefulSets and DaemonSets it uses their existing `availableReplicas` and `numberAvailable` counters. The threshold does not select only the newest ReplicaSet and does not affect the rollout controller's decisions.
+
+### Evidence and scope
+
+The current Deployment condition compares `availableReplicas` with
+`spec.replicas - MaxUnavailable(deployment)` in the
+[Deployment controller]. The existing [`TestMinAvailable`] verifies that 10
+replicas with `maxUnavailable: 5` produce a threshold of 5. I ran
+`GOTMPDIR=/home/krosci/tmp-go-build go test ./pkg/controller/deployment/util -run '^TestMinAvailable$' -count=1`
+against upstream Kubernetes commit `bbf142898f3`; it passed.
+
+The HPA replica calculator counts Pods that are Running and PodReady in
+[`getReadyPodsCount`]; it does not consume the Deployment `Available`
+condition. kube-proxy builds endpoint state from EndpointSlice/Pod readiness,
+not from Deployment conditions. These code paths support the boundary above:
+the proposed condition is a status signal only.
+
+The reported user story about delaying traffic until a threshold is met is not demonstrated by this proposal. A `Deployment` condition does not change Pod readiness or Service endpoint eligibility, and the HPA does not consume this condition. The field is therefore proposed only for consumers that explicitly observe the workload status. Before implementation, a concrete consumer must show why reading the existing replica counters or configuring `maxUnavailable` is insufficient; this KEP does not claim a built-in traffic or HPA effect.
 
 ### User Stories
 
-**Story 1: Gradual rollout with traffic gating**
+**Story 1: Threshold during initial scale-up**
 
-A user runs a Deployment with 20 replicas serving latency-sensitive traffic. Pods take 30 seconds to warm up caches. Without `minReadyReplicas`, the first pod to become Ready immediately receives traffic, causing overload. With `minReadyReplicas: 15`, the controller does not signal Available until 15 pods are Ready. An external network controller watches the Available condition and only programs Service endpoints once the threshold is met.
+An operator initially scales a 20-replica Deployment from zero and configures
+`maxUnavailable: 0` so the rollout strategy retains all desired capacity. A
+progressive delivery controller wants the workload's `Available` condition to
+become True once 15 replicas are Available. `minAvailableReplicas: 15` supplies
+that status threshold. It does not prevent Services from sending traffic to
+individual Ready Pods before 15 replicas are Available. A separate
+traffic-gating mechanism is required for that behavior. During a revision
+rollout, the condition counts old and new replicas together and is not a signal
+that 15 replicas of the new revision are Available.
 
-**Story 2: StatefulSet quorum-aware availability**
+**Story 2: Standard condition for a StatefulSet consumer**
 
-A user operates a StatefulSet with 5 replicas forming a clustered database. The cluster needs at least 3 members to form quorum. The user sets `minReadyReplicas: 3`. During a rolling update, the StatefulSet controller reports Available once 3 of 5 pods are Ready, signaling that the cluster can serve reads.
+A consumer observes a StatefulSet with five replicas and wants a standard
+condition once at least three replicas are Available. `minAvailableReplicas: 3`
+provides that signal; it does not prove application quorum or authorize reads.
+The application must continue to enforce its own quorum and health rules.
 
 ### Risks and Mitigations
 
-**Premature availability signaling**: Users may set `minReadyReplicas` too low and signal availability before the system is truly ready. Mitigated by documentation and the fact that default is 0 (existing strict behavior).
+**Condition is mistaken for traffic readiness or application quorum:** The field changes only a workload status condition. It does not gate Service endpoints, certify application health, or change the rollout strategy. API comments and documentation must state these limits. Consumers that need traffic gating must use Pod readiness or another explicit traffic mechanism.
 
-**Confusion with minReadySeconds**: The two fields have similar names but address different concerns. `minReadySeconds` delays per-pod readiness; `minReadyReplicas` reduces the replica threshold for controller-level availability. Documentation will clarify the distinction.
+**Redundant API:** Deployment already exposes `availableReplicas` and has an `Available` condition; StatefulSet and DaemonSet expose available replica counters. Before implementation, a concrete consumer must establish why those counters and the existing Deployment `maxUnavailable` behavior are insufficient. This KEP does not treat convenience alone as evidence of a core API requirement.
 
-**HPA metric skew ("yo-yo" effect)**: When `minReadyReplicas` causes the controller to report Available with fewer ready pods, the HPA may see inflated per-pod metrics and trigger an immediate scale-up. As new pods become ready, utilization drops and the HPA may scale back down, creating oscillation. Mitigated by HPA `behavior.scaleUp.stabilizationWindowSeconds` (60-120s recommended), target utilization buffers, and user awareness that this trade-off is inherent to relaxing the availability threshold.
+**Confusion with `minReadySeconds`:** The proposed field counts Available replicas, which already accounts for `minReadySeconds`; it does not count Pods that are merely Ready.
+
+**Misinterpreting the condition as traffic readiness**: A lower threshold can make `Available=True` while other Pods are not yet Available. The condition is only a workload-level status signal; documentation and API comments must state that it does not gate Services or certify application quorum.
 
 ## Design Details
 
@@ -93,113 +130,127 @@ A new field is added to each workload spec type:
 type DeploymentSpec struct {
     // ... existing fields
 
-    // Minimum number of replicas that must be Ready for the Deployment
-    // to be considered Available. Defaults to 0 (all replicas must be Ready).
+    // Minimum number of Available replicas for the workload's Available
+    // condition. When unset or zero, the controller's existing behavior applies.
     // +optional
-    MinReadyReplicas int32 `json:"minReadyReplicas,omitempty"`
+    MinAvailableReplicas int32 `json:"minAvailableReplicas,omitempty"`
 }
 
 // StatefulSetSpec
 type StatefulSetSpec struct {
     // ... existing fields
     // +optional
-    MinReadyReplicas int32 `json:"minReadyReplicas,omitempty"`
+    MinAvailableReplicas int32 `json:"minAvailableReplicas,omitempty"`
 }
 
 // DaemonSetSpec
 type DaemonSetSpec struct {
     // ... existing fields
     // +optional
-    MinReadyReplicas int32 `json:"minReadyReplicas,omitempty"`
+    MinAvailableReplicas int32 `json:"minAvailableReplicas,omitempty"`
 }
 ```
 
 Validation rules:
-- Must be non-negative
-- For Deployment and StatefulSet: rejected at admission level if `minReadyReplicas > spec.replicas`
-- For DaemonSet: the desired replica count is dynamic (number of matched nodes), so validation only rejects negative values at admission. The controller applies runtime clamping (see DaemonSet section).
-- If `spec.replicas` is later scaled below `minReadyReplicas`, the controller auto-clamps: `threshold = min(minReadyReplicas, actualReplicas)`
+- Must be non-negative; zero or omission means the pre-feature behavior.
+- Do not reject a value greater than the current desired count. Such validation
+  would make a later scale-down require a second spec change. The effective
+  threshold is `min(minAvailableReplicas, desiredReplicas)` at reconciliation
+  time, including for DaemonSets whose desired count changes with matching
+  nodes.
 
 ### Controller Behavior
 
 Each controller computes its desired "available threshold" as:
 
 ```
-if minReadyReplicas > 0:
-    threshold = min(minReadyReplicas, desiredReplicas)
+if minAvailableReplicas > 0:
+    threshold = min(minAvailableReplicas, desiredReplicas)
 else:
-    threshold = desiredReplicas
+    threshold = existingControllerThreshold
 ```
 
-When the controller's current available replica count reaches or exceeds this threshold, the controller sets its Available condition to True. When `minReadyReplicas` is 0, the threshold equals `desiredReplicas` (current behavior).
+When the controller's current Available replica count reaches this threshold,
+the controller sets `Available=True`. For Deployment, the omitted/zero case
+continues to use `spec.replicas - maxUnavailable`; it does not mean all desired
+replicas must be Available. For StatefulSet and DaemonSet, a positive field
+adds a standard `Available` condition based on their existing Available
+replica counters. When the field is omitted or zero, no new condition is added,
+preserving current status behavior.
 
-The `Available` condition status is set to `False` with reason `MinimumReadyReplicasUnavailable` when below the threshold, and `True` with reason `MinimumReplicasAvailable` when at or above it.
-
-When the `Available` condition transitions to `True` due to the `minReadyReplicas` threshold being crossed, the controller emits a Kubernetes Event `TargetAvailabilityReached` on the workload object with a message indicating the threshold and the actual available replica count.
+Use the existing Deployment reasons where applicable and define the corresponding
+stable condition type and reasons for StatefulSet and DaemonSet. Do not emit a
+separate Event: condition changes are observable in status, and an additional
+event would duplicate that state transition.
 
 ### Interaction with maxUnavailable
 
-This is the most critical design constraint. `minReadyReplicas` only influences the controller's `Available` condition signal. It must NOT alter the rollout strategy itself.
+`minAvailableReplicas` only influences the workload's `Available` condition. It
+does not alter rollout strategy or progression.
 
-**Scenario**: Deployment with 10 replicas, `maxUnavailable: 2` (at least 8 pods must be running during update), `minReadyReplicas: 5`.
+**Scenario**: Deployment with 10 replicas, `maxUnavailable: 2`, and
+`minAvailableReplicas: 5` during initial scale-up from zero.
 
 The rollout proceeds as follows:
-- The Deployment controller respects `maxUnavailable` independently. During a rolling update, it ensures at most 2 pods are unavailable at any time, regardless of `minReadyReplicas`.
-- The `Available` condition transitions to `True` once 5 pods in the new ReplicaSet are Ready, even though the rollout may still be in progress.
-- The rollout completes when all 10 pods in the new ReplicaSet are Ready (existing behavior).
+- The Deployment controller respects `maxUnavailable` independently. During a rolling update, it ensures at most 2 replicas are unavailable at any time, regardless of `minAvailableReplicas`.
+- The `Available` condition transitions to `True` once 5 replicas across the
+  Deployment's owned ReplicaSets are Available, even though the rollout may
+  still be in progress.
+- Rollout progression and completion continue to follow existing Deployment controller rules.
 
-**No stall or deadlock**: Because `minReadyReplicas` does not gate the rollout logic, setting a high threshold cannot stall the update. The controller continues creating and destroying pods according to `maxSurge`/`maxUnavailable` until the rollout is fully complete. The `Available` condition is merely a status signal — not a rollout gate.
+**No stall or deadlock**: Because `minAvailableReplicas` does not gate the rollout logic, setting a high threshold cannot stall the update. The controller continues creating and destroying pods according to `maxSurge`/`maxUnavailable` until the rollout is fully complete. The `Available` condition is merely a status signal — not a rollout gate.
 
-This decoupling is intentional: `minReadyReplicas` is a signal for external consumers (network controllers, HPA, operators), not a throttle for the controller itself.
+This decoupling is intentional: the condition is a status signal for consumers
+that explicitly watch the workload; it is not a throttle or traffic gate.
 
 ### Deployment Controller
 
-The Deployment controller currently computes a `newRS` (new ReplicaSet) and checks if `newRS.Status.AvailableReplicas >= desiredReplicas`. With `minReadyReplicas`:
+The Deployment controller currently sets `Available=True` when the total
+available replica count meets `spec.replicas - maxUnavailable`. With a positive
+`minAvailableReplicas`, it compares the total `AvailableReplicas` count across
+owned ReplicaSets with the effective threshold:
 
 ```
-threshold = min(minReadyReplicas, desiredReplicas)
-           or desiredReplicas if minReadyReplicas == 0
+threshold = min(minAvailableReplicas, desiredReplicas)
 ```
 
-The condition `DeploymentAvailable` is set based on `newRS.Status.AvailableReplicas >= threshold`.
+The `DeploymentAvailable` condition is set based on the total Available replica
+count, not only the newest ReplicaSet. When the field is zero, current
+`maxUnavailable`-based behavior is preserved.
 
-The existing `MinimumReplicasAvailable` and `MinimumReplicasUnavailable` reasons remain; for `minReadyReplicas` the messages are updated to reflect the threshold.
+The existing `MinimumReplicasAvailable` and `MinimumReplicasUnavailable`
+reasons remain; messages should include the effective threshold and current
+Available count when the field is set.
 
 ### StatefulSet Controller
 
-StatefulSet already computes `.status.availableReplicas` and `.status.readyReplicas`. The controller currently does not expose an `Available` condition in `.status.conditions`. With `minReadyReplicas`:
+StatefulSet already computes `.status.availableReplicas` and `.status.readyReplicas`. It does not expose an `Available` condition. When `minAvailableReplicas` is positive:
 
-- Add `.status.conditions` with `Available` type to StatefulSet (mirroring Deployment)
-- The condition is True when `.status.availableReplicas >= min(minReadyReplicas, replicas)`
+- Add a standard `Available` condition to StatefulSet status.
+- Set it True when `.status.availableReplicas >= min(minAvailableReplicas, desiredReplicas)`.
+- When the field is omitted or zero, leave StatefulSet conditions unchanged.
 
 ### DaemonSet Controller
 
-DaemonSet already tracks `.status.numberAvailable`. With `minReadyReplicas`:
+DaemonSet already tracks `.status.numberAvailable` and has an extensible conditions list. When `minAvailableReplicas` is positive:
 
-- Add `.status.conditions` with `Available` type to DaemonSet (mirroring Deployment)
-- The condition is True when `.status.numberAvailable >= minReadyReplicas`
+- Add a standard `Available` condition to DaemonSet status.
+- Set it True when `.status.numberAvailable >= min(minAvailableReplicas, desiredNumberScheduled)`.
+- When the field is omitted or zero, leave DaemonSet conditions unchanged.
 
-**Dynamic node count**: Unlike Deployment and StatefulSet, a DaemonSet's desired replica count changes as nodes join or leave the cluster. If `minReadyReplicas` is set to an absolute value larger than the current number of matched nodes, the controller clamps: `threshold = min(minReadyReplicas, desiredReplicas)`. This prevents a permanent `Available: False` state when the cluster shrinks.
+**Dynamic node count**: A DaemonSet's desired count changes as nodes join, leave, or stop matching its selector. Recompute the effective threshold from the current `desiredNumberScheduled` on every reconciliation. This prevents an unreachable absolute threshold from keeping the condition False after the desired count falls.
 
-For DaemonSets, a percentage-based equivalent (e.g. `minReadyPercent`) may be more intuitive. This is discussed in [Alternatives](#alternatives).
+An absolute threshold is intentional: the field reports a minimum number, not a percentage of a changing node population. A percentage form is not included in this proposal.
 
-### HPA Integration
+### Consumer behavior
 
-The Horizontal Pod Autoscaler uses the `Available` condition on Deployments as one signal for scaling decisions. When `minReadyReplicas` lowers the availability threshold, the HPA may observe a reduced ready pod count and compute inflated per-pod metrics, potentially triggering aggressive scale-up.
-
-**Design decision**: The HPA should continue using the existing `Available` condition without special-casing `minReadyReplicas`. Operators who set `minReadyReplicas` must be aware that:
-- The HPA sees the same `Available` signal as before (but it may transition to True sooner).
-- If per-pod metrics are skewed during the warm-up window (fewer ready pods inflating per-pod utilization), the HPA may trigger an immediate scale-up. When new pods become ready, utilization drops and the HPA may scale back down — creating a "yo-yo" effect.
-- **Explicit mitigation**: configure HPA `behavior.scaleUp.stabilizationWindowSeconds` to require the elevated metric to persist before acting. A window of 60-120s is typically sufficient to absorb the warm-up phase. Example:
-  ```yaml
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 120
-  ```
-- Additional mitigations include target utilization buffers and `--horizontal-pod-autoscaler-downscale-stabilization`.
-- This is no different from existing scenarios where `minReadySeconds` delays per-pod availability.
-
-Future work may consider an explicit HPA opt-in for `minReadyReplicas` awareness, but this is out of scope for this KEP.
+The HPA does not consume a Deployment's `Available` condition, and Service
+endpoint selection is based on Pod and EndpointSlice readiness. This feature
+does not change either behavior. Consumers that need the new threshold must
+explicitly watch the workload condition. The KEP currently has no measured
+integration showing that an existing consumer needs this field; identifying
+such a consumer is a prerequisite to implementation, not a SIG choice between
+different designs.
 
 ### Test Plan
 
@@ -207,32 +258,41 @@ Future work may consider an explicit HPA opt-in for `minReadyReplicas` awareness
 
 ##### Unit tests
 
-- `pkg/controller/deployment`: verify `Available` condition threshold with various `minReadyReplicas` values (0, 1, N, > replicas), verify no interaction with `maxUnavailable` rollout logic
-- `pkg/controller/statefulset`: verify condition computation and edge cases
-- `pkg/controller/daemon`: verify condition computation and edge cases, verify runtime clamping when desired replicas < minReadyReplicas
-- `staging/src/k8s.io/api/apps/v1`: verify validation and defaults, verify admission rejection when `minReadyReplicas > spec.replicas`
-- Verify `TargetAvailabilityReached` event emission on condition transition
+- `pkg/controller/deployment`: verify omitted/zero retains the current
+  `replicas - maxUnavailable` threshold; positive values use total Available
+  replicas across old and new ReplicaSets; cover scale-up/down and values above
+  the desired count.
+- `pkg/controller/statefulset`: verify the condition against
+  `.status.availableReplicas`, including `minReadySeconds`, zero replicas,
+  scaling, and thresholds above desired.
+- `pkg/controller/daemon`: verify the condition against `.status.numberAvailable`
+  as nodes join, leave, become unschedulable, or stop matching the selector.
+- API validation/defaulting and feature-gate tests for each served API version;
+  verify old controllers and disabled gates handle stored objects safely.
+- Verify the field does not change Pod readiness, EndpointSlice contents, HPA
+  calculations, `maxUnavailable`, or rollout progression.
 
 ##### Integration tests
 
-- Deployment rollout with `minReadyReplicas` set during update
-- StatefulSet rolling update with `minReadyReplicas` quorum threshold
-- DaemonSet update with `minReadyReplicas`
-- Feature gate toggle during active rollout
+- Deployment rolling update where `Available` transitions at the configured
+  threshold while rollout strategy and completion remain unchanged.
+- StatefulSet and DaemonSet updates where conditions match Available counters
+  and do not claim application quorum or gate traffic.
+- Feature-gate disable/enable across API server and controller-manager skew.
 
 ##### e2e tests
 
-- Verify Deployment availability transitions with `minReadyReplicas`
-- Verify StatefulSet availability transitions with `minReadyReplicas`
-- Verify backward compatibility (default 0 produces unchanged behavior)
+- Verify Deployment availability transitions with `minAvailableReplicas`
+- Verify StatefulSet availability transitions with `minAvailableReplicas`
+- Verify backward compatibility when the field is omitted or zero.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature gate `MinReadyReplicas` disabled by default
-- API types accept `minReadyReplicas`
-- Deployment controller respects `minReadyReplicas`
+- Feature gate `MinAvailableReplicas` disabled by default
+- API types accept `minAvailableReplicas`
+- Deployment controller respects `minAvailableReplicas`
 - StatefulSet `.status.conditions` with `Available` type
 - DaemonSet `.status.conditions` with `Available` type
 - Unit and integration tests
@@ -241,8 +301,10 @@ Future work may consider an explicit HPA opt-in for `minReadyReplicas` awareness
 
 - Feature gate enabled by default
 - Additional e2e tests
-- Metrics for `minReadyReplicas` usage
-- User feedback on API shape and behavior
+- A concrete consumer demonstrates that existing counters and Deployment
+  `maxUnavailable` cannot meet its requirement.
+- User feedback confirms a common condition is useful independently of
+  Service traffic gating.
 
 #### GA
 
@@ -252,7 +314,13 @@ Future work may consider an explicit HPA opt-in for `minReadyReplicas` awareness
 
 ### Upgrade / Downgrade Strategy
 
-On upgrade, existing workloads are unaffected (default `minReadyReplicas=0`). On downgrade, the `minReadyReplicas` field is ignored by the older API server and controllers. Cluster must be upgraded to a version supporting the feature before the field has effect.
+On upgrade, omitted fields preserve the existing Deployment threshold. The new
+StatefulSet and DaemonSet `Available` condition is additive. Downgrade with a
+non-zero field is not assumed safe: older API servers may not preserve fields
+they do not know. Before alpha, tests must establish exact API-server and
+controller-manager skew behavior. If storage or round trips can drop the
+field, the upgrade strategy must require clearing it before downgrade and
+document that loss; the KEP does not claim automatic recovery.
 
 ### Version Skew Strategy
 
@@ -265,34 +333,51 @@ The feature is controlled by the kube-apiserver (for type validation and storage
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate
-  - Feature gate name: MinReadyReplicas
+  - Feature gate name: MinAvailableReplicas
   - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-No. The default value of `minReadyReplicas` is 0, which preserves existing controller behavior.
+For Deployment, zero preserves its existing `maxUnavailable`-based condition.
+For StatefulSet and DaemonSet, zero or omission leaves status conditions
+unchanged; the new `Available` condition is published only when a positive
+threshold is configured.
 
 ###### Can the feature be disabled once it has been enabled?
 
-Yes. Disable the feature gate and restart the components. Workloads that had `minReadyReplicas` set will have the field ignored, reverting to the default behavior of requiring all replicas to be Ready.
+Disabling the controller-manager gate makes the custom threshold inactive.
+Deployment returns to its existing `maxUnavailable`-based condition, and
+StatefulSet/DaemonSet remove the condition added by this feature. The API-server
+gate controls acceptance and round-tripping of the field; this KEP does not
+assume that a value survives disabling that gate or downgrading. Tests must
+verify the API-server and controller-manager gates independently before alpha.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The `minReadyReplicas` values stored in existing workload objects become active again.
+The values become active again only if API-server handling preserved them.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests verify that setting `minReadyReplicas` to 0 after having a non-zero value reverts to the all-replicas-ready behavior. Feature gate toggle tests verify proper enable/disable semantics.
+Unit tests cover omitted, zero, positive, and greater-than-desired values with
+the feature enabled and disabled. They verify the legacy Deployment threshold,
+that StatefulSet/DaemonSet conditions are absent for omitted or zero values,
+and that disabling the controller-manager gate removes feature-generated
+conditions.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-If a user sets `minReadyReplicas` too low, the controller may report Available prematurely, but this does not affect running pods or existing traffic. Rollback is safe: old controller code ignores the field.
+If a user sets `minAvailableReplicas` too low, the controller may report
+Available earlier than intended; Pods and existing Service routing are not
+changed. Rollback safety depends on field preservation across API-server
+versions and is an alpha prerequisite, not an assumed property.
 
 ###### What specific metrics should inform a rollback?
 
-A sudden increase in error rates or traffic imbalance correlated with `minReadyReplicas` usage could indicate a misconfiguration. Metrics tracking condition transitions can help.
+This status-only feature adds no data-plane behavior. Operators should compare
+the condition with the available count and configured threshold; traffic
+errors are not a direct signal of this condition's correctness.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -306,27 +391,28 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- `kubectl get deployments -o jsonpath='{.items[?(@.spec.minReadyReplicas>0)].metadata.name}'`
-- A metric counting workloads with `minReadyReplicas > 0`
+- Inspect the workload spec for `minAvailableReplicas` and compare it with the
+  desired and Available replica counts.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - Controller `.status.conditions` reflects the new threshold
-- `kubectl rollout status` completes based on the `minReadyReplicas` threshold
-- A Kubernetes Event `TargetAvailabilityReached` is emitted on the workload object when the threshold is crossed, viewable via `kubectl describe deployment/<name>`
+- A consumer can observe the condition and compare it with the configured
+  threshold. `kubectl rollout status` is not changed by this feature.
 
 ###### What are the reasonable SLOs for the enhancement?
 
-Same as existing controller SLOs: condition updates within the standard controller loop (5-10 seconds).
+The feature must meet existing controller status reconciliation expectations.
+This KEP does not define a new latency SLO.
 
 ###### What are the SLIs an operator can use to determine the health of the service?
 
-- Controller condition transition metrics
-- Workload availability metric
+- Existing Available replica counters and status conditions
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-A gauge for each workload type tracking the configured `minReadyReplicas` value.
+No feature-specific metric is required for this status-only field; existing
+replica counters and conditions expose its behavior.
 
 ### Dependencies
 
@@ -370,32 +456,53 @@ The controller cannot update the workload status, so condition transitions are d
 
 ###### What are other known failure modes?
 
-- Setting `minReadyReplicas > spec.replicas` on Deployment/StatefulSet: rejected at admission level with a clear error message.
-- Setting `minReadyReplicas` higher than current matched nodes on DaemonSet: the controller auto-clamps to `desiredReplicas`, so `Available` only when all nodes are ready (equivalent to default behavior).
-- Setting `minReadyReplicas` to 0 after a non-zero value: reverts to all-replicas-required behavior.
-- During a scale-down of `spec.replicas` below `minReadyReplicas`: the controller auto-clamps via `threshold = min(minReadyReplicas, actualReplicas)`, preventing permanent `Available: False`.
+- If `minAvailableReplicas` exceeds the desired count, the effective threshold
+  is clamped to the current desired count; this is recomputed after scaling or
+  DaemonSet node membership changes.
+- The condition may be True while some Pods are not Available. It must not be
+  interpreted as permission to send traffic to those Pods or proof of
+  application-level readiness.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Check the workload's `.status.conditions` for the Available condition reason. Check if `minReadyReplicas` is set appropriately relative to the actual ready replica count.
+Check the workload's `.status.conditions`, its Available replica counter, the
+desired replica count, and the effective threshold. Do not compare against
+`readyReplicas` when `minReadySeconds` is non-zero.
 
 ## Implementation History
 
 - 2026-05-14: Initial KEP draft (provisional)
-- 2026-05-14: Added maxUnavailable interaction, HPA integration, DaemonSet dynamic node handling, admission validation, Kubernetes Event observability, minAvailableReplicas naming alternative
+- 2026-10-20: Corrected existing Deployment availability semantics, removed
+  unsupported HPA and traffic-gating claims, and scoped the proposal to an
+  independent status threshold.
 
 ## Drawbacks
 
 - Adds API surface area and complexity to three workload types
-- Potential confusion with the existing `minReadySeconds` field
-- The Available condition alone does not gate Service traffic; external controllers must consume it
+- The field may duplicate information available from replica counters; a
+  concrete status consumer is required to justify this core API addition.
+- Consumers may mistake workload availability for Service traffic gating.
+- The cross-controller condition adds status API surface to StatefulSet and
+  DaemonSet.
 
 ## Alternatives
 
-**Readiness gate controller**: Inject a readiness gate on pods that is satisfied only when `minReadyReplicas` pods are Ready. This would directly gate Service traffic. Rejected because it introduces a new controller with pod mutation, which is more invasive and harder to roll back.
+**Pod readiness gates or an application-owned readiness controller**: Use
+Pod readiness to gate Service endpoints when the actual requirement is to
+prevent traffic until a threshold is reached. This addresses the traffic
+imbalance in the motivating issue; the proposed workload status condition does
+not. The KEP does not reject this alternative for that distinct requirement.
 
-**External component**: Implement this as an external operator. Rejected because the feature is general-purpose and belongs in the core controllers for broad adoption and consistent behavior.
+**Consumer computes the threshold from existing status**: A consumer can
+compare Deployment `availableReplicas` with its own threshold, and can do the
+same with StatefulSet or DaemonSet counters. This avoids a new API field, and
+must be evaluated against a concrete consumer before adding a core field.
 
-**Percentage-based threshold**: Use a percentage instead of an absolute number. Rejected as the primary mechanism in favor of absolute values for clarity, matching the pattern of `replicas` and `maxSurge`/`maxUnavailable`. However, a percentage-based option (e.g. `minReadyPercent`) warrants further exploration for DaemonSets where the desired replica count is dynamic. This could be added as an alternative field in a future iteration, or as a conversion helper (`minReadyPercent * desiredReplicas / 100`).
+**Percentage-based threshold**: Not included. The issue asks for an absolute
+replica count, and a percentage would be a different API contract.
 
-**`minAvailableReplicas` naming**: Consider naming the field `minAvailableReplicas` instead of `minReadyReplicas` to clearly distinguish it from `minReadySeconds`. In Kubernetes terminology, a pod is "Ready" when its readiness probes pass, but "Available" means Ready and stable for `minReadySeconds`. Since the controller-level condition is `Available` and the internal counter used for the threshold is `.status.availableReplicas` (which factors in `minReadySeconds`), `minAvailableReplicas` is semantically more precise. The name `minReadyReplicas` was chosen for brevity and because it mirrors the existing `MinReadySeconds` field name pattern. The naming decision should be resolved based on SIG review feedback.
+
+[Deployment controller]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/deployment/sync.go#L523
+[`TestMinAvailable`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/deployment/util/deployment_util_test.go#L1378
+[`getReadyPodsCount`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/controller/podautoscaler/replica_calculator.go#L323
+[issue #134336]: https://github.com/kubernetes/kubernetes/issues/134336
