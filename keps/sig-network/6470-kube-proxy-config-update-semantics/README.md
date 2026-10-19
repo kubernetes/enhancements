@@ -63,11 +63,12 @@ specific proposal and either approve it or request concrete revisions.
 
 This change also reverses an existing code-level expectation: upstream's
 `TestConfigChange` asserts that a direct write makes kube-proxy's run loop
-return an error ([existing test]). That test has been present since 2022, so
-removing the watcher is not merely deleting incidental behavior. The test
-covers a direct file write, not projected ConfigMap updates. The absence of a
-user-facing update contract does not eliminate the compatibility impact of
-changing behavior that the repository itself tests.
+return an error ([existing test]). That test was introduced in 2022
+([original test commit]), so removing the watcher is not merely deleting
+incidental behavior. The test covers a direct file write, not projected
+ConfigMap updates. The absence of a user-facing update contract does not
+eliminate the compatibility impact of changing behavior that the repository
+itself tests.
 
 ## Motivation
 
@@ -124,6 +125,7 @@ does not define file-change or restart semantics.
 [kubernetes/kubernetes#132877]: https://github.com/kubernetes/kubernetes/issues/132877
 [kubernetes/kubernetes#94022]: https://github.com/kubernetes/kubernetes/issues/94022
 [existing test]: https://github.com/kubernetes/kubernetes/blob/bbf142898f357d8ba4642748afdc4b7d70479021/cmd/kube-proxy/app/server_linux_test.go#L97-L168
+[original test commit]: https://github.com/kubernetes/kubernetes/commit/af77381e01775a288fb8c5fb101837a197295315
 [reproduction and rollout report]: https://github.com/kubernetes/kubernetes/pull/139204#issuecomment-5998997887
 [downstream report]: https://github.com/kubernetes/kubernetes/pull/139204#issuecomment-6001988032
 
