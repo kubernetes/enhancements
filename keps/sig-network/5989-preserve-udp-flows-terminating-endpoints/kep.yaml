@@ -1,4 +1,4 @@
-title: Preserve UDP flows for terminating endpoints
+title: Preserve UDP flows while an endpoint drains existing work
 kep-number: 5989
 authors:
   - "@kairosci"
@@ -22,12 +22,13 @@ milestone:
   alpha: ""
 
 see-also:
-  - KEP-1669: "Move terminating endpoints to a non-ready state in kube-proxy"
-  - KEP-1672: "Track terminating endpoints in EndpointSlice"
+  - "KEP-1669: Move terminating endpoints to a non-ready state in kube-proxy"
+  - "KEP-1672: Track terminating endpoints in EndpointSlice"
 
 feature-gates:
-  - name: PreserveUDPFlowsTerminatingEndpoints
+  - name: UDPConnectionDrain
     components:
-      - kube-proxy
       - kube-apiserver
-    disable-supported: true
+      - kubelet
+      - kube-controller-manager
+      - kube-proxy

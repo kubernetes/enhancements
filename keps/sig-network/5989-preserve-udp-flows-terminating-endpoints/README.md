@@ -1,23 +1,19 @@
-# KEP-5989: Preserve UDP flows for stateful UDP protocols during endpoint termination
+# KEP-5989: Preserve UDP flows while an endpoint drains existing work
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Evidence and reproduction](#evidence-and-reproduction)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Approach](#implementation-approach)
   - [Kube-proxy Changes](#kube-proxy-changes)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Observability and Monitoring](#observability-and-monitoring)
-  - [Coordination with External Load Balancers](#coordination-with-external-load-balancers)
-  - [Conntrack Cleanup Granularity and Performance](#conntrack-cleanup-granularity-and-performance)
-  - [Test Plan](#test-plan)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+  - [Design Details](#design-details)
+    - [Flow and endpoint semantics](#flow-and-endpoint-semantics)
+    - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -53,161 +49,308 @@
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
+[kubernetes/kubernetes#134143]: https://github.com/kubernetes/kubernetes/issues/134143
+[`CleanStaleEntries`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/proxy/conntrack/cleanup.go#L47
+[`TestCleanStaleEntries`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/pkg/proxy/conntrack/cleanup_test.go#L89
+[`podToEndpoint`]: https://github.com/kubernetes/kubernetes/blob/bbf142898f3/staging/src/k8s.io/endpointslice/utils.go#L33-L54
 
 ## Summary
 
-This KEP proposes a mechanism to preserve UDP conntrack entries for stateful UDP protocols during endpoint termination by introducing a "connection type hint" at the Service level. Instead of immediately clearing UDP conntrack entries when an endpoint enters the terminating state, kube-proxy will respect a per-port Service configuration that specifies whether UDP flows should be preserved until the pod actually exits (i.e., until the endpoint is removed from the EndpointSlice).
+This KEP proposes an explicit endpoint signal for UDP applications that have
+stopped accepting new work but can still process datagrams for existing
+sessions. A `processingProbe` on one container reports that state. The kubelet
+publishes it as a Pod `Processing` condition, the EndpointSlice controller
+copies it to an EndpointSlice `processing` condition, and kube-proxy retains
+existing UDP conntrack entries only while that condition is true and the
+endpoint remains present. Endpoint readiness and new-flow selection are not
+changed. Entries are removed when processing ends or the endpoint disappears;
+inactive entries can also expire under the kernel's configured timeout. The
+feature does not promise a hard maximum age for active flows.
 
 ## Motivation
 
-Certain UDP-based protocols are stateful (e.g., QUIC, TFTP, SIP) and maintain sessions that should not be disrupted when an endpoint is terminating but still capable of processing traffic. Currently, kube-proxy's conntrack cleanup logic clears all UDP conntrack entries as soon as an endpoint is marked as not ready (including when it enters the terminating state). This ensures that new packets are routed to healthy endpoints, but it abruptly breaks existing stateful sessions.
+The motivating [kubernetes/kubernetes#134143] report describes a UDP server
+whose Pod becomes not Ready through its readiness check while the process is
+still completing an existing SIP transaction. The endpoint is not necessarily
+terminating. Readiness should stop new traffic, but an application may still
+be able to answer packets belonging to an existing UDP exchange.
 
-The root cause of this issue is that kube-proxy lacks the information to distinguish between "stateless" UDP (like DNS), where immediate failover is desirable, and "stateful" UDP, where session persistence is required.
+Current EndpointSlice generation sets `serving` from Pod readiness. Current
+kube-proxy removes UDP conntrack entries when that endpoint is no longer
+serving. Thus a normal selector-backed Pod cannot currently express
+`Ready=false` while still processing existing exchanges. Treating every
+non-serving endpoint as drainable would preserve flows to genuinely unhealthy
+Pods and can blackhole traffic, so the new behavior requires a separate,
+explicit signal from the workload.
 
-By providing a hint at the Service level, users can inform the network layer about the nature of the UDP traffic, allowing kube-proxy to implement the appropriate cleanup strategy.
+The signal is an application contract, not a kube-proxy health judgment. A
+successful processing probe means the application can still handle packets for
+existing sessions; it does not make the Pod Ready or eligible for ordinary new
+flow selection. If an application reports `Processing=true` after it has
+stopped handling those sessions, kube-proxy may retain mappings that blackhole
+traffic. Probe correctness remains the workload author's responsibility.
+
+### Evidence and reproduction
+
+In the current upstream source, [`CleanStaleEntries`] builds the retained
+backend set from `Endpoint.IsServing()`. The existing [`TestCleanStaleEntries`]
+exercises removal of flows to a non-serving endpoint and retention of flows to
+a serving endpoint. I made that fixture explicit and ran
+`GOTMPDIR=/home/krosci/tmp-go-build go test ./pkg/proxy/conntrack -run '^TestCleanStaleEntries$' -count=1`
+against upstream Kubernetes commit `bbf142898f3`; it passed with both cases:
+
+- `Ready=false, Serving=true, Terminating=true`: the endpoint's existing UDP
+  flow remains. kube-proxy already retains this case; it is not new behavior.
+- `Ready=false, Serving=false, Terminating=false`: the endpoint's existing UDP
+  flow is removed. This is the behavior the new processing signal would change
+  only when the workload explicitly reports `Processing=true`.
+
+The synthetic `Ready=false, Serving=true` fixture does not prove that a
+selector-backed Pod can currently produce that state. In current upstream,
+[`podToEndpoint`] derives `Serving` from Pod readiness. The proposed container
+probe and EndpointSlice propagation are therefore required parts of the design; this
+KEP does not present the conntrack unit test as an end-to-end reproduction.
+
+The source reproduction verifies conntrack reconciliation only; it does not
+prove an end-to-end SIP transaction survives. A multi-node packet-level test
+is required before claiming that result. I could not run such a cluster here
+because this environment lacks `kind`, a container runtime, and `CAP_NET_ADMIN`.
 
 ### Goals
 
-- Introduce a Service-level hint to indicate if UDP flows on a specific port are stateful.
-- Update kube-proxy to defer UDP conntrack cleanup for such ports until the endpoint is fully removed from the cluster.
-- Ensure that existing "stateless" UDP behavior remains the default.
-- Provide a robust mechanism that doesn't rely on application-level marking or racy external helpers.
+- Add a container `processingProbe` and propagate its state to EndpointSlices.
+- Preserve existing UDP conntrack entries only for endpoints explicitly
+  reporting `processing=true`.
+- Leave all existing new-flow selection rules unchanged.
+- Delete retained entries when the endpoint or Service is removed, or when
+  the conntrack entry expires under the kernel's configured idle timeout.
+- Preserve current behavior for all Services by default.
 
 ### Non-Goals
 
-- This KEP does not aim to change the endpoint lifecycle or add new states to EndpointConditions.
-- This KEP does not introduce new API fields in EndpointSlice.
+- This KEP does not change `Ready`, `Serving`, or `Terminating` semantics.
+- This KEP does not make processing endpoints eligible for new flows.
 - This KEP does not change how TCP connections are handled.
-- This KEP does not rely on conntrack marks or netfilter-specific marking operations.
+- This KEP does not add a universal hard age limit for conntrack entries. The
+  kernel's idle timeout is not an absolute maximum lifetime for a flow whose
+  packets continue to refresh it.
 
 ## Proposal
 
-We propose adding a new field (or a standardized hint) to the `ServicePort` API that specifies the UDP persistence strategy. This field, `udpConnectionHandling`, follows the "connection type hint" pattern, allowing the Service owner to inform the network layer about the stateful nature of the traffic.
-
-**Alpha Strategy (Standardized Hint)**: To allow for rapid iteration and gather feedback without immediate core API changes, this feature may initially be implemented as a standardized annotation (e.g., `service.kubernetes.io/udp-connection-handling`). This provides a "fast-track" path for Alpha while the long-term API field is finalized.
+Add a `processingProbe` field to `Container`, using existing probe handlers
+and thresholds. At most one container per Pod may configure it because
+EndpointSlice `processing` is endpoint-wide and this KEP does not define
+per-container or per-port aggregation. The probe reports whether the
+application can still process datagrams for existing UDP sessions after
+readiness becomes false. A successful probe sets the Pod's `Processing`
+condition to true; a failed, absent, or unsupported probe means false. The
+EndpointSlice controller publishes this as an optional `processing` condition.
+Unknown or absent values mean false, preserving current behavior. No ServicePort
+field is added: the drain state belongs to a particular workload instance, not
+every endpoint behind a Service.
 
 ### Implementation Approach
 
-1. **Service API Change**: Add a field `udpConnectionHandling` (name to be finalized) to `ServicePort`.
-   - `Default`: Current behavior (immediate cleanup on termination).
-   - `PreserveDuringTermination`: Defer conntrack cleanup until the endpoint is removed from the EndpointSlice.
+1. **Container API and kubelet**: Add `processingProbe` using the existing
+   probe handlers and thresholds. API validation permits it on at most one
+   container in a Pod. The kubelet owns and updates only the Pod `Processing`
+   condition, preserving conditions written by other actors. The condition
+   defaults to false when the probe is absent or failing, and becomes false
+   when the container is not running. Tests must cover concurrent kubelet
+   status updates so this condition does not overwrite unrelated Pod
+   conditions.
 
-2. **Kube-proxy Logic**:
-   - Kube-proxy tracks both the Service configuration and the EndpointSlice state.
-   - When an endpoint becomes `Ready=False` but is still present in the EndpointSlice (e.g., `Terminating=True`):
-     - If the port is configured with `PreserveDuringTermination`, kube-proxy **skips** the conntrack cleanup for that endpoint's IP and port.
-     - Existing conntrack entries will remain, ensuring that subsequent packets from the same client are still NATed to the terminating pod.
-   - **Dynamic Strategy Change**: If the `udpConnectionHandling` is changed from `PreserveDuringTermination` to `Default` while pods are already in a terminating state, kube-proxy will detect the change during its next sync loop and immediately execute the conntrack cleanup for those terminating endpoints.
-   - When the endpoint is **removed** from the EndpointSlice:
-     - Kube-proxy performs the standard conntrack cleanup, regardless of the `udpConnectionHandling`.
+2. **EndpointSlice API and controller**: Add an optional `processing`
+   condition. For selector-managed Services, the EndpointSlice controller sets
+   it true only when the target Pod is Running, its `Processing` condition is
+   true, and its Node is Ready. A missing Node or a non-Ready Node forces false
+   so stale Pod status cannot retain traffic to an unreachable node. For
+   manually managed EndpointSlices, the producer owns the same availability
+   responsibility. Unknown or absent values mean false. This condition is
+   independent of `ready`, `serving`, and `terminating`.
+
+3. **Kube-proxy conntrack logic**: Retain a UDP conntrack entry when its
+   backend endpoint is still present and `processing=true`, even if it is not
+   Ready or Serving. Delete it when processing becomes false or the endpoint
+   disappears. Processing alone must not make an endpoint eligible for a new
+   flow. Existing terminating-endpoint fallback behavior remains unchanged and
+   is an explicit exception to ordinary readiness-based selection.
+
+4. **Timeout and removal**: Inactive entries expire under the node's configured
+   conntrack timeout. Active traffic may refresh UDP conntrack state; there is
+   no absolute maximum age. Endpoint or Service deletion triggers normal
+   cleanup.
 
 ### Kube-proxy Changes
 
-The implementation will focus on the `EndpointSliceCache` (or `EndpointsChangeTracker`) and the specific proxiers (`iptables`, `ipvs`, `nftables`).
+The implementation adds a probe and Pod status condition, propagates that
+condition into EndpointSlices and proxy endpoint state, and changes UDP
+conntrack reconciliation. It must preserve backend selection behavior and
+cover every proxier mode that claims support.
 
-1. **EndpointSliceCache Logic**:
-   - The cache will be updated to track the `udpConnectionHandling` for each port.
-   - When an endpoint transitions from `Ready` to `NotReady` (e.g., entering `Terminating` state), the cache logic that identifies "stale" UDP connections (`detectStaleConntrackEntries`) will check the strategy.
-   - If the strategy is `PreserveDuringTermination`, the endpoint's IP and port will **not** be added to the stale list as long as the endpoint object still exists in the `EndpointSlice`.
-   - The IP/port will only be marked as stale and added to the cleanup list when the endpoint is physically removed from the `EndpointSlice` resource.
+1. **Pod and EndpointSlice state**:
+   - `processingProbe` is configured on at most one container per Pod and
+     reports whether the workload
+     is still handling existing sessions. Its result is independent of the
+     readiness probe. The kubelet writes a Pod `Processing` condition.
+   - The EndpointSlice controller propagates that condition to an optional
+     EndpointSlice `processing` condition. For manually managed slices, the
+     producer sets it. Missing, unknown, and false values all mean not
+     processing.
+   - The condition applies to the Pod endpoint as a whole, across its UDP
+     Service ports. A workload whose UDP ports need independent drain states
+     cannot use this API without a future per-port signal.
 
-2. **Iptables Proxier**:
-   - In `syncProxyRules`, kube-proxy identifies stale UDP Service IPs and NodePorts.
-   - **NAT Persistence**: In `iptables` mode, the `nat` table is only traversed by the first packet of a connection. Subsequent packets of an `ESTABLISHED` flow bypass the `nat` table rules and are handled by `conntrack`. By skipping the conntrack flush, existing flows continue to be correctly NATed to the terminating pod even after the specific `KUBE-SEP-XXX` chain has been unlinked from the service's load-balancing chain.
-   - No changes are needed to the low-level `conntrack.ClearEntriesForIP` calls themselves; the logic resides in *when* those IPs are passed to the cleanup loop.
+2. **Kube-proxy conntrack**: Add `processing=true` endpoints to the retained
+   backend set for UDP conntrack reconciliation. Keep endpoint selection
+   unchanged: readiness and existing terminating-endpoint fallback rules
+   determine new-flow eligibility. When processing becomes false or the
+   endpoint is removed from the Service's EndpointSlices, the tuple becomes
+   stale and is deleted.
 
-3. **IPVS Proxier**:
-   - **Quiescent Mode**: When an endpoint enters the terminating state and the policy is `PreserveDuringTermination`, kube-proxy will set the Real Server weight to **0** instead of deleting it. In IPVS, weight 0 (quiescent) prevents new connections from being scheduled to the backend while allowing existing ones to persist.
-   - **Conntrack Interaction**: By keeping the Real Server at weight 0 and skipping the conntrack flush, both the IPVS connection table and the Netfilter conntrack table maintain the session state. 
-   - **Final Cleanup**: Once the endpoint is removed from the EndpointSlice, the Real Server is finally deleted from the IPVS Virtual Server, and the targeted conntrack flush is executed.
+3. **Proxier support**: Alpha support is limited to Linux iptables and
+   nftables kube-proxy modes after packet-level proof. IPVS and Windows are
+   unsupported in alpha; enabling `UDPConnectionDrain` in kube-proxy with
+   either mode must fail startup rather than silently ignore the condition.
+   Support for either requires an implementation and the same packet-level
+   proof. Do not assume conntrack retention alone preserves the backend
+   mapping or prescribe an untested platform fallback.
 
 ### Risks and Mitigations
 
-- **Risk**: Stale conntrack entries might persist if a pod hangs in terminating state indefinitely (the "Zombie Flow" case).
-- **Mitigation**: 
-  - The standard `terminationGracePeriodSeconds` still applies. Once the pod is forcefully deleted, the endpoint is removed, and kube-proxy will clear the conntrack.
-  - **Safety Valve (Hard Limit)**: To protect the node from conntrack table exhaustion, `kube-proxy` will implement a hard maximum preservation timeout (e.g., 2x the standard `nf_conntrack_udp_timeout_stream`, default 360s). This is a **hard cap**; once reached, the flow is forcefully flushed regardless of the pod's state.
-  - **Kernel GC Interaction**: In the event of extreme conntrack table pressure (approaching `nf_conntrack_max`), the Linux kernel's "Early Drop" mechanism will naturally prioritize the eviction of unconfirmed or older entries. This KEP's safety valve serves as a userspace-driven protection layer that triggers before the kernel is forced to drop new legitimate traffic.
-  - **Memory Pressure Monitoring**: The new metrics (see below) will allow cluster-level autoscalers or monitoring systems to alert on node-level conntrack pressure caused by deferred cleanups.
-- **Risk**: NetworkPolicies might block traffic to terminating pods.
-- **Mitigation**: This KEP focuses on `kube-proxy` behavior. For the feature to be fully effective, NetworkPolicies must allow traffic to pods in the `Terminating` state. Cluster administrators should ensure that egress/ingress policies are not so restrictive that they drop packets to unready pods that are still servicing stateful UDP flows. CNI providers should also align their policy enforcement logic with this graceful termination intent.
-- **Risk**: Version Skew during rolling updates.
-- **Mitigation**: During a cluster upgrade, some nodes may run the new `kube-proxy` while others run the old one. This leads to "best-effort" preservation: flows hitting upgraded nodes will be preserved, while flows on old nodes will be killed. While inconsistent, this is still an improvement over "guaranteed disruption". The metrics provided by this KEP will help operators track the adoption of the feature during the skew period.
-- **Risk**: New flows might still be routed to terminating pods if not handled carefully.
-- **Mitigation**: This KEP only affects *conntrack cleanup*. The iptables/ipvs rules (weight 0 or chain removal) will still be updated to remove the terminating endpoint from the load-balancing set for **new** flows. Only *existing* flows (tracked in conntrack/IPVS table) will be preserved.
+- **Stale processing signal:** If the probe reports true after the application
+  has stopped processing existing sessions, mappings can blackhole packets.
+  The probe contract requires the application to report false before it can no
+  longer process them; kube-proxy cannot infer application health.
+- **Conntrack pressure:** Active traffic can refresh UDP entries, so preserving
+  mappings while an endpoint remains present can extend their lifetime. Do not
+  claim a fixed hard timeout based on the kernel's idle timeout. Monitor the
+  node's existing conntrack usage and remove or disable the policy if the
+  workload exceeds its budget.
+- **NetworkPolicy or external routing:** kube-proxy retention alone does not
+  guarantee packet delivery. CNI policy, node routing, Pod health, and external
+  load balancer behavior are outside this contract.
+- **Version skew:** old kubelets, EndpointSlice controllers, API servers, or
+  kube-proxy instances may ignore or prune the new probe/condition. During a
+  mixed-version rollout, preservation is not uniform; operators must treat
+  the feature as unavailable until all relevant components support it.
+- **Endpoint removal:** a flow must be cleaned once its endpoint or Service is
+  removed, even when `processing=true`, to avoid forwarding to an address that
+  may have been reused.
 
 ### Design Details
 
-#### Observability and Monitoring
+#### Flow and endpoint semantics
 
-To monitor the health of this feature and protect the node's networking stack, the following metrics will be introduced in `kube-proxy`:
-- `kubeproxy_preserved_udp_conntrack_flows`: A gauge tracking the total number of UDP flows currently being preserved for terminating endpoints.
-- `kubeproxy_conntrack_cleanup_deferred_total`: A counter incremented whenever a conntrack cleanup is deferred due to the `PreserveDuringTermination` strategy.
-- `kubeproxy_conntrack_safety_valve_flushes_total`: A counter incremented whenever the hard safety valve timeout triggers a forced cleanup.
+When an endpoint reports `processing=true`, kube-proxy retains its existing UDP
+conntrack entries while the endpoint remains present in the Service's current
+EndpointSlice state. `processing` does not change endpoint selection; the
+existing readiness and terminating-endpoint fallback rules continue to govern
+new flows. When processing becomes false, the endpoint is removed, or the
+Service is deleted, kube-proxy deletes stale entries for that backend.
 
-#### Coordination with External Load Balancers
+| Endpoint state | Existing UDP conntrack entry | New-flow selection |
+| --- | --- | --- |
+| Ready/Serving, Processing false or absent | Retained by existing behavior | Existing behavior |
+| Not Ready/Serving false, Processing true, present | Retained until Processing=false, removal, or kernel expiry | Existing selection; Processing adds no eligibility |
+| Not Ready/Serving false, Processing false or absent | Cleaned by existing behavior | Existing behavior |
+| Node not Ready | Controller-managed Processing is forced false; existing Serving retention is unchanged | Existing behavior |
+| Terminating and Serving true | Retained by existing behavior even without Processing | Existing terminating-endpoint fallback remains unchanged |
+| Endpoint or Service removed | Cleaned regardless of Processing | Not eligible |
 
-For Services of `type: LoadBalancer`, traffic management is split between the Cloud Provider's Load Balancer (external) and `kube-proxy` (internal).
-- **Primary Benefit**: This KEP is most beneficial for **East-West traffic (ClusterIP)** and **North-South traffic** where the external load balancer supports "Graceful Termination" or has inherent delays in health check propagation.
-- **External LB Behavior**: Most Cloud Controllers (CCM) remove backends from the external LB as soon as they become `Ready=False`. If the external LB cuts traffic immediately, the benefits of this KEP for North-South traffic are limited.
-- **Call to Action**: This KEP serves as the technical foundation for Cloud Providers to support graceful UDP termination. By providing a consistent node-level preservation mechanism, we enable Cloud Providers to implement matching "Graceful Shutdown" logic in their external LBs, ensuring end-to-end session persistence.
-- **Node-level Protection**: This KEP ensures that if a packet *does* reach the node (either via internal traffic or because the external LB hasn't updated its state yet), the node's network stack will continue to route it to the terminating pod.
+Setting Processing true after an entry has already been cleaned cannot restore
+its previous backend mapping. The probe should report true before or when Pod
+readiness becomes false; if kube-proxy observes the non-serving state first, it
+may clean the entry before Processing propagates. During drain completion, the
+workload must keep the process alive while it reports Processing=false and
+allows the condition to propagate. Cleanup occurs on the next kube-proxy
+reconciliation; the KEP does not promise instantaneous propagation across
+nodes or uninterrupted delivery during these transitions.
 
-
-#### Conntrack Cleanup Granularity and Performance
-
-To avoid "blackholing" while preserving sessions, the cleanup must be targeted:
-- **During Termination**: Kube-proxy removes the endpoint from the load-balancing backend list (iptables chains or IPVS real servers). This stops **new** flows.
-- **Conntrack Preservation**: By NOT calling the conntrack flush, the kernel continues to use the existing NAT mapping for any packet that matches an existing conntrack entry.
-- **Performance**: Modern kube-proxy implementations use the Netlink API for conntrack management. Targeted deletions using specific filters (Protocol, Source/Destination IP/Port) are efficient and avoid the overhead of full table scans or spawning sub-processes like `conntrack -D`.
-- **Final Cleanup**: Once the pod has exited and the endpoint is removed from the API, kube-proxy performs a targeted conntrack flush for that specific `{ServiceIP, ServicePort, Protocol, BackendIP, BackendPort}` tuple.
+This specifies kube-proxy's mapping and cleanup behavior, not end-to-end
+session continuity. The proposal does not override application failure,
+network policy, connection timeouts, route changes, or an external load
+balancer's decisions. A successful packet-level test must establish whether
+responses to the original UDP tuple still reach the client for every supported
+proxier mode.
 
 #### Test Plan
 
-- **Unit tests** for `pkg/proxy/endpointslicecache.go`:
-  - Verify that `detectStaleConntrackEntries` excludes terminating endpoints for `PreserveDuringTermination` ports.
-  - Verify that `detectStaleConntrackEntries` includes them once the endpoint is deleted.
-  - **Dynamic Change Test**: Verify that changing the strategy from `PreserveDuringTermination` to `Default` triggers immediate cleanup for already-terminating pods.
-- **Unit tests** for proxiers:
-  - Verify that `syncProxyRules` handles the transition correctly.
-- **Integration tests**:
-  - Service creation with `udpConnectionHandling: PreserveDuringTermination`.
-  - Endpoint transition from Ready to Terminating.
-  - Verification that `conntrack -L` still shows the entry during termination.
-- **End-to-end tests**:
-  - **Session Persistence**: A QUIC client remains connected to a terminating pod until the pod exits.
-  - **Timeout Handling**: Verify that if a client stops sending packets for longer than the kernel's `nf_conntrack_udp_timeout`, the flow is naturally expired even if the pod is still in termination (expected behavior).
-  - **Safety Valve Test**: Verify that a flow is forcefully flushed after the hard safety valve timeout even if the pod remains in termination state.
-  - **Scalability Test**: Perform a rolling update of a Service with 5,000 pods and verify that the deferred conntrack cleanup does not cause excessive memory pressure on the node's conntrack table or significant sync delays in kube-proxy.
+- **Kubelet tests**: verify absent probe defaults to `Processing=false`, probe
+  success/failure thresholds update the Pod condition, and processing state is
+  independent of Pod readiness. Verify kubelet status updates preserve
+  conditions owned by other actors. Verify behavior when Processing becomes
+  true before, with, and after readiness becomes false, and when the container
+  exits before the probe reports false.
+- **EndpointSlice API/controller tests**: verify Pod `Processing` propagation,
+  condition transitions, absent/unknown default behavior, Pod phase and Node
+  readiness overrides, and manual-slice producer behavior. Verify that Node
+  NotReady suppresses only the new Processing retention and does not alter
+  existing Serving-based retention.
+- **Unit tests** for `pkg/proxy/conntrack`: a
+  `Ready=false, Serving=false, Processing=true, Terminating=false` endpoint
+  retains an existing UDP mapping; Processing=false, endpoint removal, and
+  Service removal clean it. Existing serving and terminating behavior remains
+  unchanged when the new condition is absent.
+- **API tests**: verify feature-gate behavior, container probe
+  validation/defaulting, and rejection of multiple processing probes per Pod,
+  Pod status condition handling, and EndpointSlice condition round-tripping.
+- **Proxier tests**: verify Processing does not add an endpoint to new-flow
+  selection. Cover the existing terminating-endpoint fallback separately;
+  do not infer selection behavior from a conntrack unit test.
+- Linux integration test with real network namespaces: keep one UDP client
+  tuple active while its backend reports Processing=true and Ready=false, then
+  verify packets on that tuple still reach the original backend while a new
+  tuple follows the existing endpoint selection rules. Change Processing to
+  false and verify cleanup; repeat after endpoint removal.
+- Run packet-level tests for iptables and nftables before alpha. IPVS and
+  Windows are not supported by this KEP's initial implementation; do not claim
+  support for either until a follow-up design and tests prove the semantics.
+- Do not claim SIP, QUIC, external load balancer, or application-level session
+  continuity until a corresponding end-to-end test exercises that behavior.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind the `PreserveUDPFlowsTerminatingEndpoints` feature gate.
-- Initial unit and integration tests completed.
-- Support for `udpConnectionHandling` in `ServicePort` (or as a hint).
+- Container `processingProbe` and EndpointSlice `processing` condition are gated and
+  disabled by default; absent condition preserves current behavior.
+- Unit tests cover probe state propagation, stale-entry transitions, endpoint
+  and Service deletion, and unchanged new-flow selection.
+- Packet-level integration tests pass for every proxier mode included in the
+  alpha support contract.
 
 #### Beta
 
-- Gather feedback from users.
-- e2e tests enabled in CI.
-- Default enablement of the feature gate.
+- Multi-node e2e coverage verifies an established UDP tuple survives while
+  Processing=true and new tuples follow the documented endpoint selection.
+- Version-skew and downgrade behavior is documented and tested.
+- Operational feedback confirms that workload authors can implement and
+  monitor the processing-probe contract safely.
 
 #### GA
 
-- Feature gate locked to true.
-- Conformance tests added.
+- Feature gate locked to true after supported modes meet the same semantics.
+- Conformance coverage is considered only after API review defines a portable
+  observable contract across supported environments.
 
 ### Upgrade / Downgrade Strategy
 
-- During upgrade, new kube-proxies will start respecting the `udpConnectionHandling`.
-- During downgrade, old kube-proxies will ignore the new field/hint and revert to the old behavior of clearing all conntrack entries for terminating endpoints.
+During upgrade, old kubelets and controllers do not publish or propagate the
+Processing condition, and old kube-proxy instances use existing cleanup
+behavior. During downgrade, an older API server may prune the new probe or
+EndpointSlice condition. Before alpha, test the full API-server, kubelet,
+controller-manager, and kube-proxy skew path. If downgrade can drop fields,
+document that operators must clear the probe before downgrade and that restoring
+the new version will not restore dropped values automatically.
 
 ### Version Skew Strategy
 
-- New kube-proxies will work with old/new API servers (if the field is missing, it defaults to `Default`).
-- Old kube-proxies will work with new API servers (they will just ignore the new field).
+New kube-proxies use current cleanup behavior when `processing` is absent or
+false. Old kube-proxy instances ignore the condition and clean entries using
+their existing rules. Test whether older API servers preserve or prune the Pod
+probe and EndpointSlice condition; this KEP does not assume round-trip
+compatibility.
 
 ## Production Readiness Review Questionnaire
 
@@ -216,95 +359,123 @@ To avoid "blackholing" while preserving sessions, the cleanup must be targeted:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PreserveUDPFlowsTerminatingEndpoints
-  - Components depending on the feature gate: kube-proxy, kube-apiserver (for API changes)
+  - Feature gate name: UDPConnectionDrain
+  - Components depending on the feature gate: kube-apiserver, kubelet,
+    kube-controller-manager, kube-proxy
 
 ###### Does enabling the feature change any default behavior?
 
-No, the default strategy is `Default`, which matches the current behavior.
+No. With the gate disabled, current behavior is unchanged. With the gate
+enabled, only endpoints explicitly reporting `Processing=true` retain existing
+UDP conntrack entries while non-serving.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, by disabling the feature gate. Kube-proxy will revert to its previous behavior.
+Disabling the feature gate restores current cleanup behavior. API-server
+handling of stored values must be tested; an older API server may prune the
+probe or EndpointSlice condition it does not recognize.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Kube-proxy will resume respecting the `udpConnectionHandling`.
+The feature resumes only if the API server preserved the probe configuration
+and EndpointSlice condition.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, unit tests will cover behavior with the feature gate both enabled and disabled.
+Unit and API tests must cover the probe and condition with the gate enabled and
+disabled, including whether API-server round trips preserve them.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-During a rollout, nodes with the new kube-proxy will preserve UDP flows while nodes with the old kube-proxy will not. This creates a best-effort preservation window during rolling updates. Workloads are not negatively impacted — at worst, behavior reverts to the current default. During rollback, the new `udpConnectionHandling` field is ignored, and all UDP conntrack entries are cleaned up immediately upon termination.
+During a rollout, supporting nodes preserve mappings only when the propagated
+condition is true; older instances may clean them using current behavior.
+Preservation is not uniform during skew. A stale or incorrect probe can retain
+a mapping to an endpoint that cannot answer packets. Downgrade field retention
+must be verified before alpha.
 
 ###### What specific metrics should inform a rollback?
 
-A sustained increase in `kubeproxy_conntrack_safety_valve_flushes_total` or `kubeproxy_preserved_udp_conntrack_flows` approaching `nf_conntrack_max` on any node indicates that the preservation mechanism is causing conntrack table pressure and may warrant a rollback.
+Use existing node conntrack occupancy (`nf_conntrack_count` relative to
+`nf_conntrack_max`) and application behavior. This KEP adds no custom metrics.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade path tested?
 
-Manual testing during alpha and automated integration tests during beta will cover the upgrade->downgrade path, verifying that flows are correctly preserved during upgrade and cleaned up after downgrade.
+Before alpha, test supported API-server, kubelet, controller-manager, and
+kube-proxy version skew, upgrade, downgrade, and re-upgrade. Verify probe and
+condition propagation as well as flow cleanup; do not defer this to beta.
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is functioning as expected?
 
-- Monitor `kubeproxy_preserved_udp_conntrack_flows` — a non-zero value indicates flows are being preserved.
-- Monitor `kubeproxy_conntrack_cleanup_deferred_total` — increasing values confirm that cleanups are being deferred.
-- Monitor `kubeproxy_conntrack_safety_valve_flushes_total` — increasing values indicate the safety valve is being triggered.
-- Verify with `conntrack -L` that UDP entries for terminating endpoints remain during termination.
+- Verify the Pod's `Processing` condition and the EndpointSlice's Ready,
+  Serving, Terminating, and Processing conditions.
+- Inspect `conntrack -L -p udp` for the Service tuple and backend while the
+  endpoint remains in the EndpointSlice.
+- Verify a new client tuple follows existing endpoint selection rules.
 
 ###### What are the reasonable SLOs for the feature?
 
-- No increase in packet loss for stateful UDP flows during endpoint termination compared to steady-state operation.
-- Conntrack table utilization should not exceed 80% of `nf_conntrack_max` on any node due to deferred cleanups.
+This KEP defines no application packet-loss SLO. The test plan must establish
+data-plane behavior for each supported proxier and topology.
 
 ###### What are the SLIs that can be used to measure the feature?
 
-- `kubeproxy_preserved_udp_conntrack_flows` / `nf_conntrack_max` ratio per node.
-- Rate of `kubeproxy_conntrack_safety_valve_flushes_total`.
-- Rate of `kubeproxy_conntrack_cleanup_deferred_total`.
+Existing node conntrack occupancy and application-level transaction success
+are relevant operational signals; neither alone proves the feature's packet
+path behavior.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services, capabilities, or projects?
 
-- **Kernel**: Relies on netfilter conntrack (`nf_conntrack`) for UDP connection tracking. No specific kernel version requirement beyond what Kubernetes already requires.
-- **Kube-proxy**: The feature is implemented entirely within kube-proxy. No external dependencies.
-- **CNI Providers**: For full effectiveness, NetworkPolicies should allow traffic to `Terminating` pods (advisory, not a hard dependency).
+- **Kernel/proxier:** Behavior depends on each proxier's flow-tracking and
+  endpoint-removal semantics. Support must be tested rather than inferred from
+  Linux conntrack behavior alone.
+- **CNI and NetworkPolicy:** They can still drop packets; kube-proxy retention
+  does not guarantee end-to-end delivery.
 
 ### Scalability
 
 ###### Will enabling this feature impact the performance of the cluster?
 
-The primary concern is conntrack table pressure on nodes with many terminating UDP pods. The safety valve (hard limit of 2x `nf_conntrack_udp_timeout_stream`) prevents unbounded growth. Performance impact on kube-proxy sync loops is minimal since the additional logic is limited to a conditional check in the existing `detectStaleConntrackEntries` path.
+The condition may retain actively refreshed flows while an endpoint remains
+present. The reconciliation path already scans conntrack state; measure added
+work and table occupancy instead of assuming a fixed cap or negligible cost.
 
-###### How many terminating UDP flows per node can this feature sustain?
+###### How many retained UDP flows per node can this feature sustain?
 
-Up to the safety valve limit (2x `nf_conntrack_udp_timeout_stream`, ~360s by default). In practice, the number is bounded by the node's `nf_conntrack_max` minus the baseline conntrack utilization for healthy flows. The metrics provided enable operators to monitor this.
+There is no fixed count or lifetime guarantee. Capacity depends on the node's
+conntrack limit, baseline usage, active UDP traffic, and correct processing
+probe behavior. Operators must size and monitor that capacity.
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server becomes unavailable?
 
-Kube-proxy operates on a cached state of Services and EndpointSlices. If the API server is unavailable, kube-proxy continues to use its last known state. UDP flows already being preserved will remain preserved until either the endpoint is removed from the local cache (if the pod terminates), the safety valve triggers, or the API server recovers and delivers the updated state.
+Kube-proxy operates on cached Service and EndpointSlice state. If the API
+server is unavailable, the last observed policy and endpoint state remain in
+effect until caches change or the process restarts. The KEP makes no stronger
+guarantee during API-server loss.
 
 ###### What are other known failure modes?
 
-- **Zombie flows**: Pods stuck in `Terminating` indefinitely. Mitigated by the safety valve hard limit.
-- **Conntrack table exhaustion**: Mitigated by monitoring metrics and the safety valve.
-- **NetworkPolicy blocking**: If NetworkPolicies drop traffic to `Terminating` pods, preservation has no effect for external traffic. Mitigated by documentation and CNI coordination.
+- **Stale processing signal:** preserved packets may fail if the probe reports
+  true after the application stops processing existing sessions.
+- **Conntrack pressure:** active traffic can refresh entries while the endpoint
+  remains present; monitor existing node-level conntrack usage.
+- **NetworkPolicy or routing drops:** kube-proxy retention cannot override
+  those components.
 
 ###### What steps can be taken to debug this feature?
 
-1. Check `kubeproxy_preserved_udp_conntrack_flows` metric to see if flows are being preserved.
+1. Check the Pod Processing probe/condition and the EndpointSlice conditions.
 2. Run `conntrack -L -p udp` on the node to inspect active conntrack entries.
 3. Check kube-proxy logs for the target endpoint's IP and port.
-4. Verify the Service has `udpConnectionHandling: PreserveDuringTermination` set on the target port.
+4. Verify that the EndpointSlice processing condition is true and that the
+   workload's UDP ports share the endpoint-wide drain state.
 
 ## Implementation History
 
@@ -312,14 +483,40 @@ Kube-proxy operates on a cached state of Services and EndpointSlices. If the API
 - 2026-05-02: Revised to use Service annotation instead of API changes.
 - 2026-05-02: Revised to use conntrack marks and netfilter operations.
 - 2026-05-09: Revised to use a Service-level connection type hint (`udpConnectionHandling`).
+- 2026-10-20: Corrected the target scenario to non-terminating non-serving
+  endpoints; documented current terminating-endpoint behavior and test evidence;
+  removed the unverified hard timeout, metrics, and IPVS assumptions.
+- 2026-10-20: Reframed the API around a container processing probe and EndpointSlice
+  condition after verifying that standard EndpointSlice generation mirrors Pod
+  readiness and cannot express the motivating drain state. Removed the
+  speculative ServicePort field and clarified the end-to-end proof boundary.
 
 ## Drawbacks
 
-- Adds a new field to the Service API (if implemented as a field).
-- Increases complexity in kube-proxy's endpoint tracking logic.
+- Adds a container probe and EndpointSlice condition, plus kubelet,
+  controller-manager, API-server, and kube-proxy version-skew obligations.
+- Increases conntrack reconciliation complexity and can keep mappings to an
+  unhealthy backend while the endpoint remains present.
+- Does not guarantee successful application responses or end-to-end session
+  continuity.
 
 ## Alternatives
 
-- **Conntrack mark approach**: Rejected per maintainer feedback (racy, inefficient, requires app awareness).
-- **Service annotation approach**: Rejected per maintainer feedback (annotations are a poor API).
-- **Adding a `Processing` field to EndpointConditions**: Rejected as it changes the endpoint lifecycle.
+- **Keep current cleanup behavior:** This remains the default and is correct
+  when a non-serving endpoint must fail over immediately. It does not let an
+  application stop accepting new flows while finishing existing exchanges.
+- **Infer draining from `Ready=false` or `Terminating=true`:** Rejected because
+  readiness failure also represents unhealthy endpoints, and termination
+  alone does not say whether the application can process existing datagrams.
+- **Rely only on `Serving=true`:** kube-proxy already retains flows to serving
+  endpoints. Standard EndpointSlice generation derives Serving from Pod
+  readiness, so a selector-backed Pod cannot use it to independently report
+  the motivating drain state.
+- **Use a readiness gate:** Rejected because a readiness gate changes Pod
+  `Ready`, and the EndpointSlice controller currently derives `Serving` from
+  that Pod condition. It therefore cannot simultaneously stop new-flow
+  selection and preserve existing UDP conntrack entries.
+- **Use a ServicePort connection-type hint:** Rejected because it identifies a
+  protocol or port, not whether a particular endpoint can still process
+  existing sessions. It would retain mappings for both intentionally draining
+  endpoints and endpoints that became unhealthy.
