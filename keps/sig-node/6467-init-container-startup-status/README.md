@@ -36,8 +36,7 @@
 
 ## Release Signoff Checklist
 
-This KEP is provisional. SIG sponsorship, approvers, the rollout plan, and a
-release target are not yet agreed.
+This KEP is provisional. Kubernetes v1.39 is the proposed alpha target. SIG sponsorship, approvers, and the rollout plan are not yet agreed.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP directory
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
@@ -59,8 +58,7 @@ start, is running, or is waiting for earlier init containers, using
 the same status semantics as regular containers.**
 
 Use `ContainerCreating` for an init container being prepared to start and retain
-`PodInitializing` for containers waiting for earlier init containers. A running
-init container keeps its existing `state.running` status and `Init:N/M` display.
+`PodInitializing` for containers waiting for earlier init containers. A running ordinary init container keeps its existing `state.running` status and `Init:N/M` display.
 
 ## Motivation
 
@@ -190,7 +188,7 @@ feature-gate settings. Use bounded waits rather than a large public image.
 
 ### Graduation Criteria
 
-These are proposed criteria; no release is targeted yet.
+These are proposed criteria. Kubernetes v1.39 is the proposed alpha target, subject to SIG agreement.
 
 #### Alpha
 

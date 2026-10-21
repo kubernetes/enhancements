@@ -13,8 +13,11 @@ approvers:
   - TBD
 editor: TBD
 # Proposed alpha gate; name and rollout require SIG Node agreement.
-# No release milestone is targeted yet.
+# Kubernetes v1.39 is a candidate target, subject to SIG agreement.
 stage: alpha
+latest-milestone: "v1.39"
+milestone:
+  alpha: "v1.39"
 feature-gates:
   - name: InitContainerStartupStatus
     components:
