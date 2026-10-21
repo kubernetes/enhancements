@@ -51,7 +51,7 @@ This KEP is provisional. Kubernetes v1.39 is the candidate first release. SIG ow
 
 ## Summary
 
-Show the existing `PodInitializing` waiting reason alongside the init count in the Pod table used by `kubectl get pods`. A selected init container waiting with this reason displays `Init:N/M PodInitializing`; a running init container keeps the existing count display.
+Show the existing `PodInitializing` waiting reason alongside the init count in the Pod table used by `kubectl get pods`. A selected init container waiting with this reason displays `Init:N/M PodInitializing`; a running ordinary init container keeps the existing count display.
 
 The change is in the server-side Pod printer. Kubelet status generation, Pod API fields, and waiting reasons stay unchanged. No feature gate is proposed.
 
@@ -120,13 +120,13 @@ The longer STATUS value can affect scripts that split output on spaces. It remai
 
 ## Design Details
 
-Change `printPod` in `pkg/printers/internalversion/printers.go`. In the existing init-container switch, add a case for `state.waiting.reason == "PodInitializing"` that sets the display to `Init:N/M PodInitializing`. Place it after the existing specific waiting-reason branch and before the default count branch. Use the same index and total as the existing count. Keep other branches and their order.
+Change `printPod` in `pkg/printers/internalversion/printers.go`. In the existing init-container switch, add a case for `state.waiting.reason == "PodInitializing"` that sets the display to `Init:N/M PodInitializing`. Place it after the existing specific waiting-reason branch and before the default count branch. Keep the existing count: `N` is the index in `status.initContainerStatuses`, and `M` is the number of init containers in the Pod spec. Do not infer an index for a missing status entry. Keep other branches and their order.
 
-The printer must still skip successful ordinary init containers and restartable init containers with `started: true`. A running restartable init container whose startup probe has not succeeded keeps the count display. Do not infer startup eligibility from the statuses of other containers.
+The printer must still skip successful ordinary init containers and restartable init containers with `started: true`. Before the Pod is initialized, a running restartable init container whose startup probe has not succeeded keeps the count display. After initialization, retain the existing regular-container status path, including during sidecar restarts. Do not infer startup eligibility from the statuses of other containers.
 
 Keep existing error precedence, restart counts, READY counts, and the handling of `Initialized`, `Terminating`, and `Unknown`. Regular-container output is unchanged. Missing init statuses, empty states, and empty reasons must not gain a made-up waiting reason.
 
-`kubectl get pods` normally receives a server-generated `meta.k8s.io/v1` Table. Updating the API server's Pod printer changes that Table output. Upgrading kubectl alone does not enable it. Raw Pod JSON/YAML is unchanged; client printing without a server Table is outside this change.
+`kubectl get pods` normally receives a server-generated `meta.k8s.io/v1` Table. Updating the API server's Pod printer changes that Table output. Upgrading kubectl alone does not enable it. Raw Pod JSON/YAML is unchanged; `--server-print=false` and other printing without a server Table are outside this change.
 
 The existing [ContainerState API][container-state] and [kubelet status conversion][kubelet-status] supply the needed information. No extra API call or runtime query is needed.
 
@@ -140,21 +140,21 @@ Update Pod printer fixtures that expect only a count for `PodInitializing`. Keep
 
 ##### Unit tests
 
-Cover waiting and running states for the first and later ordinary init containers, successful completion, specific waiting errors, and failed exits. Include missing statuses, empty states, and empty waiting reasons.
+Cover waiting and running states for the first and later ordinary init containers, successful completion, specific waiting errors, and failed exits. Include missing statuses, a partial status list with an earlier entry missing, empty states, and empty waiting reasons. Keep the existing count for partial lists.
 
-Cover restartable init containers waiting with `PodInitializing` and `started` absent or false, with `started: true` as a skip-rule check. Include a running sidecar with a pending startup probe and sidecar restarts after initialization. Check `Initialized`, deletion, node-unreachable handling, READY, and restart counts. Verify that the new value is one Table cell with all other cells unchanged.
+Cover restartable init containers waiting with `PodInitializing` and `started` absent or false, with `started: true` as a skip-rule check. Include a running sidecar with a pending startup probe and sidecar restarts after initialization. Check `Initialized`, deletion, node-unreachable handling, READY, and restart counts. Verify normal and wide output: the new value is one Table cell with all other cells unchanged.
 
 ##### Integration tests
 
-Exercise the Pod Table API with controlled Pod status updates from waiting to running to completed. Check the STATUS cell for each state and confirm that raw Pod status keeps its supplied reason. Use a Pod with no active kubelet writer to avoid races. Include an error state and a restartable-init case. No real image pull is needed for these printer assertions.
+Extend the existing API-server Table tests in `test/integration/apiserver` with Pod status and row assertions using `meta.k8s.io/v1` Table negotiation. Check waiting, running, completed, error, and restartable-init cases, including a watch update. Confirm that raw Pod status keeps its supplied reason. Use a Pod with no active kubelet writer to avoid races. No real image pull is needed.
 
 ##### e2e tests
 
-Reuse existing init-container lifecycle coverage to check that running and completed init containers keep their current display. Add the waiting-reason assertion where a test already controls that state. Do not depend on a large public image or a transient image-pull window. No new conformance test is proposed.
+No new e2e test is proposed. Unit and API-server integration tests cover the changed Table output without relying on a transient image-pull window. Existing init-container lifecycle tests remain unchanged. No new conformance test is proposed because this change only formats an existing state; API and container lifecycle behavior are unchanged. Conformance scope remains subject to SIG Testing review.
 
 ### Graduation Criteria
 
-Kubernetes v1.39 is a candidate release, subject to SIG agreement. The metadata keeps the provisional alpha target; the release stages for this ungated printer change need review. No gate-based beta rollout or minimum beta duration is proposed.
+Kubernetes v1.39 is a candidate release, subject to SIG agreement. The metadata keeps the provisional alpha target; the release stages for this ungated printer change need review. Every API server containing this change uses the new output by default, including any alpha delivery. All required tests must pass before that first delivery. No gate-based beta rollout or minimum beta duration is proposed.
 
 #### Alpha
 
@@ -162,11 +162,11 @@ Agree on the output, ownership, and PRR. Pass the printer and Table API tests.
 
 #### Beta
 
-If staged delivery is required, review output compatibility and resolve reported display errors. No feature gate is enabled at this stage.
+If staged delivery is required, complete compatibility and upgrade/rollback checks, prepare documentation, and resolve known display errors. All required tests must pass. No feature gate is enabled at this stage.
 
 #### GA
 
-Confirm regression coverage and publish the output change and its limits.
+Review user feedback and confirm that reported display regressions are resolved. No new functionality or required test work is deferred to GA.
 
 #### Deprecation
 
