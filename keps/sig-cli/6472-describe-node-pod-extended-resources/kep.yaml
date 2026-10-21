@@ -1,0 +1,22 @@
+title: Show Pod extended resource requests in kubectl describe node
+kep-number: 6472
+authors:
+  - "@panpan0000"
+# Proposed SIG ownership; sponsorship is not yet agreed.
+owning-sig: sig-cli
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2026-10-21
+reviewers:
+  - TBD
+approvers:
+  - TBD
+editor: TBD
+see-also:
+  - /keps/sig-node/5677-dra-resource-availability-visibility
+# Provisional stage. No release milestone or feature gate is proposed.
+stage: alpha
+feature-gates: []
+disable-supported: true
+metrics: []
