@@ -39,7 +39,9 @@
 
 This KEP is provisional. SIG sponsorship, reviewers, release target, and release plan are not yet agreed.
 
-- [x] (R) Enhancement tracking issue created: [#6472](https://github.com/kubernetes/enhancements/issues/6472)
+Tracking issue: [#6472](https://github.com/kubernetes/enhancements/issues/6472).
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP directory
 - [ ] (R) KEP approved as `implementable`
 - [ ] (R) Design and test plan agreed
 - [ ] (R) Graduation criteria agreed
@@ -128,6 +130,10 @@ Change `describeNodeResource` in `staging/src/k8s.io/kubectl/pkg/describe/descri
 4. Keep a pair if either quantity is nonzero. A missing quantity prints as `0`, as in the existing tables. Format quantities with `Quantity.String()`.
 5. Keep the same Pod order as the current table. Sort resource names within each Pod. Print full namespace, Pod, and resource names on every row.
 
+Exclude `Succeeded` and `Failed` Pods, as today. Include other phases and Pods being deleted until they reach a terminal phase. Static Pods are visible only through their API mirror Pods. Ephemeral containers have no separate resource requests or limits; use the existing helpers without adding special accounting.
+
+The new rows and `Allocated resources` totals use the same Pod list and helper options. For each resource shown in both tables, the row sums must match the totals. The Node and Pods are read separately, so this is not an atomic snapshot of node capacity and Pod requests. Keys absent from Node allocatable can appear only in the new table.
+
 Collect rows during the existing Pod loop and print them after the current totals. Do not calculate each Pod's resources again for the new table. Use the existing `PrefixWriter` and tabwriter; do not set a fixed line width or truncate names.
 
 The `Resource` column uses keys from these maps. New extended resource names need no kubectl registration or code changes.
@@ -152,7 +158,7 @@ Extend the existing node describer fixtures. No GPU hardware is required.
 
 Cover no extended resources; multiple vendors and resource names; multiple containers; ordinary and restartable init containers; zero and missing values; resource keys absent from Node allocatable; full names, quantities, and ordering. Include one Pod that requests both GPU and shared RDMA resources, a `deviceclass.resource.kubernetes.io/example` request, and many keys across many Pods. A Claim-only Pod produces the note without a scalar row; a mixed Pod produces both; a Pod with no Claim reference adds no note.
 
-At the `NodeDescriber.Describe` level, use the real tabwriter with long Pod and resource names and check that existing tables and totals stay unchanged. Use fake-client reactors for multiple Pod pages, Forbidden, and other API errors. Verify that all listed non-terminated Pods are considered, terminated Pods are excluded, denied access still prints `Pods: not authorized`, and no extra API requests are made.
+At the `NodeDescriber.Describe` level, use the real tabwriter with long Pod and resource names and check that existing tables and totals stay unchanged. Use fake-client reactors for multiple Pod pages, Forbidden, and other API errors. Verify that all listed non-terminated Pods are considered, terminated Pods are excluded, non-terminal Pods being deleted and API mirror Pods are included, row sums match the totals for shared keys, denied access still prints `Pods: not authorized`, and no extra API requests are made.
 
 ##### Integration tests
 
