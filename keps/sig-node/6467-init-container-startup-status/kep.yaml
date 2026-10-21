@@ -1,4 +1,4 @@
-title: Improve Init Container Startup Status Visibility
+title: Show init container waiting reasons in Pod table output
 kep-number: 6467
 authors:
   - "@panpan0000"
@@ -12,14 +12,10 @@ reviewers:
 approvers:
   - TBD
 editor: TBD
-# Proposed alpha gate; name and rollout require SIG Node agreement.
 # Kubernetes v1.39 is a candidate target, subject to SIG agreement.
 stage: alpha
 latest-milestone: "v1.39"
 milestone:
   alpha: "v1.39"
-feature-gates:
-  - name: InitContainerStartupStatus
-    components:
-      - kubelet
-disable-supported: true
+feature-gates: []
+disable-supported: false
