@@ -151,7 +151,7 @@ SIG-Multicluster APIs cover several parts of multicluster management:
 - [PlacementDecision](../5313-placement-decision-api/README.md) lists the
   clusters that a scheduler selected.
 - The [Work
-  API](https://github.com/kubernetes/enhancements/pull/6457)
+  API](../6456-work-api/README.md)
   groups Kubernetes resource manifests for delivery to a managed cluster.
 - The [About API](../2149-clusterid/README.md) stores cluster metadata, such as
   the cluster ID, in `ClusterProperty` resources.
