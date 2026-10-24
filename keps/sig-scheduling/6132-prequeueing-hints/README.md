@@ -14,11 +14,11 @@
   - [DRA Plugin Implementation](#dra-plugin-implementation)
   - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
-    - [Prerequisite testing updates](#prerequisite-testing-updates)
-    - [Unit Tests](#unit-tests)
-    - [Integration Tests](#integration-tests)
-    - [E2E Tests](#e2e-tests)
-    - [Performance Tests](#performance-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+      - [Performance tests](#performance-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Beta](#beta)
     - [GA](#ga)
@@ -44,14 +44,14 @@ Items marked with (R) are required *prior to targeting to a milestone
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP
   dir in [kubernetes/enhancements]
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG
   Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in
   [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation
@@ -70,6 +70,7 @@ events that affect only specific pods.
 The DRA plugin implements `PreQueueingHintFn` for ResourceClaim
 events using a pod informer index that maps ResourceClaims to the
 pods referencing them.
+
 ## Motivation
 
 When a burst of pods using DRA ResourceClaimTemplates are created
@@ -118,7 +119,7 @@ processing.
 | Risk | Mitigation |
 |------|-----------|
 | PreQueueingHintFn incorrectly signals "no pods affected" | Deallocation events and index errors always signal "evaluate all". The periodic flush of unschedulable pods provides an additional safety net. |
-| A generated claim referenced by a second pod | Pod informer index looks up all pods referencing the claim by spec, not just the owner. Verified by E2E test. |
+| A generated claim referenced by a second pod | Pod informer index looks up all pods referencing the claim by spec, not just the owner. Verified by `TestPreQueueingHint_SharedClaimMultiplePods`. |
 | Pod informer index returns stale empty result | This is correct: if no pod references the claim yet, no pod can benefit from the event. The pod status update (linking pod to claim) triggers a separate scheduling event. |
 
 ## Design Details
@@ -184,37 +185,72 @@ same generated claim.
 
 ### Test Plan
 
-#### Prerequisite testing updates
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
 
 The existing QueueingHint tests provide baseline coverage for the
 requeue path.
 
-#### Unit Tests
+##### Unit tests
 
-- `TestPreQueueingHint`: Tests pod lookup via index, deallocation
-  fallback, empty index (no pods affected), error handling.
-- `TestPriorityQueue_PreQueueingHint`: Tests gate enabled/disabled,
-  hint narrows to specific pods, hint signals all, multiple hints
-  union.
+Core packages touched by this enhancement, with current coverage:
 
-#### Integration Tests
+- `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2026-09-24` - `93.8%`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `2026-09-24` - `86.9%`
 
-- Existing scheduler integration tests pass with feature gate
+Notable cases:
+
+- `TestPreQueueingHint`, `TestPreQueueingHint_WithPodInIndexer`,
+  `TestPreQueueingHint_PodNotYetIndexed`,
+  `TestPreQueueingHint_DuplicateClaimRefs`: pod lookup via index,
+  deallocation fallback, empty index (no pods affected), error handling.
+- `TestPreQueueingHint_SharedClaimMultiplePods`: multiple pods
+  referencing one generated ResourceClaim are all returned by the
+  index, which is the correctness case the OwnerReference heuristic
+  got wrong.
+- `TestPriorityQueue_PreQueueingHint`: gate enabled/disabled, hint
+  narrows to specific pods, hint signals all, multiple hints union.
+- `TestPreQueueingHint_PerPluginNarrowing`,
+  `TestPreQueueingHint_NonNarrowingPluginEvaluatesAllPods`,
+  `TestPreQueueingHint_AllPodsAndErrorPreserveNarrowing`: per-plugin
+  narrowing, added for beta.
+- `TestPreQueueingHint_CompositePodGroupLookup`,
+  `TestPreQueueingHint_CompositePodGroupDedup`,
+  `TestPreQueueingHint_CompositePodGroupPreCheck`: PodGroup and
+  CompositePodGroup root resolution, added for beta.
+- `TestPreQueueingHint_Metrics`: the `plugin` and `result` labels on
+  `scheduler_pre_queueing_hint_evaluations_total`.
+
+##### Integration tests
+
+- [`TestPreQueueingHintNarrowsPodSet`](https://github.com/kubernetes/kubernetes/blob/0661ce1bc61c60dcd59903db2401b1e058c504bc/test/integration/scheduler/prequeueinghint/prequeueinghint_test.go#L91):
+  [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=TestPreQueueingHint),
+  [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=TestPreQueueingHint).
+  Verifies that PreQueueingHintFn narrows the pod set, and that pods
+  not covered by a narrowed hint are still requeued by subsequent
+  relevant events.
+- Existing scheduler integration tests pass with the feature gate
   enabled and disabled.
 - DRA integration tests (`pull-kubernetes-dra-integration`) pass.
-- Integration test verifying PreQueueingHintFn correctly narrows
-  the pod set, and that pods not covered by a narrowed hint are still
-  requeued by subsequent relevant events.
 
-#### E2E Tests
+##### e2e tests
 
-- `pull-kubernetes-e2e-kind-alpha-beta-features`: Full e2e with
-  all alpha/beta gates enabled.
-- Dedicated test: multiple pods sharing one generated ResourceClaim
-  all get scheduled after driver starts (verifies the index-based
-  approach handles shared claims correctly).
+There is no dedicated e2e test for this enhancement, and none is
+planned. The feature changes only which pods the scheduler re-evaluates
+on an event, not any scheduling decision or API surface, so the
+correctness properties are observable at the unit and integration
+levels and are covered there. e2e coverage is by way of the existing
+DRA e2e suite running with the gate on:
 
-#### Performance Tests
+- [`pull-kubernetes-e2e-kind-alpha-beta-features`](https://testgrid.k8s.io/sig-release-master-blocking#pull-kubernetes-e2e-kind-alpha-beta-features):
+  exercises `test/e2e/dra` with all alpha/beta gates enabled, so the
+  DRA PreQueueingHintFn is on the path for every claim event in those
+  tests.
+
+##### Performance tests
 
 Measured using `test/integration/scheduler_perf` with the
 `SchedulingWithResourceClaimTemplate` benchmark:
@@ -222,9 +258,14 @@ Measured using `test/integration/scheduler_perf` with the
 - Before: ~297 pods/sec
 - After: ~711 pods/sec (~2.4x improvement)
 
-This benchmark is part of CI and will detect regressions. Once
-this feature is merged, the threshold for expected throughput
-needs to be revised to match the improvement.
+This benchmark runs in CI and will detect regressions. Its throughput
+threshold (`dra: 56` for the `5000pods_500nodes` workload in
+`test/integration/scheduler_perf/dra/performance-config.yaml`) still
+reflects pre-feature throughput, so a regression back to the old rate
+would pass silently. Raising that threshold to match the improvement is
+a follow-up tracked for the beta milestone; it is deliberately not done
+in the same PR that enables the gate, so that the threshold bump can be
+reverted independently if the gate is disabled.
 
 ### Graduation Criteria
 
@@ -242,9 +283,12 @@ needs to be revised to match the improvement.
 - [x] CompositePodGroup support: a hinted pod is resolved to its root
   entity (PodGroup or CompositePodGroup)
 - [x] Unit tests for all code paths
-- [x] E2E test for shared claim correctness
+- [x] Unit and integration coverage for shared-claim correctness
+  (`TestPreQueueingHint_SharedClaimMultiplePods`,
+  `TestPreQueueingHintNarrowsPodSet`)
 - [x] `scheduler_perf` benchmark demonstrating improvement
-- [x] All e2e tests pass with feature enabled
+- [x] Existing DRA e2e tests pass with the feature enabled
+  (`pull-kubernetes-e2e-kind-alpha-beta-features`)
 - [x] Correctness bugs found during the v1.37 alpha review addressed
   (see Implementation History)
 
@@ -291,6 +335,16 @@ reverts to O(N) evaluation. No persistent state.
 
 The scheduler resumes using PreQueueingHintFn. No persistent state.
 
+###### Are there any tests for feature enablement/disablement?
+
+Yes. `TestPriorityQueue_PreQueueingHint` runs the queue with the gate
+both enabled and disabled and asserts that the disabled path evaluates
+all unschedulable pods, matching pre-feature behavior. The scheduler
+integration tests are also run with the gate enabled and disabled.
+Because the feature keeps no persistent state and touches no API object,
+enablement and disablement are fully covered in-process; there is no
+upgrade artifact to test separately.
+
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollback be performed?
@@ -298,13 +352,45 @@ The scheduler resumes using PreQueueingHintFn. No persistent state.
 Set `--feature-gates=SchedulerPreQueueingHints=false` on the
 scheduler and restart.
 
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+Already running workloads are not affected. The feature only changes
+which pending pods the scheduler re-evaluates when a cluster event
+arrives; it never moves, evicts or re-places a pod that is already bound
+to a node.
+
+The failure mode for a rollout is delayed scheduling, not incorrect
+scheduling. If a `PreQueueingHintFn` narrows away a pod that a relevant
+event should have requeued, that pod stays in `unschedulableEntities`
+until the periodic flush moves it back to the active queue, so it is
+scheduled late rather than never. Pods are never placed on a node they
+would not otherwise have been placed on, because the per-pod
+`QueueingHintFn` and the entire scheduling cycle are unchanged — only the
+candidate set feeding them is narrowed.
+
+Rollback cannot partially fail. The gate is read at scheduler startup
+and the queue holds no persisted state, so a scheduler restarted with the
+gate off rebuilds its queue from informers and is immediately back on the
+pre-feature O(N) path. In an HA control plane with several scheduler
+replicas, only the active leader's behavior matters, so a rolling restart
+cannot leave the cluster in a mixed state.
+
 ###### What specific metrics should inform a rollback?
 
-- `scheduler_pod_scheduled_after_flush_total` increasing: indicates
-  pods are being rescued by the periodic flush timeout rather than
-  by event-driven requeue. This suggests PreQueueingHintFn is
-  incorrectly signaling "no pods affected" for events that should
-  trigger re-evaluation.
+- `scheduler_pre_queueing_hint_evaluations_total{result="prequeueing_hint_fn_error"}`
+  increasing: a plugin's `PreQueueingHintFn` is erroring. Narrowing is
+  skipped for that plugin so scheduling stays correct, but a sustained
+  error rate means the hint is not doing its job.
+- `scheduler_pod_scheduled_after_flush_total` rate increasing relative
+  to the pre-enablement baseline: pods are being rescued by the periodic
+  flush timeout rather than by event-driven requeue. This suggests
+  PreQueueingHintFn is incorrectly signaling "no pods affected" for
+  events that should trigger re-evaluation. Because this counter also
+  moves for reasons unrelated to this feature, compare rates before and
+  after enablement rather than treating any non-zero value as a defect.
+- Pods in `Pending` for longer than the unschedulable flush interval
+  while their ResourceClaims are allocated: the user-visible form of a
+  missed requeue.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -317,7 +403,7 @@ No.
 
 ### Monitoring Requirements
 
-###### How can an operator determine if the feature is in use?
+###### How can an operator determine if the feature is in use by workloads?
 
 - Scheduler logs at V(5): "PreQueueingHint narrowed pod set"
 - Feature gate status visible in
@@ -328,9 +414,11 @@ No.
 - For DRA workloads using ResourceClaimTemplates: scheduling
   throughput during burst pod creation improves compared to the
   feature being disabled.
-- `scheduler_pod_scheduled_after_flush_total` remains at zero or
-  near-zero (pods are being requeued by events, not by flush
-  timeout).
+- `scheduler_pre_queueing_hint_evaluations_total` for the
+  `dynamicresources` plugin is dominated by `result="narrowed"`.
+- `scheduler_pod_scheduled_after_flush_total` does not rise relative to
+  its rate before enablement (pods are being requeued by events, not by
+  the flush timeout).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -348,22 +436,24 @@ No.
 - Type: Metric
   - Metric name: `scheduler_pod_scheduled_after_flush_total`
   - Components exposing the metric: `kube-scheduler`
-  - Interpretation: should remain at zero. Non-zero indicates
-    pods were missed by event-driven requeue and rescued by
-    the periodic flush.
+  - Interpretation: counts pods that reached a node only after the
+    periodic flush of `unschedulableEntities` rescued them, which is a
+    pre-existing safety net not specific to this feature. It is
+    therefore not expected to be exactly zero; compare its rate against
+    the pre-enablement baseline for the same workload. A rate that rises
+    after enablement indicates PreQueueingHintFn is narrowing away pods
+    that a relevant event should have requeued.
 - Type: Metric
   - Metric name: `scheduler_pre_queueing_hint_evaluations_total`
   - Components exposing the metric: `kube-scheduler`
-  - Interpretation: a high ratio of `narrowed` vs `all_pods`
-    indicates the optimization is effective. If `all_pods`
-    dominates, most events are falling back to the full scan.
+  - Interpretation: `result` is `narrowed`, `all_pods`,
+    `no_prequeueing_hint_fn`, or `prequeueing_hint_fn_error`. Mostly
+    `narrowed` means narrowing works; sustained
+    `prequeueing_hint_fn_error` is a bug.
 
-###### Are there any missing metrics that would be useful to have in this context?
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-A metric `scheduler_pre_queueing_hint_evaluations_total` with
-`plugin` and `result` labels (where result is `all_pods` or
-`narrowed`) will be added to track PreQueueingHint invocations
-and their outcomes.
+No.
 
 ### Dependencies
 
@@ -398,7 +488,7 @@ No.
 
 No. It reduces scheduling latency.
 
-###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any component?
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 The pod informer index adds a small memory overhead proportional to
 the number of pods with ResourceClaims. This is negligible compared
@@ -410,7 +500,7 @@ No.
 
 ### Troubleshooting
 
-###### How does the feature react if the API server and/or etcd is unavailable?
+###### How does this feature react if the API server and/or etcd is unavailable?
 
 No impact. The feature is internal to the scheduler's in-memory
 queue processing.
@@ -419,16 +509,21 @@ queue processing.
 
 | Failure Mode | Detection | Mitigation |
 |---|---|---|
-| PreQueueingHintFn incorrectly signals no pods | `scheduler_pod_scheduled_after_flush_total` increases | Disable feature gate |
+| PreQueueingHintFn incorrectly signals no pods | `scheduler_pod_scheduled_after_flush_total` rate rises above its pre-enablement baseline; pods stay `Pending` past the flush interval with claims allocated | Disable feature gate |
+| A plugin's PreQueueingHintFn errors | `scheduler_pre_queueing_hint_evaluations_total{result="prequeueing_hint_fn_error"}` increases | None needed for correctness: that plugin falls back to evaluating all pods while other plugins keep narrowing. Fix the plugin |
 | Pod informer index stale | No impact: empty index means no pod references the claim yet; correct behavior | Self-healing via pod status update event |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check `scheduler_pod_scheduled_after_flush_total` — if elevated,
-   the PreQueueingHint is missing pods that should be re-evaluated.
-2. Check scheduler logs at V(5) for "PreQueueingHint narrowed pod
+1. Check `scheduler_pre_queueing_hint_evaluations_total` by `plugin` and
+   `result`. A non-trivial `prequeueing_hint_fn_error` rate identifies
+   the offending plugin directly.
+2. Check `scheduler_pod_scheduled_after_flush_total` — if its rate is
+   elevated versus before enablement, a PreQueueingHintFn is missing
+   pods that should be re-evaluated.
+3. Check scheduler logs at V(5) for "PreQueueingHint narrowed pod
    set" messages to verify the feature is active.
-3. Disable the feature gate and restart the scheduler.
+4. Disable the feature gate and restart the scheduler.
 
 ## Alternatives
 
@@ -436,13 +531,13 @@ queue processing.
 
 When the `GenericWorkload` feature is enabled, the scheduling queue
 stores `QueuedPodGroupInfo` entities rather than individual pods.
-To resolve which entity a pod belongs to, the framework will use
-the pod's `schedulingGroup` field via the pod informer to look up
-the owning PodGroup entity in O(1).
+To resolve which entity a pod belongs to, the framework uses the pod's
+`schedulingGroup` field via the pod informer to look up the owning
+PodGroup entity in O(1), and evaluates that entity.
 
-This will be supported in 1.37. The framework will use the pod's
-`schedulingGroup` field to look up the owning PodGroup entity
-and evaluate it accordingly.
+This is implemented for beta in v1.38, including resolution to a
+`CompositePodGroup` root, and is listed under the beta graduation
+criteria above.
 
 ### Other Alternatives
 
@@ -455,9 +550,12 @@ and evaluate it accordingly.
    faster. Rejected because the O(N) iteration is the bottleneck,
    not per-pod evaluation cost.
 
-3. **No feature gate**: Ship as always-on. Accepted for beta since
-   the pod informer index approach is correct by construction and
-   verified by E2E tests.
+3. **No feature gate**: ship as always-on, on the argument that the
+   pod informer index approach is correct by construction. Rejected: the
+   v1.37 cycle demoted this feature from beta to alpha after review
+   found correctness bugs in the narrowing logic, which is exactly the
+   case the gate exists to contain. `SchedulerPreQueueingHints` is
+   retained for beta with `disable-supported: true`.
 
 ## Implementation History
 
