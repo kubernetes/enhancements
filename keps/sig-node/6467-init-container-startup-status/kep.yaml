@@ -1,0 +1,21 @@
+title: Show init container waiting reasons in Pod table output
+kep-number: 6467
+authors:
+  - "@panpan0000"
+owning-sig: sig-node
+participating-sigs:
+  - sig-cli
+status: provisional
+creation-date: 2026-10-13
+reviewers:
+  - TBD
+approvers:
+  - TBD
+editor: TBD
+# Kubernetes v1.39 is a candidate target, subject to SIG agreement.
+stage: alpha
+latest-milestone: "v1.39"
+milestone:
+  alpha: "v1.39"
+feature-gates: []
+disable-supported: false
