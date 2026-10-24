@@ -1,0 +1,38 @@
+title: "ExecAction timeout for lifecycle hooks"
+kep-number: 4929
+authors:
+  - "@googs1025"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: "2026-07-14"
+
+reviewers:
+  - "@thockin"
+  - "@tallclair"
+  - "@kannon92"
+  - "@haircommander"
+approvers:
+  - "@mrunalp"
+
+see-also:
+  - "/keps/sig-node/3960-pod-lifecycle-sleep-action"
+  - "/keps/sig-node/4818-allow-zero-value-for-sleep-action-of-prestop-hook"
+replaces: []
+
+stage: alpha
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+  beta: ""
+  stable: ""
+
+feature-gates:
+  - name: PodLifecycleExecActionTimeout
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+metrics: []
