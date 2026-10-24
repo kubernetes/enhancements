@@ -35,10 +35,11 @@ aliases:
     - elmiko
     - joelspeed
   sig-cluster-lifecycle-leads:
-    - CecileRobertMichon
     - fabriziopandini
+    - hakman
     - justinsb
     - neolit123
+    - sbueringer
   sig-contributor-experience-leads:
     - MadhavJivrajani
     - Priyankasaggu11929
