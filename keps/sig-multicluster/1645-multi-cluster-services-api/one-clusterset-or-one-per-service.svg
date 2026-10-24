@@ -1,0 +1,120 @@
+<svg version="1.1" viewBox="0 31 960 965" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="31" width="960" height="965" fill="#ffffff"/>
+
+  <!-- upper panel: every service exported to all other clusters, one clusterset -->
+  <text x="20" y="56" font-family="Arial, sans-serif" font-size="12" fill="#000000">every service exported to all other clusters, forming one clusterset</text>
+  <rect x="50" y="64" width="180" height="490" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="65" y="86" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster A (foo, bar)</text>
+  <rect x="85" y="104" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="140" y="126" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="140" y="144" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="85" y="169" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="140" y="191" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="140" y="209" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="85" y="259" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="140" y="281" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="140" y="299" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="85" y="414" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="140" y="436" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="140" y="454" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="260" y="64" width="180" height="490" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="275" y="86" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster B (foo, bar)</text>
+  <rect x="295" y="104" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="350" y="126" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="350" y="144" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="295" y="169" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="350" y="191" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="350" y="209" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="295" y="259" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="350" y="281" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="350" y="299" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="295" y="414" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="350" y="436" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="350" y="454" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="500" y="64" width="180" height="490" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="515" y="86" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster C (billing)</text>
+  <rect x="535" y="104" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="126" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="590" y="144" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="535" y="259" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="281" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="590" y="299" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="535" y="324" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="346" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="590" y="364" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="535" y="414" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="436" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="590" y="454" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="535" y="479" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="501" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="590" y="519" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="740" y="64" width="180" height="490" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="755" y="86" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster D (billing reports)</text>
+  <rect x="775" y="104" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="830" y="126" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="830" y="144" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="775" y="259" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="830" y="281" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="830" y="299" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="775" y="414" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="830" y="436" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="830" y="454" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="75" y="94" width="820" height="450" rx="12" fill="none" stroke="#595959" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <rect x="826" y="538" width="64" height="13" fill="#ffffff"/>
+  <text x="858" y="548" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#595959" text-anchor="middle">clusterset</text>
+
+  <text x="480" y="606" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">or</text>
+
+  <!-- lower panel: each service exported only to the clusters that use it -->
+  <text x="20" y="626" font-family="Arial, sans-serif" font-size="12" fill="#000000">each service exported only to the clusters that use it, forming a clusterset per service</text>
+  <rect x="50" y="634" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="65" y="656" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster A (foo, bar)</text>
+  <rect x="85" y="674" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="140" y="696" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="140" y="714" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="85" y="744" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="140" y="766" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="140" y="784" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="85" y="829" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="140" y="851" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="140" y="869" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="260" y="634" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="275" y="656" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster B (foo, bar)</text>
+  <rect x="295" y="674" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="350" y="696" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="350" y="714" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="295" y="744" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="350" y="766" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="350" y="784" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">foo</text>
+  <rect x="295" y="829" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="350" y="851" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="350" y="869" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="500" y="634" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="515" y="656" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster C (billing)</text>
+  <rect x="535" y="674" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="696" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="590" y="714" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="535" y="744" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="766" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="590" y="784" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="535" y="829" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="851" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
+  <text x="590" y="869" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="535" y="899" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="590" y="921" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="590" y="939" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <rect x="740" y="634" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
+  <text x="755" y="656" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster D (billing reports)</text>
+  <rect x="775" y="674" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="830" y="696" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
+  <text x="830" y="714" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <rect x="75" y="664" width="340" height="145" rx="12" fill="none" stroke="#6aa84f" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <rect x="525" y="664" width="370" height="145" rx="12" fill="none" stroke="#bf9000" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <rect x="75" y="819" width="580" height="145" rx="12" fill="none" stroke="#3c78d8" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <rect x="346" y="803" width="64" height="13" fill="#ffffff"/>
+  <text x="378" y="813" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#6aa84f" text-anchor="middle">clusterset</text>
+  <rect x="826" y="803" width="64" height="13" fill="#ffffff"/>
+  <text x="858" y="813" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#bf9000" text-anchor="middle">clusterset</text>
+  <rect x="586" y="958" width="64" height="13" fill="#ffffff"/>
+  <text x="618" y="968" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#3c78d8" text-anchor="middle">clusterset</text>
+</svg>
