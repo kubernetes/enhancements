@@ -1,0 +1,16 @@
+title: Make the kube-proxy configuration file startup-only
+kep-number: 6470
+authors:
+  - "@kairosci"
+owning-sig: sig-network
+participating-sigs:
+  - sig-apps
+status: provisional
+creation-date: 2026-10-19
+reviewers:
+  - sig-network-leads
+approvers:
+  - sig-network-leads
+see-also:
+  - "/keps/sig-network/784-kube-proxy-component-config"
+
