@@ -1,0 +1,43 @@
+title: Expose cgroup v2 memory.events OOM-kill counters in Kubelet/CRI Stats
+kep-number: 6412
+authors:
+  - "@sohankunkerkar"
+  - "@QiWang19"
+owning-sig: sig-node
+status: implementable
+creation-date: 2026-09-16
+reviewers:
+  - "@haircommander"
+approvers:
+  - "@mrunalp"
+
+see-also:
+  - "/keps/sig-node/2570-memory-qos"
+  - "/keps/sig-node/4205-psi-metric"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: KubeletMemoryEvents
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - container_memory_events_oom_kill_total
+  - container_memory_events_oom_group_kill_total
