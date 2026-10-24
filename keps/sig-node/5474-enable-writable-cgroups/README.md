@@ -17,6 +17,7 @@
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
     - [Core API Types](#core-api-types)
+    - [Verify Node Support](#verify-node-support)
     - [CRI API Changes](#cri-api-changes)
       - [Descendant and Depth Limits (Pod-level, no CRI changes)](#descendant-and-depth-limits-pod-level-no-cri-changes)
   - [Implementation Details](#implementation-details)
@@ -235,7 +236,7 @@ const (
 )
 ```
 
-**Verify Node Support:**
+#### Verify Node Support
 
 The kubelet declares `CgroupOptions` in `node.status.declaredFeatures` when the
 feature gate is enabled and the node meets these prerequisites:
@@ -376,6 +377,8 @@ The scheduler and kubelet admission enforce the prerequisites described under
 `cgroupOptions` when `spec.os.name` is `windows`, following the other Linux-only
 securityContext fields.
 
+`cgroupOptions` cannot be changed on an existing Pod; changing it requires Pod replacement.
+
 Ephemeral containers cannot set `cgroupOptions`. Allowing them to request writable
 cgroups would require applying descendant limits to an existing Pod cgroup when
 the Pod did not initially request them.
@@ -466,43 +469,48 @@ Coverage for new and existing packages:
 
 ### Upgrade / Downgrade Strategy
 
-Enable/disable the feature gate
+**Upgrade**:
 
-**Upgrade**: 
-- New field is optional and defaults to `nil` (no change in behavior)
-- Existing workloads continue to function without modification
+No change is required to retain existing behavior after a Kubernetes upgrade.
 
-**Update Flow**:
-- `CgroupOptions` field is **immutable** after pod creation. Ephemeral containers cannot set it.
-- Changes to `CgroupOptions` require pod recreation (delete + create)
+To use the feature after an upgrade:
+
+- Verify that nodes and container runtimes meet the requirements in
+  [Verify Node Support](#verify-node-support).
+- Confirm that component versions are compatible as described in
+  [Version Skew Strategy](#version-skew-strategy).
+- Enable `CgroupOptions` on kubelet and kube-apiserver. See
+  [Feature Enablement and Rollback](#feature-enablement-and-rollback).
 
 **Downgrade**:
 
-*Two scenarios depending on downgrade type:*
+An older kube-apiserver ignores `cgroupOptions` in stored Pods. A later update
+through that kube-apiserver can persist the Pod without the field. An older
+kube-apiserver treats `cgroupOptions` in incoming requests as an unknown field
+according to standard Kubernetes
+[field validation semantics](https://kubernetes.io/docs/reference/using-api/api-concepts/#field-validation).
 
-**Feature Gate Disabled (same Kubernetes version):**
-
-- Disabling the gate on kube-apiserver drops `cgroupOptions` from new Pods and preserves it on existing Pods.
-- Restarting kubelet with the gate disabled rejects existing Pods with an explicit cgroup mount mode at admission with `PodFeatureUnsupported`. The Pods enter `Failed`, and kubelet terminates their running containers, per the [Node Declared Features policy](../5328-node-declared-features/README.md#declared-feature-changes-on-existing-nodes).
-- Replacement Pods use the runtime's default cgroup mount mode if the apiserver gate is disabled. With that gate enabled, they require a node that declares `CgroupOptions`.
-
-**True Version Downgrade (to Kubernetes version without CgroupOptions field):**
-- The older apiserver does not recognize the field and drops it when it reads stored Pods. Older kubelets never see it. Running containers keep their current cgroup mount until they restart, after which they use the runtime's default.
-- New requests that set the field are rejected only when the client asks for strict field validation, which `kubectl` does by default. For other clients the apiserver drops the field and returns a warning.
-- Remove the field from pod specs before downgrading
+Containers that started before the downgrade keep their cgroup mount mode.
+Recreated containers use the default mount mode from the container runtime. If
+a workload requires a different mount mode, configure the container runtime
+before its containers restart. After a version downgrade, an older kubelet does
+not apply the Pod cgroup descendant and depth limits when it creates a Pod
+cgroup, even if the container runtime provides a writable cgroup mount.
 
 ### Version Skew Strategy
 
-The scheduler must recognize `CgroupOptions` before the feature is enabled.
-Otherwise, it can place Pods on older kubelets that ignore the field.
+Before `CgroupOptions` is enabled on kube-apiserver, kube-scheduler must run a
+version that recognizes `CgroupOptions` as a node requirement.
+Otherwise, the scheduler can place Pods on older kubelets that ignore the field.
 
 **kubelet vs Container Runtime**:
 A node whose runtime does not advertise `cgroup_mount_mode` does not declare
 `CgroupOptions`. The scheduler excludes it for Pods with an explicit cgroup mount mode.
 
-**apiserver vs kubelet**:
-The scheduler excludes nodes whose kubelet predates the feature or has its gate
-disabled. API field handling is described under
+**kube-scheduler vs kubelet**:
+A kube-scheduler version that recognizes `CgroupOptions` excludes nodes whose
+kubelet predates the feature or has its gate disabled. API field handling is
+described under
 [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ## Production Readiness Review Questionnaire
@@ -535,7 +543,6 @@ The feature can be controlled via:
 
 **Yes**. Restarting kubelet with the gate disabled terminates Pods with an explicit
 cgroup mount mode. Disabling it on kube-apiserver drops the field from new Pods.
-See [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -543,11 +550,17 @@ New Pods with an explicit `ReadOnly` or `Writable` mount mode can be created aga
 
 ###### Are there any tests for feature enablement/disablement?
 
-Tests will verify:
+Manual testing covered:
 
-- Feature gate disabled: the apiserver drops `cgroupOptions` from new Pods and preserves it on existing Pods
-- Feature gate enabled: API accepts and kubelet processes the field correctly
-- Runtime compatibility testing with and without feature support
+- Enabling `CgroupOptions` on kube-apiserver and kubelet, then
+  creating a Pod with `cgroupOptions.mountMode: Writable`. The container had a
+  writable `/sys/fs/cgroup` mount.
+- Disabling `CgroupOptions` on kube-apiserver. New Pods lost the field, while
+  existing Pods retained it.
+- Disabling `CgroupOptions` on kubelet and restarting kubelet. Existing Pods
+  with an explicit mount mode entered `Failed`, and kubelet stopped their
+  containers.
+- Re-enabling the feature. New Pods with explicit mount modes ran again.
 
 
 
@@ -566,7 +579,7 @@ Possible rollout failure modes:
 Rollback (disabling the feature gate):
 
 - Disabling the gate on kube-apiserver drops `cgroupOptions` from new Pods, which then use the runtime's default cgroup mount mode. Operations that require writable cgroups fail if that default is read-only.
-- Restarting kubelet with the gate disabled terminates Pods with an explicit cgroup mount mode; see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+- Restarting kubelet with the gate disabled terminates Pods with an explicit cgroup mount mode.
 
 No impact on workloads that do not opt in to the feature.
 
@@ -582,14 +595,17 @@ Whether to add a feature-specific dimension to existing counters is deferred to 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO: requires the alpha implementation in kubernetes/kubernetes and a container runtime supporting the new CRI field. Plan: implement in kubernetes and containerd, then exercise the upgrade -> downgrade -> upgrade flow in `kind` (cheap to swap node images and flip feature gates). Cases to cover:
+Yes. Manual testing completed successfully on a real multi-VM AWS Kubernetes
+cluster that ran a source build of the writable-cgroups implementation and a
+container runtime that implements `cgroup_mount_mode`.
 
-- Enable feature gate, create pod with `cgroupOptions.mountMode: Writable`, confirm container has writable `/sys/fs/cgroup`.
-- Disable the gate on kube-apiserver, confirm it drops the field from new Pods and preserves it on existing Pods.
-- Disable the gate on kubelet and restart it. Confirm existing Pods with an explicit cgroup mount mode enter `Failed` and their containers are terminated.
-- Re-enable feature gate, confirm new pods can be created again.
+The test run covered:
 
-True version downgrade behavior (to a kubernetes version without the field) is described under [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+- A supported v1.37 to v1.38 rolling upgrade with ordinary workload canaries.
+- Scheduler, kubelet, and runtime version-skew combinations, including the
+  old-scheduler rollout hazard.
+- A downgrade to v1.37, unknown-field validation, restarted-container behavior,
+  and restoration to v1.38.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -718,7 +734,7 @@ No SLOs at alpha. If pod startup latency degrades after enabling the feature gat
 1. Check scheduler events for Pods stuck `Pending` and kubelet events for `PodFeatureUnsupported`.
 2. Confirm the node lists `CgroupOptions` under `status.declaredFeatures` via `kubectl get node -o yaml`.
 3. Confirm the host has cgroup v2 with `nsdelegate` (`findmnt /sys/fs/cgroup`).
-4. Follow [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) when disabling the gate; restarting kubelet terminates Pods with an explicit cgroup mount mode.
+4. Follow [Feature Enablement and Rollback](#feature-enablement-and-rollback) when disabling the gate; restarting kubelet terminates Pods with an explicit cgroup mount mode.
 
 ## Implementation History
 
