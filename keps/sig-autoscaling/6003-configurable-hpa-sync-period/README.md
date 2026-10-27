@@ -243,18 +243,18 @@ type HorizontalPodAutoscalerSpec struct {
 
 **Scheduling behavior.** The delay starts when a reconciliation finishes. The time between two reconciliation starts therefore includes the previous reconciliation, the configured delay, and any time spent waiting for a worker. Other controller events may trigger reconciliation before the delay expires. The workqueue keeps only one pending entry for each HPA.
 
-**Workqueue implementation.** A new `PerItemIntervalRateLimiter` provides a per-HPA delay with the global period as its fallback. The controller refreshes the delay from the current HPA during reconciliation and before handling an informer update. It removes the override when the field is unset, the feature gate is disabled, or the HPA is deleted. After each reconciliation, `processNextWorkItem` uses the existing `AddRateLimited` call to schedule the next one.
+**Workqueue implementation.** After each reconciliation, `processNextWorkItem` reads the HPA from the lister. If the HPA sets the field, the controller requeues it with `AddAfter` and that period. Otherwise it keeps the existing `AddRateLimited` call, whose fixed-interval rate limiter returns the global period. The period is read from the HPA object at every requeue.
 
-The controller also records the completion time, requested delay, and whether the delay came from the global setting or the HPA spec for each pending periodic requeue. This state provides the delay-ratio histogram described in [Monitoring Requirements](#monitoring-requirements) and is removed when the HPA is deleted. Event-driven reconciliations are not included in the histogram.
+The controller also records the completion time, requested delay, and whether the delay came from the global setting or the HPA spec for each pending periodic requeue. This state provides the delay-ratio histogram described in [Monitoring Requirements](#monitoring-requirements). Each entry is removed by the reconciliation it schedules. The workqueue cannot cancel that reconciliation, so the state of a deleted HPA is removed by its last periodic pass. Event-driven reconciliations are not included in the histogram.
 
-**Updating the period.** Refreshing the delay in the update handler makes a new value take effect without depending on the `HPAGeneration` feature gate. Queue behavior otherwise stays the same. Creations always use `queue.Add`; spec changes also use it when `HPAGeneration` is enabled. Other updates use `AddRateLimited`, which prevents status updates from creating the hot loop fixed by [#42715][].
+**Updating the period.** The update handler uses the same rule as the requeue after a reconciliation, so a new value takes effect on the next periodic requeue. Creations and spec changes use `queue.Add`, so a period change also causes an immediate reconciliation, like any other spec change. Other updates, such as status-only updates, requeue the HPA after its own period, or with `AddRateLimited` if it does not set the field. This prevents status updates from creating the hot loop fixed by [#42715][].
 
 The delaying workqueue can move a waiting item earlier, but not later:
 
 - If the period becomes shorter, the waiting item moves earlier when needed. It may run sooner if it was already scheduled before the new deadline.
 - If the period becomes longer, one reconciliation may still run at the old delay. Later reconciliations use the new delay.
 
-An informer resync refreshes the stored delay if the normal update event is missed. With `HPAGeneration` enabled, a period change also causes immediate reconciliation, like any other spec change.
+Informer resyncs also go through the update handler, so they requeue the HPA after its own period rather than the global one.
 
 **API versions and validation.** The field is added to the internal type and to both served versions, `autoscaling/v1` and `autoscaling/v2`. Conversion copies the value directly, so clients preserve it when reading and writing through either version, as required by the [round-trip requirements][]. Declarative validation tags enforce the range `[3, 3600]` in both versions.
 
@@ -282,8 +282,8 @@ No prerequisite changes are required. Unit tests will create the workqueue with 
 Unit tests will cover:
 
 - API and feature-gate behavior: both API versions accept values in `[3, 3600]` and reject values outside that range. When the gate is disabled, the field is dropped on create and preserved on update if it was already set.
-- Rate limiting and scheduling: the per-HPA delay overrides the global value and is removed when the field is unset or the HPA is deleted. Fake-clock tests cover the fixed delay and changes to shorter and longer periods.
-- Informer updates: the handler refreshes the delay after normal updates and resyncs, with `HPAGeneration` enabled and disabled. Status-only updates remain rate-limited.
+- Scheduling: an HPA that sets the field is requeued after its own period, while HPAs without it, and all HPAs with the gate disabled, keep the rate-limited requeue. Fake-clock tests cover the delay and changes to shorter and longer periods.
+- Informer updates: status-only updates and resyncs requeue the HPA after its own period, or rate-limited if it does not set the field.
 - Metrics: the first periodic reconciliation and event-driven reconciliations are ignored. Later periodic reconciliations update the correct histogram buckets and `period_source` label. Deleting the HPA removes its internal timing state.
 
 ##### Integration tests
@@ -432,7 +432,7 @@ No. The new delay-ratio histogram is part of the Alpha implementation.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No. `HPAGeneration` is not required; see [Design Details](#design-details).
+No.
 
 ### Scalability
 
@@ -486,6 +486,9 @@ Too many HPAs with short periods can keep all controller workers busy and delay 
 - 2022-06-01: [kubernetes#110317][] opened, requesting a per-HPA sync period. This is the original request that led to this KEP.
 - 2026-04-08: Initial KEP created.
 - 2026-08-19: KEP updated to target Alpha in v1.38.
+- 2026-10-27: Design Details updated to requeue with `AddAfter` and the period read from the HPA instead of storing it in a per-HPA rate limiter, following [this review][kubernetes#138222-review].
+
+[kubernetes#138222-review]: https://github.com/kubernetes/kubernetes/pull/138222#discussion_r4363236460
 
 ## Drawbacks
 
@@ -500,6 +503,7 @@ Users may set a short period for CPU or memory metrics and expect faster scaling
 - **Put `syncPeriodSeconds` under `spec.behavior`**: rejected because creating a `behavior` block causes Kubernetes to fill in and store all default scaling rules. If the feature gate is disabled, the sync period would be removed but the defaulted `behavior` block would remain. This would create unexpected object changes and GitOps diffs. `HPAConfigurableTolerance` is different because tolerance modifies an existing scaling rule.
 - **Allow the field only with custom or external metrics**: rejected because one HPA can use several metric types, while the period applies to the whole reconciliation.
 - **Use fixed-rate scheduling**: rejected because the existing HPA loop waits after each reconciliation. With fixed-rate scheduling, a slow reconciliation could cause the next one to start immediately and create a continuous loop.
+- **Store each HPA's period in the workqueue rate limiter**: the rate limiter receives only the HPA key, so it would need its own copy of the field, kept in sync on updates, reconciliations and deletions. Reading the period from the HPA at each requeue avoids that state and leaves the code path of HPAs without the field unchanged.
 - **Choose the period automatically**: an adaptive controller could run faster during a traffic spike and slower when stable. This is harder to predict and test, and does not give users explicit per-HPA control.
 
 ## Infrastructure Needed (Optional)
