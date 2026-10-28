@@ -1,54 +1,55 @@
-<svg version="1.1" viewBox="0 0 960 1000" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
-  <rect x="0" y="0" width="960" height="1000" fill="#ffffff"/>
+<svg version="1.1" viewBox="0 -20 960 1020" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="-20" width="960" height="1020" fill="#ffffff"/>
+  <text x="20" y="0" font-family="Arial, sans-serif" font-size="13" fill="#595959">Namespace: my-ns, present in all four clusters</text>
 
   <!-- upper panel: what each cluster holds. A exports web and api to B, C and D, and db to B only -->
   <rect x="50" y="20" width="180" height="480" fill="#ffffff" stroke="#595959" stroke-width="1"/>
   <text x="65" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster A</text>
   <rect x="85" y="60" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
   <text x="140" y="82" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
-  <text x="140" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">web</text>
+  <text x="140" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/web</text>
   <rect x="85" y="130" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
   <text x="140" y="152" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="140" y="170" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">web</text>
+  <text x="140" y="170" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/web</text>
   <rect x="85" y="200" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="140" y="222" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
-  <text x="140" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">api</text>
+  <text x="140" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/api</text>
   <rect x="85" y="270" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="140" y="292" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="140" y="310" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">api</text>
+  <text x="140" y="310" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/api</text>
   <rect x="85" y="355" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
   <text x="140" y="377" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
-  <text x="140" y="395" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">db</text>
+  <text x="140" y="395" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/db</text>
   <rect x="85" y="425" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
   <text x="140" y="447" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="140" y="465" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">db</text>
+  <text x="140" y="465" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/db</text>
   <rect x="260" y="20" width="180" height="480" fill="#ffffff" stroke="#595959" stroke-width="1"/>
   <text x="275" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster B</text>
   <rect x="295" y="60" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
   <text x="350" y="82" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="350" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">web</text>
+  <text x="350" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/web</text>
   <rect x="295" y="200" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="350" y="222" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="350" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">api</text>
+  <text x="350" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/api</text>
   <rect x="295" y="355" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
   <text x="350" y="377" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="350" y="395" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">db</text>
+  <text x="350" y="395" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/db</text>
   <rect x="500" y="20" width="180" height="480" fill="#ffffff" stroke="#595959" stroke-width="1"/>
   <text x="515" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster C</text>
   <rect x="535" y="60" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
   <text x="590" y="82" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="590" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">web</text>
+  <text x="590" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/web</text>
   <rect x="535" y="200" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="590" y="222" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="590" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">api</text>
+  <text x="590" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/api</text>
   <rect x="740" y="20" width="180" height="480" fill="#ffffff" stroke="#595959" stroke-width="1"/>
   <text x="755" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster D</text>
   <rect x="775" y="60" width="110" height="55" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
   <text x="830" y="82" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="830" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">web</text>
+  <text x="830" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/web</text>
   <rect x="775" y="200" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="830" y="222" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="830" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">api</text>
+  <text x="830" y="240" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">my-ns/api</text>
 
   <!-- clustersets, one dashed outline per distinct set of clusters: web and api share one, db has its own -->
   <rect x="75" y="50" width="820" height="285" rx="12" fill="none" stroke="#595959" stroke-width="1.5" stroke-dasharray="6,4"/>

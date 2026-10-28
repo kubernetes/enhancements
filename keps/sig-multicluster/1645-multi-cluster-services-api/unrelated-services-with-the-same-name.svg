@@ -3,48 +3,48 @@
 
   <!-- cluster A -->
   <rect x="50" y="20" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
-  <text x="65" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster A (foo, bar)</text>
+  <text x="65" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster A</text>
   <rect x="85" y="215" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="140" y="237" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="140" y="255" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <text x="140" y="255" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/invoices</text>
 
   <!-- cluster B -->
   <rect x="260" y="20" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
-  <text x="275" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster B (foo, bar)</text>
+  <text x="275" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster B</text>
   <rect x="295" y="60" width="110" height="55" fill="#f4cccc" stroke="#595959" stroke-width="1"/>
   <text x="350" y="82" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
-  <text x="350" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <text x="350" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/ledger</text>
   <rect x="295" y="130" width="110" height="55" fill="#f4cccc" stroke="#595959" stroke-width="1"/>
   <text x="350" y="152" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="350" y="170" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <text x="350" y="170" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/ledger</text>
   <rect x="295" y="215" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="350" y="237" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="350" y="255" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <text x="350" y="255" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/invoices</text>
 
   <!-- cluster C -->
   <rect x="500" y="20" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
-  <text x="515" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster C (billing)</text>
+  <text x="515" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster C</text>
   <rect x="535" y="60" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
   <text x="590" y="82" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
-  <text x="590" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <text x="590" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/ledger</text>
   <rect x="535" y="130" width="110" height="55" fill="#fff2cc"/>
   <polygon points="535,185 645,130 645,185" fill="#f4cccc"/>
   <rect x="535" y="130" width="110" height="55" fill="none" stroke="#595959" stroke-width="1"/>
   <text x="590" y="152" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="590" y="170" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <text x="590" y="170" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/ledger</text>
   <rect x="535" y="215" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="590" y="237" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceExport</text>
-  <text x="590" y="255" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <text x="590" y="255" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/invoices</text>
   <rect x="535" y="285" width="110" height="55" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="590" y="307" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="590" y="325" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">invoices</text>
+  <text x="590" y="325" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/invoices</text>
 
   <!-- cluster D -->
   <rect x="740" y="20" width="180" height="340" fill="#ffffff" stroke="#595959" stroke-width="1"/>
-  <text x="755" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster D (billing reports)</text>
+  <text x="755" y="42" font-family="Arial, sans-serif" font-size="12" fill="#000000">Cluster D</text>
   <rect x="775" y="60" width="110" height="55" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
   <text x="830" y="82" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ServiceImport</text>
-  <text x="830" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ledger</text>
+  <text x="830" y="100" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">billing/ledger</text>
 
   <!-- clusterset of each service: the ServiceExports and ServiceImports of that name -->
   <rect x="285" y="50" width="610" height="145" rx="12" fill="none" stroke="#bf9000" stroke-width="1.5" stroke-dasharray="6,4"/>

@@ -359,15 +359,15 @@ region).
 
 #### Service Exported to a Subset of Clusters
 
-I have clusters A, B, C and D in one clusterset. The foo and bar teams share
-clusters A and B. The billing team has stricter security requirements and
-runs only in clusters C and D. The `invoices` service in cluster C is used by
-the `foo` and `bar` services in clusters A and B. The `ledger` service in
-cluster C is used only by the billing reports in cluster D. I want each
-billing service to be visible only to the clusters that use it, so that
-`ledger` is never visible to clusters A or B.
+I have clusters A, B, C and D in one clusterset, each with a `billing`
+namespace. The billing team runs `invoices` and `ledger` in the `billing`
+namespace of C. Workloads in A and B use `invoices`, and workloads in D use
+`ledger`. I want to export `invoices` to A and B and `ledger` to D while keeping
+both in the `billing` namespace, so that each cluster discovers only the
+services it uses. Without choosing where each service is exported, both
+services would be visible to every cluster that has the `billing` namespace.
 
-![four clusters in one clusterset where the billing team's services are exported only to the clusters that use them](./export-to-a-subset-of-clusters.svg)
+![the billing namespace in four clusters, where cluster C exports invoices to clusters A and B and ledger to cluster D, and the dashed ServiceImports show unused imports that would appear if each service were exported to every cluster](./export-to-a-subset-of-clusters.svg)
 
 #### Troubleshooting a Service Export
 
@@ -411,6 +411,10 @@ absent (see [Exporting Services](#exporting-services)).
 Consumers that assume every cluster in the clusterset imports every exported
 service may look for a `ServiceImport` or endpoints that do not exist.
 
+Consumers that assume a service is unreachable from the clusters it is not
+exported to may leave it without access control (see
+[Exporting Services](#exporting-services)).
+
 Consumers that assume namespace sameness beyond the clusterset of a service may
 treat two unrelated services with the same name as one service.
 `ServiceImport.Status.Clusters` lists the exporting clusters from which a
@@ -430,12 +434,12 @@ Services will not be visible to other clusters in the clusterset by default.
 They must be explicitly marked for export by the user. This allows users to
 decide exactly which services should be visible outside of the local cluster.
 
+Access to exported services is controlled by other tools.
+
 A service may be exported to any set of other clusters. Which clusters it is
 exported to is implementation-defined. In the figure below, exporting every
 service to all other clusters makes A, B, C and D one clusterset. Exporting
-each service only to the clusters that use it makes a clusterset per service,
-spanning A and B for `foo`, A, B and C for `invoices`, and C and D for
-`ledger`.
+each service only to the clusters that use it makes a clusterset per service.
 
 ![four clusters and three exported services, exported to every other cluster as one clusterset and only to the clusters that use them as a clusterset per service](./one-clusterset-or-one-per-service.svg)
 
