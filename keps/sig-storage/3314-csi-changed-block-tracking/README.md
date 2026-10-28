@@ -966,10 +966,18 @@ changed block metadata against a later `VolumeSnapshot`.
 
 > Note: It is the backup application's responsibility to determine if the
 underlying CSI driver provides this support.
-If it does, the backup application should take that into consideration in
-its snapshot retention policy, and should save the CSI snapshot handle
-somewhere for future use if it deletes the `VolumeSnapshot` object 
+A CSI driver advertises this through the optional
+`requireBaseSnapshotForDelta` field of its
+[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource):
+if `true`, the driver needs the base `VolumeSnapshot` to still exist, and the
+backup application should retain it for as long as it intends to compute
+deltas against it;
+if `false`, the base `VolumeSnapshot` can be deleted once the backup is done,
+and the backup application should save the CSI snapshot handle
+somewhere for future use if it deletes the `VolumeSnapshot` object
 immediately after it has performed a backup.
+If the field is unset, the driver provides no guidance and the backup
+application should act at its discretion.
 
 The full specification of the Kubernetes SnapshotMetadata API is
 published in the source code repository of the
@@ -1001,11 +1009,22 @@ The CR `spec` contains the following fields:
   Specifies the audience string value expected in an audience-scoped authentication token
   presented to the [sidecar](#the-external-snapshot-metadata-sidecar) by a Kubernetes client.
   The value should be unique to the service if possible; for example, it could be the DNS name of the service.
+- `requireBaseSnapshotForDelta`<br>
+  Optional boolean that lets a CSI driver advertise whether it needs the base
+  `VolumeSnapshot` to still exist in order to compute changed block metadata
+  with `GetMetadataDelta`.
+  If `true`, backup applications should retain base snapshots; for example,
+  a driver such as Ceph CSI needs the base snapshot to remain in the cluster
+  to compute a delta against a later snapshot.
+  If `false`, base snapshots can be safely deleted after the changed block
+  metadata has been obtained.
+  If unset, the driver provides no guidance and the backup application should
+  act at its discretion.
 
 The `SnapshotMetadataService` Custom Resource Definition should be installed either by the Kubernetes
 distribution or by the cluster administrator.
 The specification of this CRD at the time of publication of this KEP is shown below;
-see [cbt.storage.k8s.io_snapshotmetadataservices.yaml](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/3a139dd44d4ffa01343a91bed40996b1db56fd38/client/config/crd/cbt.storage.k8s.io_snapshotmetadataservices.yaml)
+see [cbt.storage.k8s.io_snapshotmetadataservices.yaml](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/0d3e6e80f8d00a26c2eb9c2925d83b9353d5f7fa/client/config/crd/cbt.storage.k8s.io_snapshotmetadataservices.yaml)
 in the source code repository for the latest copy.
 
 ```yaml
@@ -1062,6 +1081,13 @@ spec:
                 description: Certificate authority bundle needed by the client to validate the service.
                 format: byte
                 type: string
+              requireBaseSnapshotForDelta:
+                description: Indicates whether the CSI driver requires the base volume snapshot to
+                  exist for computing changed block tracking (CBT) deltas.
+                  If true, backup clients should retain base snapshots.
+                  If false, base snapshots can be safely deleted after obtaining CBT metadata.
+                  If not specified, no guidance is provided and backup clients should act at their discretion.
+                type: boolean
             type: object
         type: object
     served: true
@@ -1516,7 +1542,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-The [SnapshotMetadataService CRD](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/3a139dd44d4ffa01343a91bed40996b1db56fd38/client/config/crd/cbt.storage.k8s.io_snapshotmetadataservices.yaml)
+The [SnapshotMetadataService CRD](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/0d3e6e80f8d00a26c2eb9c2925d83b9353d5f7fa/client/config/crd/cbt.storage.k8s.io_snapshotmetadataservices.yaml)
 should be installed either by the Kubernetes distribution or by the cluster administrator.
 This CRD applies to all the installed CSI drivers that support this feature.
 
