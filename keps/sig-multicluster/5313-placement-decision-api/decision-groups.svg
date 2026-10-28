@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 460" role="img" aria-labelledby="title description">
+  <title id="title">Five PlacementDecision slices in three ordered groups</title>
+  <desc id="description">The five PlacementDecision objects share decision-key my-service-v2-rollout. Group 0, canary, contains my-service-v2-rollout-slice-0 with decision-index 0 and 100 clusters, and my-service-v2-rollout-slice-1 with decision-index 1 and 50 clusters. Group 1, staging, contains my-service-v2-rollout-slice-2 with decision-index 2 and 40 clusters. Group 2, production, contains my-service-v2-rollout-slice-3 with decision-index 3 and 100 clusters, and my-service-v2-rollout-slice-4 with decision-index 4 and 80 clusters. A group-aware consumer processes groups 0, 1, and 2 in that order.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 Z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <rect width="1040" height="460" fill="#ffffff"/>
+  <text x="36" y="43" font-family="Arial, sans-serif" font-size="21" font-weight="bold" fill="#17212f">One decision, five slices, three ordered groups</text>
+  <rect x="36" y="69" width="968" height="58" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="54" y="93" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#17212f">Shared decision-key</text>
+  <text x="54" y="114" font-family="Arial, sans-serif" font-size="14" fill="#334155">my-service-v2-rollout</text>
+
+  <!-- Arrows connect groups, not individual slices. -->
+  <text x="348" y="280" font-family="Arial, sans-serif" font-size="12" fill="#334155" text-anchor="middle">then</text>
+  <line x1="318" y1="300" x2="374" y2="300" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="693" y="280" font-family="Arial, sans-serif" font-size="12" fill="#334155" text-anchor="middle">then</text>
+  <line x1="663" y1="300" x2="719" y2="300" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Group 0: two slices, 150 clusters. -->
+  <rect x="36" y="150" width="278" height="250" rx="9" fill="#fffaf0" stroke="#a16207" stroke-width="2"/>
+  <text x="54" y="178" font-family="Arial, sans-serif" font-size="15" font-weight="bold" fill="#713f12">decision-group-index = 0</text>
+  <text x="54" y="200" font-family="Arial, sans-serif" font-size="13" fill="#713f12">decision-group-name = canary</text>
+  <text x="54" y="221" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#713f12">150 clusters</text>
+  <rect x="52" y="239" width="246" height="60" rx="6" fill="#ffffff" stroke="#d6b779"/>
+  <text x="65" y="261" font-family="monospace" font-size="12" fill="#17212f">my-service-v2-rollout-slice-0</text>
+  <text x="65" y="281" font-family="Arial, sans-serif" font-size="12" fill="#475569">decision-index = 0 · 100 clusters</text>
+  <rect x="52" y="311" width="246" height="60" rx="6" fill="#ffffff" stroke="#d6b779"/>
+  <text x="65" y="333" font-family="monospace" font-size="12" fill="#17212f">my-service-v2-rollout-slice-1</text>
+  <text x="65" y="353" font-family="Arial, sans-serif" font-size="12" fill="#475569">decision-index = 1 · 50 clusters</text>
+
+  <!-- Group 1: one slice, 40 clusters. -->
+  <rect x="381" y="150" width="278" height="250" rx="9" fill="#f1f7ff" stroke="#3265a8" stroke-width="2"/>
+  <text x="399" y="178" font-family="Arial, sans-serif" font-size="15" font-weight="bold" fill="#1e497d">decision-group-index = 1</text>
+  <text x="399" y="200" font-family="Arial, sans-serif" font-size="13" fill="#1e497d">decision-group-name = staging</text>
+  <text x="399" y="221" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#1e497d">40 clusters</text>
+  <rect x="397" y="239" width="246" height="60" rx="6" fill="#ffffff" stroke="#9bbbe3"/>
+  <text x="410" y="261" font-family="monospace" font-size="12" fill="#17212f">my-service-v2-rollout-slice-2</text>
+  <text x="410" y="281" font-family="Arial, sans-serif" font-size="12" fill="#475569">decision-index = 2 · 40 clusters</text>
+
+  <!-- Group 2: two slices, 180 clusters. -->
+  <rect x="726" y="150" width="278" height="250" rx="9" fill="#f1faf2" stroke="#38804b" stroke-width="2"/>
+  <text x="744" y="178" font-family="Arial, sans-serif" font-size="15" font-weight="bold" fill="#236237">decision-group-index = 2</text>
+  <text x="744" y="200" font-family="Arial, sans-serif" font-size="13" fill="#236237">decision-group-name = production</text>
+  <text x="744" y="221" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#236237">180 clusters</text>
+  <rect x="742" y="239" width="246" height="60" rx="6" fill="#ffffff" stroke="#9fc9a8"/>
+  <text x="755" y="261" font-family="monospace" font-size="12" fill="#17212f">my-service-v2-rollout-slice-3</text>
+  <text x="755" y="281" font-family="Arial, sans-serif" font-size="12" fill="#475569">decision-index = 3 · 100 clusters</text>
+  <rect x="742" y="311" width="246" height="60" rx="6" fill="#ffffff" stroke="#9fc9a8"/>
+  <text x="755" y="333" font-family="monospace" font-size="12" fill="#17212f">my-service-v2-rollout-slice-4</text>
+  <text x="755" y="353" font-family="Arial, sans-serif" font-size="12" fill="#475569">decision-index = 4 · 80 clusters</text>
+
+  <text x="520" y="438" font-family="Arial, sans-serif" font-size="13" fill="#334155" text-anchor="middle">A group-aware consumer processes groups in group-index order: 0 → 1 → 2. Group names are optional.</text>
+</svg>
