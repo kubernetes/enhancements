@@ -15,6 +15,7 @@
 - [Design Details](#design-details)
   - [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1)
     - [Restricted ambient capabilities.](#restricted-ambient-capabilities)
+  - [Interaction with Pod Security Standards](#interaction-with-pod-security-standards)
   - [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1alpha2)
   - [Changes to containerd/containerd (<a href="https://github.com/containerd/containerd">https://github.com/containerd/containerd</a>)](#changes-to-containerdcontainerd-httpsgithubcomcontainerdcontainerd)
   - [Order of changes](#order-of-changes)
@@ -419,6 +420,16 @@ _Target Beta, non-blocking for Alpha._
 Some capabilities like `CAP_SYS_ADMIN` and `CAP_DAC_OVERRIDE` make a non-root user very powerful and we should restrict them from being added to the ambient capabilities set.
 
 <<[/UNRESOLVED]>>
+
+### Interaction with Pod Security Standards
+
+Pod Security Admission will apply the same profile-specific restrictions to `securityContext.capabilities.ambient` as to `securityContext.capabilities.add`:
+
+- **Privileged:** no additional restrictions imposed by PSS.
+- **Baseline:** only capabilities from the existing Baseline allowlist are permitted.
+- **Restricted:** only `NET_BIND_SERVICE` is permitted, and containers must still specify `drop: ["ALL"]`.
+
+These checks apply to regular, init and ephemeral containers. All other requirements of the selected profile remain unchanged.
 
 ### Changes to runtime API (https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2)
 
