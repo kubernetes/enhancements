@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="530" viewBox="0 0 1180 530">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<rect x="207" y="5" width="671" height="62" fill="none" stroke="#000000" stroke-width="1"/>
+<text x="542.5" y="21" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">kubelet</text>
+<rect x="83" y="5" width="88" height="62" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="127" y="39.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">API Server</text>
+<rect x="225" y="32" width="98" height="35" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="274" y="53" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">HandlePodUpdates</text>
+<rect x="389" y="32" width="104" height="35" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="441" y="53" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">SyncPod</text>
+<rect x="572" y="32" width="108" height="35" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="626" y="53" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Allocation Manager</text>
+<rect x="753" y="32" width="89" height="35" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="797.5" y="53" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">CPU Manager</text>
+<rect x="1089" y="5" width="89" height="62" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="1133.5" y="39.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Runtime</text>
+<line x1="127" y1="67" x2="127" y2="529" stroke="#000000" stroke-width="1" stroke-dasharray="8 3"/>
+<line x1="274" y1="67" x2="274" y2="529" stroke="#000000" stroke-width="1" stroke-dasharray="8 3"/>
+<line x1="441" y1="67" x2="441" y2="529" stroke="#000000" stroke-width="1" stroke-dasharray="8 3"/>
+<line x1="626" y1="67" x2="626" y2="529" stroke="#000000" stroke-width="1" stroke-dasharray="8 3"/>
+<line x1="797.5" y1="67" x2="797.5" y2="529" stroke="#000000" stroke-width="1" stroke-dasharray="8 3"/>
+<line x1="1133.5" y1="67" x2="1133.5" y2="529" stroke="#000000" stroke-width="1" stroke-dasharray="8 3"/>
+<rect x="122" y="103" width="10" height="54" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<rect x="269" y="103" width="10" height="410" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<rect x="436" y="85" width="10" height="428" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<rect x="621" y="85" width="10" height="428" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<rect x="792.5" y="103" width="10" height="410" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<rect x="1128.5" y="103" width="10" height="410" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<circle cx="17" cy="85" r="4" fill="none" stroke="#000000" stroke-width="1"/>
+<path d="M 17 89 v 10 M 10 93 h 14 M 17 99 l -6 9 M 17 99 l 6 9" fill="none" stroke="#000000" stroke-width="1"/>
+<text x="16" y="125" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Actor</text>
+<circle cx="25" cy="94" r="3.5" fill="#000000"/>
+<text x="73" y="77" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Scale down</text>
+<text x="73" y="90" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">patch command</text>
+<line x1="25" y1="94" x2="122" y2="94" stroke="#000000" stroke-width="1"/>
+<path d="M 122 94 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<line x1="132" y1="116" x2="269" y2="116" stroke="#000000" stroke-width="1"/>
+<path d="M 269 116 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<text x="198" y="111" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Scale down</text>
+<line x1="279" y1="121" x2="621" y2="121" stroke="#000000" stroke-width="1"/>
+<path d="M 621 121 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<text x="536" y="116" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Scale down</text>
+<line x1="631" y1="127" x2="792.5" y2="127" stroke="#000000" stroke-width="1"/>
+<path d="M 792.5 127 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<text x="752" y="123" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Scale down</text>
+<rect x="717" y="139" width="161" height="26" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="797.5" y="155.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Allocate new CPUSet</text>
+<line x1="792.5" y1="192" x2="446" y2="192" stroke="#000000" stroke-width="1"/>
+<path d="M 446 192 l 8 -3.5 l 0 7 z" fill="#000000"/>
+<rect x="341" y="214" width="196" height="26" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="439" y="230.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">CPU Request actuation</text>
+<line x1="537" y1="228" x2="1128.5" y2="228" stroke="#000000" stroke-width="1"/>
+<path d="M 1128.5 228 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<text x="1028" y="216" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">CPU Request apply</text>
+<path d="M 823 174 q 10 0 10 10 L 833 239.5 q 0 10 5 10 q -5 0 -5 10 L 833 315 q 0 10 -10 10" fill="none" stroke="#000000" stroke-width="1"/>
+<text x="925" y="248.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">Delay</text>
+<text x="925" y="262.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#ff0000">( &gt; scaleDownGracePeriodSeconds)</text>
+<line x1="436" y1="272" x2="279" y2="272" stroke="#000000" stroke-width="1"/>
+<path d="M 279 272 l 8 -3.5 l 0 7 z" fill="#000000"/>
+<text x="359" y="268" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">SyncLoop (PLEG)</text>
+<line x1="279" y1="288" x2="436" y2="288" stroke="#000000" stroke-width="1"/>
+<path d="M 436 288 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<rect x="341" y="304" width="196" height="35" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="439" y="320" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#ff0000">1. Pod Resize Completed event</text>
+<line x1="365.718" y1="316" x2="512.282" y2="316" stroke="#000000" stroke-width="1"/>
+<text x="439" y="333" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#ff0000">2. update container actual resources</text>
+<line x1="350.951" y1="329" x2="527.049" y2="329" stroke="#000000" stroke-width="1"/>
+<rect x="717" y="335" width="161" height="26" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="797.5" y="351.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">New CPUSet actuation</text>
+<line x1="878" y1="349" x2="1128.5" y2="349" stroke="#000000" stroke-width="1"/>
+<path d="M 1128.5 349 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<text x="1004" y="338" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#000000">CPUSet apply</text>
+<line x1="792.5" y1="387" x2="279" y2="387" stroke="#000000" stroke-width="1"/>
+<path d="M 279 387 l 8 -3.5 l 0 7 z" fill="#000000"/>
+<text x="536" y="382" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#ff0000">SyncLoop (PLEG)</text>
+<line x1="279" y1="409" x2="436" y2="409" stroke="#000000" stroke-width="1"/>
+<path d="M 436 409 l -8 -3.5 l 0 7 z" fill="#000000"/>
+<rect x="341" y="426" width="196" height="35" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="439" y="442" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#ff0000">1. Pod Resize Completed event</text>
+<text x="439" y="455" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#ff0000">2. update container actual resources</text>
+</svg>
