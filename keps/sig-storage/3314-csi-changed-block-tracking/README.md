@@ -973,9 +973,9 @@ if `true`, the driver needs the base `VolumeSnapshot` to still exist, and the
 backup application should retain it for as long as it intends to compute
 deltas against it;
 if `false`, the base `VolumeSnapshot` can be deleted once the backup is done,
-and the backup application should save the CSI snapshot handle
-somewhere for future use if it deletes the `VolumeSnapshot` object
-immediately after it has performed a backup.
+and the backup application MUST save the CSI snapshot handle
+somewhere for future use before deleting the `VolumeSnapshot` object,
+such as immediately after it has performed a backup.
 If the field is unset, the driver provides no guidance and the backup
 application should act at its discretion.
 
