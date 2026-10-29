@@ -1,0 +1,38 @@
+title: API gzip compression support
+kep-number: 2338
+authors:
+  - "@smarterclayton"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-cli
+status: implementable
+creation-date: 2019-03-22
+reviewers:
+  - "@lavalamp"
+  - "@liggitt"
+approvers:
+  - "@liggitt"
+  - "@lavalamp"
+
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/44164"
+replaces: []
+stage: beta
+
+latest-milestone: "v1.16"
+
+milestone:
+  alpha: "v1.8"
+  beta: "v1.16"
+
+feature-gates:
+  - name: APIResponseCompression
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - apiserver_response_sizes
+  - apiserver_request_duration_seconds
+  - apiserver_request_sli_duration_seconds
