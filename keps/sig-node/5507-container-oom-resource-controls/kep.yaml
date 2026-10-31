@@ -1,0 +1,38 @@
+title: Container Resource Controls for OOM Behavior
+kep-number: 5507
+authors:
+  - "@utam0k"
+owning-sig: sig-node
+participating-sigs:
+  - sig-apps
+status: provisional
+creation-date: TBD
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ContainerResourceControlForOOMKillMode
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
