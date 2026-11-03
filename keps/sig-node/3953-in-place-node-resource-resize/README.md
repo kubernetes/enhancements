@@ -502,16 +502,15 @@ func (w *predicateAdmitHandler) Admit(attrs *PodAdmitAttributes) PodAdmitResult 
 
 `Node.Spec.ConfiguredCapacity` is a `ResourceList` — a map of resource name to quantity — and is entirely optional. Users are not required to set all resource types, or any at all:
 
-- Field absent (`omitempty`): The Kubelet behaves as today — it uses the raw cAdvisor-reported physical capacity for all resources and no reconciliation loop is started. Clearing a previously set `ConfiguredCapacity` triggers one reconciliation back to cAdvisor auto-discovery.
+- Field absent (`omitempty`): The Kubelet behaves as today — it uses the raw cAdvisor-reported physical capacity for all resources and no reconciliation loop is started.
 - Field present, resource key absent: If `ConfiguredCapacity` is set but does not include a particular resource (e.g., CPU is present but memory is not), the Kubelet treats the absent resource as having no declared target and continues to use the cAdvisor-reported physical capacity for that resource. Reconciliation for the absent resource is a no-op.
 - Field present, resource key set to zero: A zero value is treated as a malformed signal and rejected — the Kubelet sets `CapacityConfigured` to `False` (Reason: `Infeasible`) and does not actuate the resize for any resource in that request.
 
 `ConfiguredCapacity` is applied per-resource independently: setting a value for CPU does not implicitly affect the declared or effective capacity for memory, hugepages, or any other resource. Each key in the map is validated and reconciled in isolation.
 
 `Node.Spec.ConfiguredKubeReserved` is likewise an optional `ResourceList` evaluated alongside `Node.Spec.ConfiguredCapacity`:
-- When `ConfiguredCapacity` is set and `ConfiguredKubeReserved` specifies a resource (e.g., CPU or Memory), the Kubelet uses that reservation instead of its static bootstrap `--kube-reserved` before computing `/kubepods` cgroup limits (e.g., `memory.max`) and `Node.Status.Allocatable`.
-- When `ConfiguredKubeReserved` is unset (or omits a resource key), the Kubelet falls back to its static bootstrap `--kube-reserved` for that resource. If `ConfiguredCapacity` itself is unset, `ConfiguredKubeReserved` is ignored.
-- Total reservations (`systemReserved + effectiveKubeReserved + evictionHard`) must remain strictly less than effective capacity for every resource; otherwise the Kubelet rejects the configuration as `Infeasible`.
+- When set (with `ConfiguredCapacity`), the Kubelet uses it instead of bootstrap `--kube-reserved` for `/kubepods` limits and `Allocatable`.
+- When unset, or for a resource it omits, the Kubelet falls back to bootstrap `--kube-reserved`; it's ignored if `ConfiguredCapacity` is unset.
 
 The Alpha constraint (`ConfiguredCapacity <= Physical Capacity`) applies per-resource. The Kubelet validates the Spec against the host using the following resource-specific rules:
 
