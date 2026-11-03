@@ -747,7 +747,7 @@ func (kl *Kubelet) reconcileConfiguredCapacity(
     kubeReserved v1.ResourceList,
     condition v1.NodeCondition,
 ) {
-    isDownscale := kl.isCapacityDecrease(kl.appliedCapacity, target)
+    isDownscale := kl.isCapacityDecrease(kl.allocationManager.AppliedCapacity(), target)
     // Path B: physical capacity < applied capacity, so the capacity is already gone.
     isEmergency := condition.Reason == EmergencyReduced
 
