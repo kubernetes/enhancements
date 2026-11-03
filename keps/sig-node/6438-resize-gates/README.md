@@ -183,15 +183,19 @@ of that growth. Down-sizes and updates that do not change resources are never he
 
 ### Notes/Constraints/Caveats (Optional)
 
-- The predicate is growth only. Growth is measured against allocated resources, never against a
-  previous desired value: shrinking a pending request (desired 4 → 2 while allocated is 1) is
-  still pending growth and stays held. A mixed resize (cpu up, memory down) is treated as growth.
+- By default the predicate is growth only (`scope: Growth`). Growth is measured against
+  allocated resources, never against a previous desired value: shrinking a pending request
+  (desired 4 → 2 while allocated is 1) is still pending growth and stays held. A mixed resize
+  (cpu up, memory down) is treated as growth. A gate with `scope: All` holds every resize while
+  present.
 - A gate with no pending growth is dormant and harmless.
 - Gates apply only after the kubelet's first allocation of the pod; they do not affect initial
   admission. Growth written before that point (after the pod's scheduling gates are removed but
   before the kubelet admits it) is therefore not held. Integrators may reject such growth at
   admission instead, for example with a webhook that denies a growth write while the pod has
-  no allocated resources yet.
+  no allocated resources yet. This also lets a controller add its gate to pods up front, for
+  example to all existing pods when it starts enforcing resize quota, without affecting their
+  initial scheduling or admission.
 - The kubelet never mutates gates; only their owners add or remove them.
 - Gates are per controller, not per resize. A second growth write while the first is held is
   covered by the gate already present, and the controller evaluates the latest desired
@@ -211,7 +215,8 @@ of that growth. Down-sizes and updates that do not change resources are never he
 - **Stale controller.** If a gate owner stops running, pending growth on its pods hangs. This
   matches `schedulingGates` today. The `Gated` condition names the pending gates, a kubelet
   gauge shows how many resizes are held, and the gate owner is responsible for its gates.
-  Growth-only scope bounds the damage to upsizes: downsizes always proceed.
+  The default `Growth` scope bounds the damage to upsizes: downsizes always proceed. A gate with
+  `scope: All` also holds downsizes, so its owner takes on that failure mode.
 - **Webhook unavailability.** With `failurePolicy: Ignore`, a growth write made while the
   integrator's webhook is down is not gated. With `failurePolicy: Fail`, resizes are rejected
   while the webhook is down. This is the integrator's trade-off, as for scheduling gates
@@ -227,9 +232,10 @@ of that growth. Down-sizes and updates that do not change resources are never he
 ### API changes
 
 - New field `pod.spec.resizeGates`, a map-type list of named gates keyed by `name`, with the
-  same shape and validation as `schedulingGates` (duplicate names are rejected). Gates can be
-  removed through a pod update and added through `/resize`, so a gate lands in the same write
-  that grows resources.
+  same shape and validation as `schedulingGates` (duplicate names are rejected). Each gate has
+  an optional `scope`: `Growth` (default) holds only resource growth; `All` holds every resize
+  while the gate is present. Gates can be removed through a pod update and added through
+  `/resize`, so a gate lands in the same write that grows resources.
 - New `PodResizePending` reason `Gated`, alongside `Deferred` and `Infeasible`. The condition
   message names the gates present.
 - The kubelet does not allocate resource growth while any gate is present.
@@ -271,9 +277,10 @@ status:
 
 While any gate is present, the kubelet does not allocate a spec whose effective resources exceed
 what is currently allocated, and reports `PodResizePending: Gated` with a message naming the
-pending gates. The predicate is growth only: down-sizes, container removals, and
-resource-neutral updates (for example, image-only) are allocated normally even while gated. Once
-the last gate is removed, the kubelet runs its normal admission: node fit, then allocate and
+pending gates. For gates with the default `Growth` scope the predicate is growth only: down-sizes,
+container removals, and resource-neutral updates (for example, image-only) are allocated normally
+even while gated. A gate with `scope: All` holds any resize while present. Once the last gate is
+removed, the kubelet runs its normal admission: node fit, then allocate and
 actuate, or `Deferred`/`Infeasible` exactly as today.
 
 Gates are evaluated before node admission: while any gate is present the condition is `Gated`,
@@ -445,14 +452,16 @@ None identified.
 Coverage figures to be filled in before the KEP is marked implementable.
 
 - `k8s.io/kubernetes/pkg/apis/core/validation`: `resizeGates` can be set on create and added
-  through `/resize`, and only removed on a plain pod update; duplicate names rejected.
+  through `/resize`, and only removed on a plain pod update; duplicate names rejected; `scope`
+  accepts `Growth` and `All`, defaults to `Growth`, and rejects other values.
 - `k8s.io/kubernetes/pkg/api/pod`: the field is dropped on create and update when the
   `PodResizeGates` feature gate is disabled, unless the pod already has it.
 - `k8s.io/kubernetes/pkg/registry/core/pod`: `/resize` strategy allows `resizeGates` changes.
 - `k8s.io/kubernetes/pkg/kubelet/allocation`: growth held while a gate is present, measured
   against allocated (a pending request shrinking from 4 to 2 with 1 allocated stays held); a
   mixed resize (cpu up, memory down) counts as growth; downsizes and resource-neutral updates
-  allocated; a gate present at first admission does not hold it; `Gated` takes precedence over
+  allocated; a `scope: All` gate also holds downsizes; a gate present at first admission does
+  not hold it; `Gated` takes precedence over
   `Deferred`; gated resizes excluded from the deferred-retry set; release after the last gate is
   removed; gates ignored when the feature gate is disabled.
 - `k8s.io/kubernetes/pkg/kubelet/status`: `PodResizePending` condition with reason `Gated` and
@@ -489,7 +498,8 @@ Node e2e (`test/e2e_node`). The tests add and remove gates directly through the 
 webhook is needed:
 
 - Gated growth is held: allocated resources unchanged, `PodResizePending: Gated`.
-- Removing the last gate releases the resize; a downsize proceeds while gated.
+- Removing the last gate releases the resize; a downsize proceeds while gated with the default
+  scope and is held by a `scope: All` gate.
 - A second growth while held is covered by the same gate.
 - A gate present when the pod is first admitted does not hold initial admission.
 - After release, an oversized resize reports `Infeasible`, and a resize that no longer fits
@@ -501,12 +511,12 @@ webhook is needed:
 
 #### Alpha
 
-- `resizeGates`, the `Gated` reason, the kubelet hold, and the effective-request change
-  implemented behind the `PodResizeGates` feature gate.
+- `resizeGates` including per-gate `scope`, the `Gated` reason, the kubelet hold, and the
+  effective-request change implemented behind the `PodResizeGates` feature gate.
 - Unit, integration, and node e2e tests listed above.
 - A reference integration (KAI Scheduler) validating the flow end to end.
-- API approved through api-review, including the field name and the choice between the
-  proposal and the status-based alternative.
+- API approved through api-review, including the field name, the `scope` default, and the
+  choice between the proposal and the status-based alternative.
 
 #### Beta
 
@@ -751,8 +761,10 @@ Gate names are declared in spec at creation (remove-only, like `schedulingGates`
 approve by writing `status.resizeApprovals: [{name, approvedGeneration}]`, and the kubelet holds
 pending growth while any gate's approved generation differs from `metadata.generation`. The
 kubelet only reads, so there is no per-resize webhook and a single writer, and approvals never
-need clearing: any later spec change makes them stale. That includes unrelated changes, which
-then need a re-approval. Binding the approval to the approved pod requests instead avoids this,
+need clearing: any later spec change makes them stale. That includes unrelated changes: an image
+update or an added toleration while a growth is pending bumps `metadata.generation`, the approval
+no longer matches, and the controller re-approves the same request. The cost is a delay, not a
+wrong allocation. Binding the approval to the approved pod requests instead avoids this,
 since only a larger request then invalidates it, but the kubelet must clear approvals it has
 allocated so a later downsize and re-upsize is re-approved.
 
@@ -801,6 +813,8 @@ such as VPA would then re-apply.
 | New API | `spec.resizeGates`, `Gated` reason | same, plus `status.resizeApprovals` | none |
 | Webhook on the resize path | yes | no (only at creation) | no |
 | Approval write | remove a gate (pod update) | write to `pods/status` | shrink the pod (`/resize`) |
+| Self-approval exposure | removal needs pod update, as for `schedulingGates`; a removal subresource, if added, would restrict it to permitted actors | approval is a `pods/status` write, which users rarely hold | n/a |
+| Per-resize arming cost | one gate add per growth write; negligible with a MutatingAdmissionPolicy | none after creation | none |
 | Re-arm for the next resize | webhook re-adds the gate | any spec change stales the approval, including unrelated ones | n/a |
 | Safe for hard quota | yes | yes | no: over quota until the controller reacts, revert not guaranteed |
 | Symmetry with `schedulingGates` | exact | partial | none |
@@ -812,8 +826,10 @@ such as VPA would then re-apply.
 Whether to adopt the proposal, with gates added per resize by the integrator, or the
 [persistent-gates alternative](#persistent-gates-with-approvals-in-status), with gates set at
 creation and approvals written to status. The proposal mirrors `schedulingGates` and needs no new
-status field. The alternative removes the webhook from the resize path. See the
-[comparison](#comparison).
+status field. The alternative removes the webhook from the resize path. With a
+MutatingAdmissionPolicy arming the gate, the per-resize add is cheap, which narrows the
+alternative's advantage to the authorization model; a removal subresource, if added, would give
+the proposal the same property. See the [comparison](#comparison).
 
 #### Gate mutability and authorization
 
@@ -824,13 +840,14 @@ api-review.
 
 #### Scope of the hold
 
-Growth only (proposed), or every resize while gated? Growth-only keeps downsizes immediate
-(including a user canceling a pending request), bounds a stale controller's damage to upsizes,
-and spares integrators approving capacity-safe shrinks. Static floors on downsizing are already
-served by a ValidatingAdmissionPolicy, LimitRange, or VPA's `minAllowed`. A shrink that must
-wait for something (draining in-flight work, reconfiguring the app) is a hold rather than a
-floor and would need a gate; a per-gate scope (`Growth` by default, `All`) could serve it later,
-added without breaking anything, at the cost of a stale controller blocking reclamation.
+Each gate carries a scope, `Growth` or `All`; the question is the default. `Growth` (proposed)
+keeps downsizes immediate (including a user canceling a pending request), bounds a stale
+controller's damage to upsizes, and spares quota controllers approving capacity-safe shrinks.
+Static floors on downsizing are already served by a ValidatingAdmissionPolicy, LimitRange, or
+VPA's `minAllowed`; a shrink that must wait for something (draining in-flight work,
+reconfiguring the app) uses `scope: All`. `All` as the default gives the simpler rule, a gate
+holds the resize, at the cost of every quota gate taking on the downsize failure mode. Either
+default works with the scope field present; the default is for api-review.
 
 #### Field name
 
