@@ -198,18 +198,14 @@ Published VEX attestations provide maintainers with concrete mechanisms to reduc
    This prevents duplicate analysis and triage requests, reducing maintainer burden. It allows these questions to be answered in a self-service way.
 
    
-
-3. **Evidence for cherry-pick policy enforcement** — The Kubernetes cherry-pick policy (see [cherry-picks.md](https://github.com/kubernetes/community/blob/main/contributors/devel/sig-release/cherry-picks.md)) states that "dependency updates that just aim to silence some scanners and do not fix any vulnerable code are NOT eligible for cherry-picks." Published VEX `not_affected` attestations provide authoritative, machine-readable, and cryptographically signed evidence that a CVE does not affect the codebase. Reviewers can point to the signed VEX statement instead of re-analyzing the CVE, reducing back-and-forth in cherry-pick discussions.
-
-
 ## Motivation
 
-In Kubernetes, VEX files can already be generated for the golang source code thanks to script [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) introduced with [sig-security issue \#116](http://github.com/kubernetes/sig-security/issues/116).  
+In Kubernetes, Govulncheck is already executed against PRs, as part of [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) introduced with [sig-security issue \#116](http://github.com/kubernetes/sig-security/issues/116).  
 This script runs with every PR presubmit, within job pull-kubernetes-verify.  
 The results  from `govulncheck` on the master branch and the PR HEAD are compared, and sent to the standard output of the prow job. However, results are not further surfaced to address reachability of the vulnerable code.  
 This initiative was part of [Artifact Vulnerability Scanning and Triage Policy](https://github.com/kubernetes/sig-security/issues/3#top) organizing activities around vulnerability management for Kubernetes.
 
-At the moment, [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) is set to scan at package level, while other scanners are set to symbol level. By modifying the govulncheck scan to symbol level, we will reduce a LOT of false positives.
+As of [kubernetes/kubernetes#142787](https://github.com/kubernetes/kubernetes/pull/142787), [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) scans the Kubernetes code to the symbol level (as opposed to package level, used previously), which reduces a LOT of false positives.
 
 A concrete recurring example: k8s.io/kubernetes module has golang.org/x/crypto/ssh as a dependency, only for some test code, only using the ssh client, but the ssh server intermittently gets ~high severity vulns => we get noise from downstream scanners. By publishing symbol aware source code scanning, these will be excluded.
 
@@ -225,31 +221,31 @@ By preemptively generating VEX documents and publishing them as cryptographicall
 * Sign VEX documents with sigstore and publish as attestations for integrity and authenticity  
 * Build a bridge between existing CVE triage issues (`kubernetes/kubernetes`) and vexflow triage issues  
 * Support only for the `not_affected` OpenVEX status, and its five `not_affected` justifications
-* Update [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) to perform scanning at symbol level  
+* Update [hack/verify-govulncheck.sh](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh) to perform scanning at symbol level 
+* Fix the VEX document predicate type to https://openvex.dev/ns (go-vex TypeURI, documents at v0.2.0)
+* Fix the VEX document subject to the sha256 of the corresponding commit on github.com/kubernetes/kubernetes[@master](https://github.com/master), and the product to pkg:github/kubernetes/kubernetes[@master](https://github.com/master) with the vulnerable module's purl as subcomponent. 
 * Establish a foundation for future alpha-to-beta graduation (release branches, additional statuses, scanning) by opening discussions on: 
   * Can snyk scanning take vex files into account?  
-  * Can the go-vulncheck VEX outputs be integrated with the VEX feed generation process to further facilitate the work of Kubernetes maintainers?
-  * Is there value in publishing VEX attestations per release?
   * Is there value in including VEX statements for CVEs in states `fixed`, `affected`, `under_investigation`?
   
 
 ### Non-Goals
 
-* generate VEX attestations specific to release versions (postponed to beta or stable version)   
-* automated vulnerability scanning (no disruption to the existing Snyk periodic scanning)  
-* Publishing VEX attestations as OCI manifests (OCI Referrers API) attached to the OCI images  
+* automated vulnerability scanning (no disruption to the existing Snyk periodic scanning).
+* generate VEX attestations specific to release versions. This effort was already planned by SIG Release, and is tracked under [kubernetes/release#4603](https://github.com/kubernetes/release/issues/4603). Today, krel attaches signed provenance to the staged k/k images since [kubernetes/release#4551](https://github.com/kubernetes/release/pull/4551), and the promoter carries staging attestations to registry.k8s.io ([kubernetes-sigs/promo-tools#1902](https://github.com/kubernetes-sigs/promo-tools/issues/1902).  
+  * Publishing VEX attestations as OCI manifests (OCI Referrers API) attached to the OCI images([kubernetes/release#4603](https://github.com/kubernetes/release/issues/4603)). This feed would then be one input. 
+  * VEX attestations specific to release versions provide evidence for cherry-pick policy enforcement — The Kubernetes cherry-pick policy (see [cherry-picks.md](https://github.com/kubernetes/community/blob/main/contributors/devel/sig-release/cherry-picks.md)) states that "dependency updates that just aim to silence some scanners and do not fix any vulnerable code are NOT eligible for cherry-picks." Published VEX `not_affected` attestations provide authoritative, machine-readable, and cryptographically signed evidence that a CVE does not affect the codebase. Reviewers can point to the signed VEX statement instead of re-analyzing the CVE, reducing back-and-forth in cherry-pick discussions.  
+
 * Publishing VEX attestations to VexHub   
 * `affected`/`fixed` statuses - see [Future: Consuming the Official CVE Feed](#future-plans---beta) for a proposal to add this in beta  
-* Identify why govulncheck is focused on scope package when scanning, and if it makes sense to be increased  
 * Extend scope outside of Go code (container image contents) - future work  
-* Use VEX formats other than OpenVEX
 
 ## Proposal
 
 This KEP's first implementation (alpha) uses [vexflow](https://github.com/openvex/vexflow) to automate VEX generation and publishing for the Kubernetes master branch. 
 
 > Vexflow handles the lifecycle of VEX information for projects through GitHub issues. When new vulnerabilities are discovered in the monitored branches, vexflow opens a new triage issue. As long as the vulnerability is present in the branch, the issue remains open waiting for an assessment from the authorized maintainers.\
-> Using vexflow's chatops interface, maintainers create an assessment using one of the recognized slash commands (`/fixed`, `/affected`, `/not_affacted`).\
+> Using vexflow's chatops interface, maintainers create an assessment using one of the recognized slash commands (`/fixed`, `/affected`, `/not_affected`).\  
 > Vexflow then publishes the assessments through signed OpenVEX attestations.
 
 The alpha scope focuses on CVEs determined to be `not_affected` by the Kubernetes maintainers. 
@@ -285,11 +281,11 @@ A Prow job generates VEX documents, signs them with sigstore, and publishes them
 
 The OpenVEX attestations are generated by [vexflow](https://github.com/openvex/vexflow) and are an aggregation of the triaged CVE issues in the  `kubernetes/.vexflow` repository.
 
-Consumers (scanners, enterprises) can verify attestations using `cosign verify-attestation` with the Fulcio root certificate.
+Consumers (scanners, enterprises) can verify attestations using `cosign verify-blob-attestation  --type "https://openvex.dev/ns"`, and providing the `certificate-oidc-issuer` and `certificate-identity` of the signer prow job.
 
 Attestations are discoverable via the GitHub Attestations API. This provides:
 
-- **Integrity & authenticity** - cryptographic proof that Kubernetes maintainers created the VEX statement  
+- **Integrity & authenticity** - cryptographic proof that the VEX  attestation is signed by the VEX publish job. The integrity of the VEX statements included relies on the protection of the .vexflow repo through its OWNERS file.  
 - **Discoverability** - centralized location for all Kubernetes VEX data  
 - **No infrastructure cost** - GitHub attestation storage is included with public repos
 
@@ -370,14 +366,14 @@ In this proposal, we did not wish to impact the existing security job at all, no
 ### Risks and Mitigations
 | Risk | Mitigation|
 |------|-----------|
-| A simple contributor (not in component's OWNERS) labels a CVE issue `vex-unaffected-feed` when it shouldn't | In alpha, the `vex-unaffected-feed` label can be restricted to folks from sig-arch, sig-release, sig-security and SRC as an initial list ([configuration sample](https://github.com/smarticu5/test-infra/blob/01b26ce1cbbef312b333a7a724e514bf3630f9e6/config/prow/plugins.yaml#L192-L205)). After alpha is delivered, and starts getting used, we can gather more information about how to more accurately configure this permission. In Beta, we can also investigate ways to reliably tie a CVE issue to a component, and by doing so make the Bridge job verify labeling was done by component's OWNERS (or priviledged contributors), and ignore otherwise.  |
+| A simple contributor (not in component's OWNERS) labels a CVE issue `vex-unaffected-feed` when it shouldn't | In alpha, the `vex-unaffected-feed` label can be restricted to folks from sig-arch, sig-release, sig-security and SRC as an initial list ([configuration sample](https://github.com/kubernetes/test-infra/blob/937e7006c214b85c8451b06917e855e0282c6d1f/config/prow/plugins.yaml#L197-L210)). The Bridge Prow job can verify the actor of the labeld event against the same configuration, and skip labels by unauthorized users. This can prevent labels applied through GitHub UI or API from being used by unauthorized users. After alpha is delivered, and starts getting used, we can gather more information about how to more accurately configure this permission. In Beta, we can also investigate ways to reliably tie a CVE issue to a component, and by doing so make the Bridge job verify labeling was done by component's OWNERS (or priviledged contributors), and ignore otherwise.  |
 | `vex-unaffected-feed` isn't added to an issue | The CVE will not appear as `not-affected` in the VEX attestations (stale data). This can be fixed by a bulk operation on kubernetes/kubernetes issues by SIG-Security officials |
 | Bridge job fails | The impact to the Kubernetes ecosystem is very low: VEX reports will not contain fresh data until the Bridge job is fixed |
 | Publish job fails | The impact to the Kubernetes ecosystem is very low: New VEX reports will not be published until the job is fixed |
 | Unauthorized user adds a chatops (slash) comment to an issue in kubernetes/.vexflow | The vexflow binary, running in the Publish job will ignore any comments by contributors not listed in the OWNERS file |
-| Unauthorized user adds themselves to kubernetes/.vexflow's ONWERS | The main branch of .vexflow is protected, and pull requests need to be approved by owners in order to affect the main branch |
+| Unauthorized user adds themselves to kubernetes/.vexflow's OWNERS | The main branch of .vexflow is protected, and pull requests need to be approved by owners in order to affect the main branch |
 | **Publish job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/.vexflow (marking CVEs as fixed when they really affect K8s for example), or to publish attestations to kubernetes/.vexflow without going through the Prow job | Not a net new risk compared to other prow jobs |
-| **Bridge job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/kubernetes (which is already open) and kubernetes/.vexflow (marking CVEs as fixed when they really affect K8s for example). | Not a net new risk compared to other prow jobs |
+| **Bridge job's GITHUB_TOKEN is stolen**: This would allow a user to read issues in kubernetes/kubernetes (which is already open) and create or update issues in kubernetes/.vexflow (marking CVEs as fixed when they really affect K8s for example). | Not a net new risk compared to other prow jobs |
 | Prow jobs (Bridge or Publish) have too many issues to parse through | A worst case scenario mitigation: the binaries running through the prow jobs should be configurable via command line arguments for a max number of issues to handle. Ex: k/k repo has 10000 issues labeled `vex-unaffected-feed`, the job is configured with max-issues=500. 20 runs of the jobs are needed to go through the complete list of issues. (no context deadline exceeded, no out of memory) 
 
 ## Design Details
@@ -419,8 +415,11 @@ The alpha implementation consists of three components:
 
 - Periodic, every 6 hours  
 - Runs: `vexflow update --repo kubernetes/kubernetes --branch master --triage-repo kubernetes/.vexflow --scan=false`  
-- Secrets: `GITHUB_TOKEN` with write access to `.vexflow`  
-- Sigstore: keyless signing via Fulcio (prow service account OIDC identity)
+- Secrets: `GITHUB_TOKEN` with 
+  - Read access to `.vexflow` code and metadata
+  - Read and write access to attestations api
+  - Read and write `.vexflow` issues
+- Sigstore: keyless signing via Fulcio (a Cloud Build job with its own service account)
 
 ### Vexflow Issue Lifecycle
 
@@ -447,9 +446,13 @@ vexflow ls --repo kubernetes/kubernetes --branch master
 gh issue list --repo kubernetes/.vexflow --search "CVE-2026-XXXXX"
 
 # Verify a published attestation (after attestation support is added)
-cosign verify-attestation --certificate-identity-regexp ".*" \
-  --certificate-oidc-issuer-regexp ".*" \
-  ghcr.io/kubernetes/.vexflow/attestations
+wget https://github.com/kubernetes/.vexflow/attestations/38737637 -o vex.sigstore.json
+cosign verify-blob-attestation \
+  --bundle vex.sigstore.json \
+  --certificate-identity $GCB_SA_IDENTITY \
+  --certificate-oidc-issuer $GCB_OIDC_ISSUER \
+  --type "https://openvex.dev/ns" \
+  --check-claims=false
 ```
 
 2. **Outcome**: If a `not_affected` VEX statement already exists for the CVE, the engineer knows:  
@@ -516,7 +519,7 @@ This is a process KEP implemented using periodic prow job. This KEP is not imple
 
 - Gather feedback from developers and end users regarding:
   - Include states `affected`, `fixed`, `under-investigation`
-  - Create attestations per release version
+  - Determine which master assessments carry over to a release branch.([kubernetes/release#4603](https://github.com/kubernetes/release/issues/4603))
   - Adapting process to include data from govulncheck
   - Adapting scanning process (Snyk today)
 
@@ -607,7 +610,7 @@ No
 
 ### Monitoring Requirements
 
-Not applicable
+A TestGrid alert on both jobs (the sig-security-vex-feed dashboard) to alert against failures.
 <!--
 This section must be completed when targeting beta to a release.
 
@@ -868,6 +871,7 @@ The manual tools from PR \#200 may still be useful for bootstrapping initial VEX
 <!--
 Why should this KEP _not_ be implemented?
 -->
+- VEX statements apply to master only, and scanners can't match them against release binaries or images because the product is the branch. So alpha mainly serves maintainers' triage.
 
 ## Alternatives
 
@@ -879,7 +883,6 @@ Why should this KEP _not_ be implemented?
   - **govulncheck-based generation**: We can definitely couple the Vexflow scan with [govulncheck verify job](https://github.com/kubernetes/kubernetes/blob/master/hack/verify-govulncheck.sh), so that the issues opened in .vexflow can automatically be updated with relevant slash commands based on results from govulncheck.  
 - **Manual OpenVEX workflow (PR \#200)**: Maintainers edit JSON files directly. Simpler but doesn't scale and lacks signing/attestation.  
 - **VexHub**: Publishing VEX files for the Aqua VexHub crawler. Viable for distribution but doesn't provide signing or attestation provenance.  
-- **OCI referrers**: Attaching VEX to container images. Ideal for container consumers but requires registry access and is complex for alpha.  
 - **Using kubernetes/kubernetes as the triage repository:**  
   -  [Vexflow\#6](https://github.com/openvex/vexflow/issues/6) needs to be implemented as we have one OWNERS file per component  
   - [Vexflow\#114](https://github.com/openvex/vexflow/issues/114) needs to be implemented: especially if we choose k/k to be the triage-repo, the number of issues is very high, and the job might take ages to go through all bodies of all issues (including closed)
