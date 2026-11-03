@@ -578,7 +578,7 @@ Logical API changes occur prior to physical hardware removal.
 
 **5. State Transition (Accepted):** Once the node's boundaries are fully secured, the Kubelet transitions the `CapacityConfigured` condition to `True` (Reason: `Accepted`) and pushes the final status update.
 
-**6. Physical Reclaim:** The external controller observes the `Accepted` condition and safely executes the physical hardware hot-unplug or hypervisor resource reclaim.
+**6. Physical Reclaim:** The external controller observes the `Accepted` condition and safely executes the physical hardware hot-unplug or hypervisor resource reclaim. Where cAdvisor keeps reporting the VM's maximum shape (hypervisor-driven resize), the Kubelet cannot detect lost capacity, so the controller must not reclaim capacity before `Accepted`.
 
 A downscale requested through `Node.Spec.ConfiguredCapacity` never evicts pods. The Kubelet evicts only when capacity is already physically gone (Path B). To cancel a deferred downscale, the external controller patches `Node.Spec.ConfiguredCapacity` back to the current `Node.Status.Capacity`.
 
