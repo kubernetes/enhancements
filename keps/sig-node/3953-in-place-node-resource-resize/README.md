@@ -419,6 +419,8 @@ type NodeSpec struct {
     // reconciles toward ConfiguredCapacity and, once applied, updates
     // Node.Status.Capacity and Node.Status.Allocatable to reflect the configured
     // values. Clearing ConfiguredCapacity returns the node to cAdvisor auto-discovery.
+    // A decrease is applied only once running pods fit; otherwise the Kubelet reports
+    // CapacityConfigured=False (Reason: Deferred) and retries without evicting pods.
     // CPU may be fractional (e.g. "3500m"). ConfiguredCapacity only declares the
     // amount of each resource; it does not select which CPUs or memory to use
     // (see CPUSetSourceFile).
