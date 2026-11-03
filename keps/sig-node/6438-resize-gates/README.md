@@ -757,7 +757,8 @@ controllers.
 
 ### Persistent gates with approvals in status
 
-Gate names are declared in spec at creation (remove-only, like `schedulingGates`); controllers
+Gate names are declared in spec at creation. They never need removal, so they can be immutable
+after creation; a removable gate would remain a release path for any pod writer. Controllers
 approve by writing `status.resizeApprovals: [{name, approvedGeneration}]`, and the kubelet holds
 pending growth while any gate's approved generation differs from `metadata.generation`. The
 kubelet only reads, so there is no per-resize webhook and a single writer, and approvals never
@@ -813,7 +814,7 @@ such as VPA would then re-apply.
 | New API | `spec.resizeGates`, `Gated` reason | same, plus `status.resizeApprovals` | none |
 | Webhook on the resize path | yes | no (only at creation) | no |
 | Approval write | remove a gate (pod update) | write to `pods/status` | shrink the pod (`/resize`) |
-| Self-approval exposure | removal needs pod update, as for `schedulingGates`; a removal subresource, if added, would restrict it to permitted actors | approval is a `pods/status` write, which users rarely hold | n/a |
+| Self-approval exposure | removal needs pod update, as for `schedulingGates`; a removal subresource, if added, would restrict it to permitted actors | approval is a `pods/status` write, which users rarely hold; closes self-approval only if gates are immutable after creation, since a removable gate is still a release path | n/a |
 | Per-resize arming cost | one gate add per growth write; negligible with a MutatingAdmissionPolicy | none after creation | none |
 | Re-arm for the next resize | webhook re-adds the gate | any spec change stales the approval, including unrelated ones | n/a |
 | Safe for hard quota | yes | yes | no: over quota until the controller reacts, revert not guaranteed |
