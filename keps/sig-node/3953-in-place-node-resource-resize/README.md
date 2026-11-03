@@ -562,7 +562,7 @@ Spec mutation occurs before physical actuation, consistent with the API-first mo
 
 **5. Status Dissemination:** The Kubelet patches `Node.Status.Capacity` and transitions the `CapacityConfigured` condition to `True` (Reason: `Accepted`), advertising the new capacity to the Scheduler.
 
-**Actuation-first variant (hypervisor-driven, non-hotplug resize):** If the external controller actuates the upscale through the hypervisor before patching `Node.Spec.ConfiguredCapacity`, or cAdvisor already reports the VM's maximum shape, `ConfiguredCapacity <= Physical Capacity` already holds at step 1. The Kubelet then skips the `Infeasible` hold and performs steps 4 and 5 immediately on the Node informer event, without waiting for a cAdvisor poll.
+**Actuation-first variant (hypervisor-driven, non-hotplug resize):** When cAdvisor keeps reporting the VM's maximum shape, `ConfiguredCapacity <= Physical Capacity` already holds at step 1, so the Kubelet skips the `Infeasible` hold and performs steps 4 and 5 immediately on the Node informer event, without waiting for a cAdvisor poll. Because the Kubelet cannot detect the VM's real size in this case, the external controller must complete the hypervisor resize before raising `Node.Spec.ConfiguredCapacity`.
 
 #### Path A2: Orchestrated Configuration-Driven Downscale
 
