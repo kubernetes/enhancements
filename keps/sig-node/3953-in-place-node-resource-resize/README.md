@@ -199,7 +199,7 @@ Once the ecosystem is safe (Layer 1), the second layer provides the supported, d
 Without an API-driven trigger, cluster administrators have no safe way to coordinate a hot-unplug operation. The desired workflow for a graceful downscale is:
 
 1. An external controller invokes the API (`Node.Spec.ConfiguredCapacity`) to reduce logical node capacity.
-2. The Kubelet actuates that reduction (graceful eviction, updates cgroups, updates `Node.Status`).
+2. The Kubelet actuates that reduction once running pods fit the new capacity (updates cgroups, updates `Node.Status`); otherwise it defers the reduction without evicting pods.
 3. The external controller observes the Kubelet's completion signal (`CapacityConfigured: Accepted`).
 4. The external controller proceeds to physically remove hardware via the hypervisor.
 
@@ -464,7 +464,7 @@ Condition: **CapacityConfigured**
 
 **Status: False**
 
-**Reason InProgress**: The Kubelet has accepted a downscale request and is actively shrinking cgroups or gracefully evicting starved pods. The final `Node.Status` update is pending.
+**Reason InProgress**: The Kubelet has accepted a downscale request and is actively shrinking cgroups (and, after a loss of physical capacity in Path B, evicting starved pods). The final `Node.Status` update is pending.
 
 **Reason Deferred**: A downscale requested through `Node.Spec.ConfiguredCapacity` cannot be applied yet because the sum of resource requests of the pods allocated on the node exceeds the target allocatable. The Kubelet keeps the currently applied capacity, does not evict any pod, and retries when pods are removed or resized down, or when `Node.Spec.ConfiguredCapacity` changes. This mirrors a `Deferred` in-place pod resize (KEP-1287).
 
@@ -1072,7 +1072,7 @@ If the hardware does change, the default behavior changes from "ignoring the har
 
 - Upscale: Dynamically patching the `Node` Allocatable resources and rewriting host cgroups, allowing pending pods to be scheduled.
 
-- Downscale: Dynamically shrinking host cgroups, lowering Eviction Manager thresholds, and potentially triggering pod evictions.
+- Downscale: Dynamically shrinking host cgroups and lowering Eviction Manager thresholds. A downscale requested through `Node.Spec.ConfiguredCapacity` is deferred until pods fit and never evicts; pod evictions happen only when physical capacity is lost (Path B).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1402,7 +1402,7 @@ For each of them, fill in the following information by copying the below templat
 
 * **Downscale Stuck in InProgress (Eviction Stall)**
 
-  - **Scenario**: A downscale was initiated via `Node.Spec.ConfiguredCapacity`. The Kubelet set the `CapacityConfigured` condition to `False (Reason: InProgress)` and began evicting starved pods. However, the eviction never completes — for example, because affected pods have `PodDisruptionBudgets` that block eviction, or the pods are `Guaranteed` QoS with no safe eviction path, or the Kubelet crashed mid-eviction.
+  - **Scenario**: Physical capacity dropped below the applied capacity (Path B), for example because hardware was hot-unplugged before a downscale requested through `Node.Spec.ConfiguredCapacity` was applied. The Kubelet set the `CapacityConfigured` condition to `False (Reason: InProgress)` and began evicting starved pods. However, the eviction never completes — for example, because affected pods have `PodDisruptionBudgets` that block eviction, or the pods are `Guaranteed` QoS with no safe eviction path, or the Kubelet crashed mid-eviction.
 
   - **Detection**: The `CapacityConfigured` condition remains `False (Reason: InProgress)` for longer than expected. No `kubelet_node_resize_requests_total` increment is observed for the direction `decrease`. The external controller's watch on the `Accepted` condition never fires.
 
