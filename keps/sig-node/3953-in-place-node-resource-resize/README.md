@@ -702,7 +702,7 @@ This section implements the Layer 2 changes described in the Proposal: the `Node
 
 1. **Dedicated Node Capacity syncLoop** (`pkg/kubelet/kubelet.go`)
 
-   A dedicated node capacity syncLoop runs as its own goroutine within `Run()`, analogous to the pod syncLoop. It owns the full lifecycle of a capacity reconciliation event and executes all reconciliation steps serially, ensuring no concurrent capacity mutations. The loop is fed by a single `capacityReconciliationCh` channel written by three sources: the Node informer (when `Node.Spec.ConfiguredCapacity` or `Node.Spec.ConfiguredKubeReserved` changes), the `cAdvisor` hardware-drift detector (when physical capacity changes), and the optional `CPUSetSourceFile` file watcher (when external CPU placement changes).
+   A dedicated node capacity syncLoop runs as its own goroutine within `Run()`, analogous to the pod syncLoop. It owns the full lifecycle of a capacity reconciliation event and executes all reconciliation steps serially, ensuring no concurrent capacity mutations. The loop is fed by a single `capacityReconciliationCh` channel written by two sources: the Node informer (when `Node.Spec.ConfiguredCapacity` or `Node.Spec.ConfiguredKubeReserved` changes) and the cAdvisor hardware-drift detector (when physical capacity changes).
 
 ```go
 // 1. Wire up the Node Informer to feed the capacity syncLoop immediately on Spec changes
@@ -728,7 +728,9 @@ if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
             physicalInfo, err := kl.cadvisor.MachineInfo()
             if err != nil { continue }
 
-            // Determine Target Capacity (Alpha rule: Configured <= Physical)
+            // Determine Target Capacity (Alpha rule: Configured <= Physical). If physical
+            // capacity is below the applied capacity (Path B), target is the physical capacity
+            // and condition is EmergencyReduced, even while a Spec downscale is Deferred.
             targetCapacity, condition := kl.calculateValidatedCapacity(configuredCapacity, physicalInfo)
 
             // Anti-Thrash Guard: Break infinite loops if Spec > Physical
@@ -747,21 +749,26 @@ func (kl *Kubelet) reconcileConfiguredCapacity(
     kubeReserved v1.ResourceList,
     condition v1.NodeCondition,
 ) {
-    isDownscale := kl.isCapacityDecrease(kl.allocationManager.AppliedCapacity(), target)
     // Path B: physical capacity < applied capacity, so the capacity is already gone.
     isEmergency := condition.Reason == EmergencyReduced
+    // A Spec-driven resize where any resource decreases goes through the fit check.
+    isDownscale := !isEmergency && kl.isCapacityDecrease(kl.allocationManager.AppliedCapacity(), target)
+    isUpscale := !isEmergency && !isDownscale
+
+    if isEmergency {
+        // Capacity is already gone: switch admission unconditionally before shrinking.
+        kl.allocationManager.SetAppliedCapacity(target, kubeReserved)
+        kl.updateNodeCondition(InProgress)
+    }
 
     // Spec-driven downscale: the new helper switches appliedCapacity only if the requests of
     // allocated pods fit the target allocatable (fit check and switch are atomic under the lock).
-    if isDownscale && !isEmergency && !kl.allocationManager.SetAppliedCapacityIfFits(target, kubeReserved) {
+    if isDownscale && !kl.allocationManager.SetAppliedCapacityIfFits(target, kubeReserved) {
         // Never evict: keep the current capacity and retry when pods are removed or resized down
         // (like a Deferred pod resize), or when Node.Spec.ConfiguredCapacity changes.
         kl.updateNodeCondition(Deferred)
         kl.syncNodeStatus(ctx)
         return
-    }
-    if isDownscale && isEmergency {
-        kl.allocationManager.SetAppliedCapacity(target) // capacity is already gone: switch unconditionally
     }
     if isDownscale {
         kl.updateNodeCondition(InProgress)
@@ -771,8 +778,8 @@ func (kl *Kubelet) reconcileConfiguredCapacity(
     // Apply effective kubeReserved (ConfiguredKubeReserved when set, else startup kubeReserved) and
     // enforce /kubepods cgroups + sub-managers: shrink after the admission switch, expand before it.
     kl.containerManager.SyncCapacity(target, kubeReserved)
-    if !isDownscale {
-        kl.allocationManager.SetAppliedCapacity(target)
+    if isUpscale {
+        kl.allocationManager.SetAppliedCapacity(target, kubeReserved)
     }
     // Update Eviction Manager thresholds and memory.available baseline against applied capacity.
     kl.evictionManager.SynchronizeThresholds(target)
