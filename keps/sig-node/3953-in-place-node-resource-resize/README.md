@@ -720,7 +720,7 @@ kl.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 // 2. Node capacity syncLoop
 if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
     go wait.Until(func(ctx context.Context) {
-        // capacityReconciliationCh is written by: Node informer, cAdvisor hardware-drift detector, or CPUSetSourceFile watcher
+        // capacityReconciliationCh is written by: Node informer OR cAdvisor hardware-drift detector
         for range kl.capacityReconciliationCh {
             
             configuredCapacity := kl.getNodeSpecConfiguredCapacity()
