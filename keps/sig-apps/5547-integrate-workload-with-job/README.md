@@ -1391,7 +1391,7 @@ The second alpha replaced the automatic model with the user-facing API:
   or with the `scheduling.k8s.io/workload-name` or `scheduling.k8s.io/group-template-name`
   annotation, on create and on update, unless the old object already had the combination.
 - Re-enabling the gate never produces a half-grouped gang (`MixedSchedulingGroup`).
-- Metrics `job_scheduling_object_syncs_total` and `job_scheduling_object_sync_duration_seconds`.
+- Metric `job_scheduling_object_syncs_total`.
 - E2E tests passed as designed in the [Test Plan](#test-plan) and linked in Testgrid.
 - Performance test in `kubernetes/perf-tests` showing no regression in Job creation throughput.
 - Address all issues reported by users during alpha.
@@ -1605,8 +1605,6 @@ made by the Job controller per day succeed.
   - Metric name:
     - `job_scheduling_object_syncs_total` (new), with labels `kind`, `action` and `result`.
       Incremented for each `Workload`/`PodGroup` create/update/delete made by the Job controller.
-    - `job_scheduling_object_sync_duration_seconds` (new), with labels `kind` and `action`.
-      Latency of those calls.
     - `job_sync_duration_seconds` and `job_syncs_total` (existing), compared against the
       pre-enablement baseline.
 
@@ -1730,8 +1728,9 @@ recovers, the same as for pod creation. Running pods are unaffected.
   kube-controller-manager and kube-scheduler.
 - Check `job_scheduling_object_syncs_total{result="error"}`, and the Warning events on the 
   affected Jobs.
-- Compare `job_scheduling_object_sync_duration_seconds` with `apiserver_request_duration_seconds`
-  for `workloads`/`podgroups` to tell controller-side from API-server-side latency.
+- Check `apiserver_request_duration_seconds` for `workloads`/`podgroups` for API-server-side
+  latency, and `rest_client_rate_limiter_duration_seconds` on kube-controller-manager for
+  client-side throttling.
 - For gang Jobs whose pods stay `Pending` with objects present, follow the scheduler
   troubleshooting steps in [KEP-4671].
 
