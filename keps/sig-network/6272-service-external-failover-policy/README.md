@@ -393,7 +393,7 @@ occur in a particular order.
 
 ### Gateway API Interaction
 
-Gateway API implementations (Calico Envoy Gateway, Cilium, etc.) create a
+Some Gateway API implementations (Calico Envoy Gateway, Cilium, etc.) create a
 `type: LoadBalancer` Service per Gateway. The envoy-proxy pod is always
 running, so the LB Service always has endpoints. kube-proxy never triggers
 the no-endpoint DROP/REJECT path for these Services.
