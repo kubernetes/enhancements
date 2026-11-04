@@ -104,15 +104,16 @@ fetches and stores it is a runtime decision.
 
 The design supports a layered profile model: pods can specify both a base
 profile (Localhost or RuntimeDefault) and an OCI overlay profile. The CRI
-runtime merges the OCI profile with the base profile and its own configured
-baseline via intersection, producing an effective profile that is at least as
-restrictive as every input. This guarantees that OCI-distributed profiles
-cannot weaken node security regardless of their content, while allowing
-administrators to enforce per-workload-class baselines without breaking
-existing OCI profiles when the baseline changes. The converse also holds: an
-OCI profile can never grant an operation that the node's baseline denies.
-Workloads that need a profile looser than the baseline continue to use
-`Localhost`.
+runtime merges the OCI profile with its base via intersection, producing an
+effective profile that is at least as restrictive as both inputs. The base is
+the runtime's default profile unless the pod selects a `Localhost` profile,
+which takes the place of the default, so every base is a node administrator's
+choice. This guarantees that OCI-distributed profiles cannot weaken their base
+regardless of their content, while allowing administrators to enforce
+per-workload-class bases without breaking existing OCI profiles when a base
+changes. The converse also holds: an OCI profile can never grant an operation
+that its base denies. Workloads that need a profile looser than the runtime
+default continue to use `Localhost`, alone or as the base of an OCI profile.
 
 ## Motivation
 
@@ -164,20 +165,21 @@ profiles alongside the agent images they protect.
   it passes a registry reference and a digest, and how the runtime fetches
   and stores the content is a runtime decision.
 - Integrate with [Node Declared Features (KEP-5328)][ndf] so that pods using
-  OCI profiles are only scheduled to nodes whose kubelet supports them, and
-  report runtime support via CRI `RuntimeFeatures` so that the kubelet
-  rejects such pods at admission when the CRI runtime does not.
+  OCI profiles are only scheduled to nodes whose kubelet and container
+  runtime support them. The runtime reports its support via CRI
+  `RuntimeFeatures`, which feeds the declaration and lets the kubelet reject
+  such pods at admission when they bypass the scheduler.
 - Reuse existing image pull infrastructure (pull secrets, credential providers,
   registry authentication) for profile pulls.
 - Reference profiles by immutable digest only (see [Non-Goals](#non-goals)).
 - Support layered profiles where a pod specifies both a base profile
   (Localhost or RuntimeDefault) and an OCI overlay. The CRI runtime merges
   the profiles via intersection, so the effective profile is at least as
-  restrictive as every input.
+  restrictive as both.
 
 ### Non-Goals
 
-- **Mutable tag references**: `oci.reference` is digest-pinned, and that is
+- **Mutable tag references**: `oci.ref` is digest-pinned, and that is
   not a staged restriction. A security profile reference should be
   immutable, and a tag buys nothing that the digest does not already give:
   picking up a new profile version means updating the reference and
@@ -240,7 +242,7 @@ securityContext:
   seccompProfile:
     type: OCI
     oci:
-      reference: "registry.example.com/security/profiles/api-server-seccomp@sha256:3b1c..."
+      ref: "registry.example.com/security/profiles/api-server-seccomp@sha256:3b1c..."
 ```
 
 The CRI runtime pulls the profile using credentials resolved by the kubelet
@@ -262,7 +264,7 @@ securityContext:
   appArmorProfile:
     type: OCI
     oci:
-      reference: "vendor-registry.io/database/apparmor-profile@sha256:abc123..."
+      ref: "vendor-registry.io/database/apparmor-profile@sha256:abc123..."
 ```
 
 #### Story 3: Agentic Workloads with Admin-Controlled Baselines
@@ -278,27 +280,29 @@ securityContext:
   seccompProfile:
     type: OCI
     oci:
-      reference: "registry.example.com/agents/code-exec-seccomp@sha256:9d4e..."
+      ref: "registry.example.com/agents/code-exec-seccomp@sha256:9d4e..."
       baseProfile:
         type: Localhost
         localhostProfile: "agentic-baseline.json"
 ```
 
-The CRI runtime merges the OCI profile with the Localhost base profile and the
-node's runtime baseline via intersection. The effective profile is at least as
-restrictive as all three inputs. When the admin tightens the Localhost baseline
-(for example, blocking a newly discovered dangerous syscall), all existing OCI
-profiles continue to work because the merge automatically applies the new
-restriction. No OCI profiles need to be updated.
+The CRI runtime merges the OCI profile with the Localhost base profile via
+intersection; the base takes the place of the runtime default, so the admin's
+profile is the floor for every pod in the namespace. The effective profile is
+at least as restrictive as both inputs. When the admin tightens the Localhost
+base profile (for example, blocking a newly discovered dangerous syscall), all
+existing OCI profiles continue to work because the merge automatically applies
+the new restriction. No OCI profiles need to be updated.
 
 ### Notes/Constraints/Caveats
 
-- **Digest-only references**: `oci.reference` must be digest-pinned
-  (`registry/repository@<algorithm>:<hex>`); API validation rejects tag
-  references (see [Non-Goals](#non-goals)). The digest algorithm is not
-  pinned to `sha256`: validation accepts any algorithm that
-  `distribution/reference` and `go-digest` accept, so registries and
-  publishers moving to a stronger algorithm need no API change. Rolling out
+- **Digest-only references**: `oci.ref` must be digest-pinned
+  (`registry/repository@<algorithm>:<hex>`), fully qualified, and at most
+  1024 characters long; API validation rejects tag references (see
+  [Non-Goals](#non-goals)). The digest algorithm is not pinned to `sha256`:
+  validation accepts `sha256`, `sha384`, and `sha512`, the algorithms that
+  `distribution/reference` and `go-digest` register, so publishers moving to
+  a stronger algorithm need no API change. Rolling out
   a new profile version means updating the digest in the pod template and
   recreating the pods, the same workflow as updating an image digest, and
   the same thing a tag update would require, because the profile is loaded
@@ -313,24 +317,22 @@ restriction. No OCI profiles need to be updated.
   runtimes need to agree on one wire format for the content itself, not
   because the CRI or the Kubernetes API require the content to be an
   artifact.
-- **Runtime profile caching**: The CRI runtime caches profile artifacts in
-  its content-addressable storage, keyed by digest. Whether this is the same
-  store as container image layers (containerd's content store) or a dedicated
-  artifact store (CRI-O's `artifacts` store) is a runtime implementation
-  detail, as is the eviction policy: the content is only needed again when a
-  container is created, because an applied profile lives in the kernel and
-  does not depend on the cache. A runtime that keeps content referenced by a
-  running sandbox avoids re-pulls, but it is not required to. Runtimes should
-  still prefer keeping referenced content: because the kubelet re-pulls on
-  every sync (see [Kubelet Behavior](#kubelet-behavior)), a runtime that
-  evicts content while its pod is running turns a local call into a registry
-  request on each sync, and it exposes the pod to the failure mode below if
-  the digest stops being served. If the content
-  is missing at container creation time (after an eviction, or after a
-  manual cleanup of the runtime's storage), the kubelet re-pulls it by digest
-  on the next sync. If the registry no longer serves that digest, the
-  `PullSecurityProfile` call fails and the container creation fails with a
-  `SecurityProfilePullFailed` event. The pod is not silently left without a
+- **Runtime profile storage**: The CRI runtime keeps pulled profiles in its
+  storage, keyed by digest. Whether this is the same store as container image
+  layers (containerd's content store) or a dedicated artifact store (CRI-O's
+  `artifacts` store) is a runtime implementation detail. The lifecycle is the
+  kubelet's: it removes profiles that no pod on the node has used for longer
+  than `imageMaximumGCAge` through the `ListSecurityProfiles` and
+  `RemoveSecurityProfile` RPCs (see [Kubelet Behavior](#kubelet-behavior)),
+  and runtimes do not evict profiles on their own. The content is only needed
+  again when a container is created, because an applied profile lives in the
+  kernel and does not depend on the store. If the content is missing at
+  container creation time (after a removal, or after a manual cleanup of the
+  runtime's storage), the kubelet pulls it again by digest right before it
+  creates the container that needs it. If
+  the registry no longer serves that digest, the `PullSecurityProfile` call
+  fails with a `SecurityProfilePullFailed` event. The pod is not silently
+  left without a
   profile: it remains running (profiles are loaded into the kernel at
   creation time), but any new container creation within the pod (restart, new
   init container) fails until the digest is available again.
@@ -429,7 +431,11 @@ restriction. No OCI profiles need to be updated.
   the same manifest and carries the `oci` field; if the API server rejects
   it because its feature gate is disabled, the static pod still runs on the
   node without a mirror pod, as with any static pod whose mirror fails
-  validation.
+  validation. The kubelet validates static pod manifests with the handwritten
+  API validation and, since [kubernetes/kubernetes#143646][k8s-143646], the
+  declarative rules, so the gate check, the privileged container rule, the
+  reference grammar and the base profile path checks apply to them as to
+  any pod, and the kubelet does not check the fields again.
 - **Privileged containers**: CRI runtimes do not apply seccomp profiles to
   containers running with `privileged: true`, and CRI-O also skips AppArmor
   for them (containerd applies a `Localhost` AppArmor profile even to
@@ -445,24 +451,26 @@ restriction. No OCI profiles need to be updated.
   subresource after pod creation, so the same rule is enforced in that
   update's validation path. Rejecting early prevents confusion where a user
   specifies a profile that is silently ignored.
-- **Layered profile semantics**: When the pod spec specifies a `baseProfile`
-  alongside the OCI reference, the CRI runtime intersects the runtime's
-  configured baseline, the pod-spec base profile, and the OCI profile. The
-  runtime baseline is always the floor, the base profile adds
-  per-workload-class restrictions, and the OCI profile adds per-workload
-  restrictions. No profile is rejected for being too permissive; the merge
+- **Layered profile semantics**: The CRI runtime intersects the OCI profile
+  with one base: the runtime's default profile, or, when the pod spec
+  specifies a `Localhost` base profile, that profile, which takes the place
+  of the runtime default. A `Localhost` base is the node admin's choice, like
+  a `type: Localhost` profile, and may be stricter or looser than the runtime
+  default. No profile is rejected for being too permissive; the merge
   constrains it and logs what was constrained. See
   [Profile Merging](#profile-merging) for the full semantics.
-- **OCI profiles cannot loosen the baseline**: Because the merge is an
-  intersection, an OCI profile can only remove permissions relative to the
-  runtime's configured baseline (`RuntimeDefault` unless the node admin
-  configures otherwise). Workloads that need syscalls or accesses the baseline
-  denies (for example `bpf`, `perf_event_open`, or `unshare` without extra
-  capabilities under the default seccomp profiles of containerd and CRI-O)
-  cannot obtain them through an OCI profile. They continue to use `Localhost`
-  profiles, or the node admin loosens the runtime baseline for the node pool
-  that hosts them. This is a deliberate trade-off: distribution convenience
-  for profiles that tighten, node admin control for anything that loosens.
+- **OCI profiles cannot loosen their base**: Because the merge is an
+  intersection, an OCI profile can only remove permissions relative to its
+  base: the runtime's default profile (`RuntimeDefault` unless the node admin
+  configures otherwise) or the `Localhost` base profile the pod selects.
+  Workloads that need syscalls the runtime default denies (for example `bpf`,
+  `perf_event_open`, or `unshare` without extra capabilities under the default
+  seccomp profiles of containerd and CRI-O) cannot obtain them through an OCI
+  profile alone. They use a `Localhost` profile that allows them, alone or as
+  the base of an OCI profile, or the node admin loosens the runtime default
+  for the node pool that hosts them. This is a deliberate trade-off:
+  distribution convenience for profiles that tighten, node admin control for
+  anything that loosens.
 - **Linux-only**: Seccomp and AppArmor are Linux security mechanisms. This
   feature applies only to Linux containers. The CRI changes are scoped to
   `LinuxContainerSecurityContext` and `LinuxSandboxSecurityContext`. Windows
@@ -480,14 +488,15 @@ so cached content is never re-pulled.
 security. With `Localhost` profiles, node admins control which profiles exist
 on disk; OCI profiles let pod authors reference any artifact from any
 registry.
-**Mitigation**: The CRI runtime merges every pulled OCI profile with the
-node's baseline via intersection (see [Profile Merging](#profile-merging)),
-so the effective profile is never more permissive than the baseline
-regardless of the profile's source or content. Even if a profile is tampered
-with in transit or a registry is compromised, the worst case is an effective
-profile equal to the baseline. The node admin controls the baseline through
-the runtime's configuration, and pods can add a `baseProfile` for
-per-workload-class restrictions that admission policy can require. The
+**Mitigation**: The CRI runtime merges every pulled OCI profile with its base
+via intersection (see [Profile Merging](#profile-merging)), so the effective
+profile is never more permissive than the base regardless of the profile's
+source or content. Even if a profile is tampered with in transit or a
+registry is compromised, the worst case is an effective profile equal to the
+base. Every base is under the node admin's control: the runtime default
+through the runtime's configuration, and a `Localhost` base through the
+profiles installed on the node, which admission policy can require per
+workload class. The
 runtime also validates profile content before applying it. Signature
 verification through the runtime's existing policy (for example CRI-O's
 `/etc/containers/policy.json`) and admission webhooks that restrict allowed
@@ -510,31 +519,28 @@ operators enabling the alpha gate are advised to do so only on clusters
 whose kubelets are all v1.38 or later (see
 [Version Skew Strategy](#version-skew-strategy)).
 
-**Risk**: Garbage collection of cached profile artifacts could force
-unnecessary re-pulls.
+**Risk**: Garbage collection of pulled profiles could force unnecessary
+re-pulls.
 **Mitigation**: Profiles are loaded into the kernel at container creation time,
-so GC of the cached content does not affect already-running containers. A
+so removing the stored content does not affect already-running containers. A
 re-pull is only needed for a new container creation (restart, new init
-container), and the kubelet's next `PullSecurityProfile` call performs it.
+container), and the kubelet's `PullSecurityProfile` call right before that
+creation performs it.
 The cost of over-eager GC is therefore a pull, not a failure.
 
-In alpha, GC is entirely runtime-managed, because the kubelet has no way to
-manage it: profiles are pulled through a dedicated RPC and, unlike images,
-the kubelet has no list or remove RPC for them and no per-profile reference
-accounting. Runtimes must not report profiles in `ListImages` for the same
-reason: the image garbage collector would treat them as unused images,
-against a model where the kubelet never told it they exist. Given the 1 MiB
-size limit and the small number of distinct profiles per node, never
-evicting is an acceptable alpha policy. The number of distinct profiles is
-not bounded, however, so a node that runs a stream of short-lived pods with
-distinct profiles accumulates them; operators enabling the alpha should
-monitor the runtime's profile storage usage (for CRI-O, the `artifacts`
-directory under the storage root), and runtimes should expose its count and
-byte size as metrics. Beta closes the gap: `ListSecurityProfiles` and
-`RemoveSecurityProfile` RPCs let the kubelet enumerate and remove profiles
-in the same way it manages images today, which is what makes the kubelet,
-rather than the runtime alone, responsible for the lifecycle of content it
-asked for.
+The kubelet owns the lifecycle of the profiles it asked for, as it does for
+images: every five minutes it lists the pulled profiles with
+`ListSecurityProfiles` and removes, with `RemoveSecurityProfile`, those that
+no pod of the node has referenced for longer than `imageMaximumGCAge`, the
+same age-based setting that applies to images (see
+[Kubelet Behavior](#kubelet-behavior)). Its default of zero disables the
+collector, as it does for images. Runtimes must not report profiles in
+`ListImages`, because the image garbage collector would treat them as unused
+images, and they do not evict profiles on their own. A runtime, or an
+`ImageService` proxy in front of it, that does not implement the list and
+remove RPCs makes the kubelet log an error every five minutes, and profiles
+accumulate on that node as they would without a collector; runtimes should
+expose the store's count and byte size as metrics so that operators notice.
 
 **Risk**: Increased registry load from profile pulls.
 **Mitigation**: Profiles are small (typically < 100 KB) and aggressively cached.
@@ -546,9 +552,9 @@ OCI profiles. Once a profile is cached locally by the CRI runtime, pods start
 without registry access. References are digest-pinned and never need
 re-resolution. Operators can mitigate registry dependency by using registry
 mirrors, pre-pulling profiles via DaemonSet pods that reference them (see
-[Pre-pulling](#notesconstraintscaveats)), and monitoring
-`kubelet_security_profile_pull_errors_total` for early warning of
-registry issues. The blast radius is limited to new pods referencing uncached
+[Pre-pulling](#notesconstraintscaveats)), and monitoring the failed
+results of `kubelet_security_profile_pull_duration_seconds` for early warning
+of registry issues. The blast radius is limited to new pods referencing uncached
 profiles; already-running pods are unaffected.
 
 **Risk**: Lateral access to other pods' cached profiles.
@@ -582,67 +588,91 @@ field:
 type SeccompProfile struct {
     // type indicates which kind of seccomp profile will be applied.
     // Valid options are:
-    //   RuntimeDefault, Localhost, Unconfined, OCI
+    //
+    // Localhost - a profile defined in a file on the node should be used.
+    // RuntimeDefault - the container runtime default profile should be used.
+    // Unconfined - no profile should be applied.
+    // OCI - a profile pulled from an OCI registry should be used, merged with a
+    // base profile (see oci.baseProfile). Privileged containers cannot use it,
+    // whether it is set on the container or inherited from the pod. This is an
+    // alpha value and requires enabling the SecurityProfileOCI feature gate.
     // +unionDiscriminator
+    // +k8s:alpha(since: "1.38")=+k8s:required
+    // +k8s:unionDiscriminator
     Type SeccompProfileType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=SeccompProfileType"`
-
-    // localhostProfile indicates a profile defined in a file on the node.
-    // Must be a descending path, relative to the kubelet's configured seccomp
-    // profile location. Must be set if type is "Localhost". Must NOT be set
-    // for any other type.
+    // localhostProfile indicates a profile defined in a file on the node should be used.
+    // The profile must be preconfigured on the node to work.
+    // Must be a descending path, relative to the kubelet's configured seccomp profile location.
+    // Must be set if type is "Localhost". Must NOT be set for any other type.
     // +optional
     LocalhostProfile *string `json:"localhostProfile,omitempty" protobuf:"bytes,2,opt,name=localhostProfile"`
-
-    // oci specifies an OCI artifact containing the security profile.
+    // oci specifies a seccomp profile stored as an artifact in an OCI registry.
+    // The container runtime merges the profile with a base profile, so the
+    // effective profile permits an operation only if both permit it.
     // Must be set if type is "OCI". Must NOT be set for any other type.
+    // This is an alpha field and requires enabling the SecurityProfileOCI feature gate.
     // +featureGate=SecurityProfileOCI
     // +optional
+    // +k8s:optional
+    // +k8s:unionMember
     OCI *SecurityProfileOCI `json:"oci,omitempty" protobuf:"bytes,3,opt,name=oci"`
 }
 
-// SecurityProfileOCI specifies an OCI artifact reference for a
-// security profile, with an optional base profile for layered enforcement.
+// SecurityProfileOCI references a security profile stored as an artifact in an
+// OCI registry, with an optional base profile.
 type SecurityProfileOCI struct {
-    // reference is the OCI reference of the profile.
-    // The format is a fully-qualified, digest-pinned OCI reference:
-    // registry/repository@<algorithm>:<digest>. Short names and tag
-    // references are rejected.
-    Reference string `json:"reference" protobuf:"bytes,1,opt,name=reference"`
-
-    // baseProfile optionally specifies a base profile that the OCI profile
-    // is merged with via intersection. The CRI runtime merges the OCI
-    // profile, this base profile, and the runtime's own configured baseline;
-    // the effective profile permits an operation only if all inputs permit it.
-    // This allows administrators to enforce per-workload-class baselines
-    // (e.g., a restrictive Localhost profile for agentic workloads) while
-    // letting pod authors layer additional restrictions via OCI profiles.
-    // When omitted, the CRI runtime uses its configured default baseline
-    // (RuntimeDefault or an admin-supplied profile) as the only base.
+    // ref is the OCI reference of the profile.
+    // It must be a digest-pinned reference in canonical form,
+    // registry/repository@<algorithm>:<digest>, with the registry spelled out
+    // (for example docker.io/library/profile, not profile or docker.io/profile).
+    // Tags are rejected. The digest algorithm must be sha256, sha384, or sha512.
+    // The maximum length is 1024 characters.
+    // Pull secrets are assembled in the same way as for the container image by
+    // looking up node credentials, service account image pull secrets, and pod spec image pull secrets.
+    // +required
+    // +k8s:required
+    // +k8s:maxLength=1024
+    // +k8s:customValidation
+    Ref string `json:"ref" protobuf:"bytes,1,opt,name=ref"`
+    // baseProfile optionally specifies the base profile that the container
+    // runtime merges with the OCI profile. The effective profile permits an
+    // operation only if both permit it. When omitted, the container runtime
+    // default profile is the base; a Localhost base profile takes its place.
     // +optional
+    // +k8s:optional
     BaseProfile *SecurityProfileOCIBase `json:"baseProfile,omitempty" protobuf:"bytes,2,opt,name=baseProfile"`
 }
 
-// SecurityProfileOCIBase specifies the base profile for layered OCI profile
-// enforcement. The CRI runtime merges the OCI profile with this base profile
-// (and its own configured baseline) via intersection: the effective profile
-// permits an operation only if all inputs permit it.
+// SecurityProfileOCIBase specifies the base profile of an OCI security profile.
+// +union
 type SecurityProfileOCIBase struct {
-    // type specifies the kind of base profile.
-    // Valid options are: RuntimeDefault, Localhost.
-    // Localhost is valid for seccomp profiles. AppArmor profiles (beta)
-    // accept RuntimeDefault only, because a kernel-loaded Localhost
-    // AppArmor profile has no text that could be merged.
+    // type indicates which kind of base profile will be applied.
+    // Valid options are:
+    //
+    // Localhost - a profile defined in a file on the node should be used.
+    // RuntimeDefault - the container runtime default profile should be used.
     // +unionDiscriminator
+    // +required
+    // +k8s:required
+    // +k8s:unionDiscriminator
     Type SecurityProfileOCIBaseType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=SecurityProfileOCIBaseType"`
-
-    // localhostProfile specifies the base profile path on the node.
-    // For seccomp, this is a descending path relative to the kubelet's
-    // configured seccomp profile location.
-    // Must be set when type is "Localhost". Must NOT be set for other types.
+    // localhostProfile indicates a base profile defined in a file on the node
+    // should be used. The profile must be preconfigured on the node to work.
+    // Must be a non-empty descending path, relative to the kubelet's configured seccomp profile location,
+    // of at most 4096 characters.
+    // Must be set if type is "Localhost". Must NOT be set for any other type.
     // +optional
+    // +k8s:optional
+    // +k8s:unionMember(memberName: "Localhost")
+    // +k8s:maxLength=4096
+    // +k8s:customValidation
     LocalhostProfile *string `json:"localhostProfile,omitempty" protobuf:"bytes,2,opt,name=localhostProfile"`
 }
 
+// SecurityProfileOCIBaseType defines the supported base profile types of an
+// OCI security profile.
+// +enum
+// +k8s:enum
 type SecurityProfileOCIBaseType string
 
 const (
@@ -658,11 +688,15 @@ const (
 )
 ```
 
+The reference field is `ref`, not `reference` as earlier drafts of this KEP
+had it: the kube-api-linter `noreferences` rule requires the `Ref` suffix
+for new fields, and `ImageVolumeSource.reference` predates the rule.
+
 `baseProfile` is part of alpha rather than deferred because it is the API
 shape that resolved the trust-model discussion during review: the runtime
 baseline alone gives node admins a floor, but per-workload-class baselines
-(Story 3) require a pod-visible base that admission policy can mandate. The
-three-way merge reuses the same intersection as the two-way case, so the
+(Story 3) require a pod-visible base that admission policy can mandate. A
+`Localhost` base reuses the same intersection as the runtime default, so the
 added implementation surface is one CRI message and its validation. The
 counter-argument, that a node admin can install the combined profile as the
 node baseline or as a single `Localhost` profile and skip the field, is on
@@ -678,8 +712,9 @@ policy language, see [OCI Artifact Format](#oci-artifact-format)) and the
 runtime path for rendering, loading, and unloading merged profiles in the
 kernel (see [Profile Merging](#profile-merging)). Shipping the field in
 alpha without a runtime that can exercise it would leave it untested, so it
-is deferred. The `SecurityProfileKind` CRI enum reserves the `AppArmor`
-value now so that no CRI change is needed later. The kubelet's AppArmor
+is deferred. The `SecurityProfileKind` CRI enum does not reserve an
+`AppArmor` value: an old runtime rejects an unknown value as unsupported
+anyway, and beta adds the value when it needs it. The kubelet's AppArmor
 handler already fails closed on unknown profile types, so no prerequisite
 fix analogous to the seccomp one is needed. AppArmor adds only
 `AppArmorProfile.OCI *SecurityProfileOCI` and the
@@ -688,53 +723,54 @@ fix analogous to the seccomp one is needed. AppArmor adds only
 the AppArmor `baseProfile` to `RuntimeDefault` because a kernel-loaded
 `Localhost` AppArmor profile has no retrievable text to merge.
 
-API validation:
-- `oci` must be set when `type` is `OCI`, and must not be set for other types.
-- `oci.reference` must be a fully-qualified, digest-pinned OCI reference
-  (`registry/repository@<algorithm>:<hex>`), parsed with
-  `distribution/reference`, which accepts any digest algorithm registered
-  with `go-digest`, so `sha512` and any later addition need no validation
-  change. The parser bounds the repository name at 255 characters and
-  digests are fixed-length per algorithm, so a valid reference stays well
-  under 512 characters and no separate length limit is needed. Short names
-  and tag references are rejected (see
-  [Digest-only references](#notesconstraintscaveats)). The
-  existing `image` field on containers does not enforce strict format
-  validation; the new field can, because it has no backward compatibility
-  constraints.
+API validation of the new fields is declarative (`+k8s:` tags on the types
+above, generated into `pkg/apis/core/v1`), with two custom validators where
+no tag fits; the feature gate check and the privileged container rule stay
+handwritten:
+- `oci` is a union member discriminated by `type`: it must be set when `type`
+  is `OCI`, and must not be set for other types.
+- `oci.ref` is required, at most 1024 characters, and must be a fully
+  qualified, digest-pinned OCI reference
+  (`registry/repository@<algorithm>:<hex>`) in canonical form, parsed with
+  `distribution/reference`. The digest algorithm must be `sha256`, `sha384`,
+  or `sha512`, the algorithms `go-digest` registers; the validator pins them
+  so that a dependency update cannot widen the accepted set without an API
+  review. Short names and tag references are rejected (see
+  [Digest-only references](#notesconstraintscaveats)). The parser bounds the
+  repository path at 255 characters but not the registry, hence the explicit
+  length limit. The existing `image` field on containers does not enforce
+  strict format validation; the new field can, because it has no backward
+  compatibility constraints.
 - `oci.baseProfile` is optional. When set, `baseProfile.type` must be
-  `RuntimeDefault` or `Localhost`. When `baseProfile.type` is `Localhost`,
-  `baseProfile.localhostProfile` must be set and passes the same
-  descending-path validation as `seccompProfile.localhostProfile`. When
-  `baseProfile.type` is `RuntimeDefault`, `baseProfile.localhostProfile` must
-  not be set. `baseProfile.type` must not be `Unconfined` or `OCI` (no
-  chaining OCI profiles, no unconfined base).
+  `RuntimeDefault` or `Localhost` (a declarative enum). `localhostProfile` is
+  a union member discriminated by `baseProfile.type`: it must be set when the
+  type is `Localhost` and must not be set otherwise, and it must be a
+  non-empty relative path without `..` elements, at most 4096 characters,
+  like `seccompProfile.localhostProfile`. Only `/` separates path elements:
+  seccomp is Linux-only and the kubelet resolves the path on the node, where
+  a backslash is an ordinary file name character. `baseProfile.type` cannot
+  be `Unconfined` or `OCI` (no chaining OCI profiles, no unconfined base).
 - Any privileged container whose effective seccomp profile (container-level,
   falling back to pod-level) is `OCI` is rejected at API validation (see
   [Privileged containers](#notesconstraintscaveats)).
 
-When the `SecurityProfileOCI` feature gate is disabled, two mechanisms
-apply:
-- **Type validation**: API validation rejects the `OCI` type value, preventing
-  creation of pods and workload templates that use OCI profile references.
-  A `PodValidationOptions` field, set when the gate is enabled or the old
-  pod spec already uses `OCI` (computed in
-  `GetValidationOptionsFromPodSpecAndMeta`, and through
-  `GetValidationOptionsFromPodTemplate` for workload resources), keeps
-  updates to existing objects valid, so that a Deployment created while the
-  gate was enabled can still be scaled or have its template switched to
-  another profile type. The option is computed per pod spec, so with the
-  gate disabled an ephemeral container with an `OCI` profile can still be
-  added to a pod that already uses one; such a pod either runs on a kubelet
-  with the gate enabled, which handles it, or has already been failed by a
-  kubelet with the gate disabled.
-- **Field stripping**: The `oci` field is stripped from new objects following
-  the standard drop-disabled-fields pattern (`DropDisabledPodFields` and
-  `DropDisabledTemplateFields`). Existing objects that already have the field
-  set (created while the gate was enabled) retain the value on update to
-  prevent data loss.
+When the `SecurityProfileOCI` feature gate is disabled, API validation
+rejects the `OCI` type value, preventing creation of pods and workload
+templates that use OCI profile references. A `PodValidationOptions` field,
+set when the gate is enabled or the old pod spec already uses `OCI` (computed
+in `GetValidationOptionsFromPodSpecAndMeta`, and through
+`GetValidationOptionsFromPodTemplate` for workload resources), keeps updates
+to existing objects valid, so that a Deployment created while the gate was
+enabled can still be scaled or have its template switched to another profile
+type. The option is computed per pod spec, so with the gate disabled an
+ephemeral container with an `OCI` profile can still be added to a pod that
+already uses one; such a pod either runs on a kubelet with the gate enabled,
+which handles it, or has already been failed by a kubelet with the gate
+disabled. Nothing is stripped from the object: the union makes `oci`
+unpersistable while the type is rejected, so the drop-disabled-fields pattern
+has nothing to do, and existing objects keep the field on update.
 
-No status fields are added in alpha. The digest in `oci.reference` identifies
+No status fields are added in alpha. The digest in `oci.ref` identifies
 the pulled content exactly, so there is nothing about the input that the spec
 does not already say. What the spec does not say is the *effective* profile,
 which is the intersection of the OCI profile, the optional `baseProfile`, and
@@ -789,14 +825,14 @@ allowlist and receives the same treatment when AppArmor support lands in
 beta.
 
 PodSecurity has no rule for `oci.baseProfile`, and the API does not default
-it. The runtime's configured baseline applies to every `OCI` profile whether
-or not `baseProfile` is set, so an `OCI` pod is never less restricted than
-the node baseline (`RuntimeDefault` unless the node admin configures
-otherwise), in any PodSecurity level. `baseProfile` accepts only
-`RuntimeDefault` and `Localhost`, so it can only add restrictions, and
+it. An `OCI` pod is never less restricted than its base, in any PodSecurity
+level: the runtime's default profile (`RuntimeDefault` unless the node admin
+configures otherwise) when `baseProfile` is unset or `RuntimeDefault`, or a
+`Localhost` profile that the node admin installed, which PodSecurity already
+trusts for `type: Localhost`. `baseProfile` accepts only those two types, and
 privileged containers cannot use `OCI` at all. Defaulting `baseProfile` to
-`RuntimeDefault` would restate what the runtime already enforces and
-misdescribe nodes whose admin configured a different baseline. A
+`RuntimeDefault` would restate what the runtime already does and
+misdescribe nodes whose admin configured a different default. A
 per-workload-class base such as the `Localhost` profile in Story 3 names a
 file on specific nodes that PodSecurity cannot know about; requiring it is
 the job of admission policy (for example a `ValidatingAdmissionPolicy`
@@ -805,22 +841,23 @@ matching the namespace), not of the built-in levels.
 The relaxation itself is sound once skew no longer undermines it. PSA allows
 `Localhost` for `restricted` and `baseline` on the assumption that
 the node admin controls which profiles are available on disk; it verifies
-neither file presence nor content. The trust model for `OCI` is stronger: the
-CRI runtime merges every pulled profile with the node's baseline via
+neither file presence nor content. The trust model for `OCI` is at least as
+strong: the CRI runtime merges every pulled profile with its base via
 intersection (see [Profile Merging](#profile-merging)), so the effective
-profile cannot be more permissive than the baseline regardless of the OCI
-profile's content. A `Localhost` profile can be more permissive than the
-runtime default; an `OCI` profile that is effectively unconfined is
-constrained to the baseline. Different nodes can use different baselines via
-per-node runtime configuration, the same way different nodes can have
-different files on disk. No coordination between PSA and the CRI runtime is
-needed.
+profile cannot be more permissive than the base regardless of the OCI
+profile's content. With the runtime default as the base, an `OCI` profile
+that is effectively unconfined is constrained to the default; with a
+`Localhost` base, it is constrained to a profile the node admin installed,
+which is exactly what PSA trusts for `type: Localhost`. Different nodes can
+use different defaults via per-node runtime configuration, the same way
+different nodes can have different files on disk. No coordination between
+PSA and the CRI runtime is needed.
 
 The CRI runtime's signature verification infrastructure (for example,
 CRI-O's system-wide `/etc/containers/policy.json`) provides an additional
 layer of control over profile artifact pulls. Cluster administrators can
 also use admission webhooks (Kyverno, OPA/Gatekeeper) to restrict which
-OCI references are allowed. The `oci.reference` field is part of the pod
+OCI references are allowed. The `oci.ref` field is part of the pod
 spec, making it visible to all admission controllers. This allows policies
 such as "only allow profiles from
 `registry.internal.example.com/approved-profiles/`" or "require the
@@ -832,54 +869,65 @@ Extend the CRI `SecurityProfile` message in `runtime/v1/api.proto` with a new
 `OCI` profile type:
 
 ```protobuf
+// A security profile which can be used for sandboxes and containers.
 message SecurityProfile {
+    // Available profile types.
     enum ProfileType {
+        // The container runtime default profile should be used.
         RuntimeDefault = 0;
+        // Disable the feature for the sandbox or the container.
         Unconfined = 1;
+        // A pre-defined profile on the node should be used.
         Localhost = 2;
+        // A profile pulled with PullSecurityProfile should be used, merged
+        // with its base profile (see base_profile). If the profile is not
+        // present, runtimes must fail the call and must not pull it. Only
+        // supported for seccomp: runtimes must reject OCI in the apparmor
+        // field with InvalidArgument.
+        // Feature gate: SecurityProfileOCI
         OCI = 3;
     }
+    // Indicator which `ProfileType` should be applied.
     ProfileType profile_type = 1;
-
-    // localhost_ref is the profile path on the node when profile_type is
-    // Localhost.
+    // Indicates that a pre-defined profile on the node should be used.
+    // Must only be set if `ProfileType` is `Localhost`.
     // For seccomp, it must be an absolute path to the seccomp profile.
-    // For AppArmor, this field is the AppArmor profile name.
+    // For AppArmor, this field is the AppArmor `<profile name>/`
     string localhost_ref = 2;
-
-    // oci_ref is the digest-pinned reference of a previously pulled
-    // OCI security profile (from PullSecurityProfile).
-    // The runtime uses this to look up the cached profile content.
-    // Must be set when profile_type is OCI.
+    // oci_ref is the canonical, digest-pinned reference of a profile pulled
+    // with PullSecurityProfile, as written in the pod spec and passed in
+    // image.image of the pull (for example
+    // "registry.example.com/profile@sha256:abc123...").
+    // Must be set if `ProfileType` is `OCI`, and must not be set for other
+    // profile types: runtimes reject it with InvalidArgument.
     string oci_ref = 3;
-
-    // base_profile specifies an optional base profile to merge with
-    // the OCI profile via intersection. Only meaningful when profile_type
-    // is OCI; runtimes must ignore this field for other profile types.
-    // The runtime merges the OCI profile, the base_profile, and its own
-    // configured baseline, producing an effective profile that permits an
-    // operation only if all inputs permit it.
-    // When unset, the runtime uses its configured default baseline only.
+    // base_profile is the optional base profile of an `OCI` profile. The
+    // effective profile is the intersection of the OCI profile and the base
+    // profile, so it permits an operation only if both do. If base_profile is
+    // not set, the base is the runtime default profile; runtimes must check
+    // that it is set, because its zero value selects RuntimeDefault as well.
+    // Must not be set for other profile types: runtimes reject it with
+    // InvalidArgument.
     SecurityProfileBase base_profile = 4;
 }
 
-// SecurityProfileBase specifies a base profile for layered OCI profile
-// enforcement. Used in SecurityProfile.base_profile when the pod spec
-// includes a baseProfile alongside the OCI reference.
+// SecurityProfileBase is the base profile of an OCI security profile. A
+// Localhost base takes the place of the runtime default profile, so a node
+// administrator can provide a looser or a stricter base than the default.
 message SecurityProfileBase {
+    // Available base profile types.
     enum BaseType {
-        // BaseTypeUnspecified means the runtime uses its configured default
-        // baseline. This is equivalent to not setting base_profile at all;
-        // the kubelet never sends it and omits base_profile instead, so
-        // runtimes only need to treat it as unset.
-        BaseTypeUnspecified = 0;
-        RuntimeDefault = 1;
-        Localhost = 2;
+        // The container runtime default profile is used as the base.
+        RuntimeDefault = 0;
+        // A pre-defined profile on the node is used as the base.
+        Localhost = 1;
     }
+    // Indicator which `BaseType` should be applied.
     BaseType type = 1;
-
-    // localhost_ref is the profile path on the node when type is Localhost.
-    // Same semantics as SecurityProfile.localhost_ref.
+    // Absolute path to the base profile on the node, with the same semantics
+    // as SecurityProfile.localhost_ref.
+    // Must be set if `BaseType` is `Localhost`, and must not be set for other
+    // base types: runtimes reject it with InvalidArgument.
     string localhost_ref = 2;
 }
 ```
@@ -905,11 +953,16 @@ release. The containerd side, including the known proxies, is tracked in
 [containerd#13546][containerd-13546].
 
 A dedicated RPC is used instead of reusing `PullImage` because profile
-artifacts have different semantics: they require media type validation (only
-seccomp or AppArmor config types are accepted), content validation (valid
-seccomp JSON), size enforcement (the 1 MiB default limit is far smaller than
-container images), and single-layer verification. These constraints do not
-apply to container images and would complicate `PullImage` if added there.
+artifacts have different semantics: runtimes validate them as profiles (the
+recommended format in [OCI Artifact Format](#oci-artifact-format) has a
+typed config media type, a single raw layer, a size limit far below
+container images, and content that must parse as a profile), and a pulled
+profile is applied by reference rather than unpacked into a filesystem.
+These constraints do not apply to container images and would complicate
+`PullImage` if added there. The CRI does not define the artifact format:
+accepted formats and their validation are up to the runtime, so that
+`critest` does not have to test them and the format can evolve without a CRI
+change.
 The request includes a `profile_kind` field so the runtime can validate the
 artifact's config media type matches the expected security mechanism early,
 before extracting content. See
@@ -935,59 +988,101 @@ in a later CRI version if demand materializes.
 service ImageService {
     // ...existing RPCs...
 
-    // PullSecurityProfile pulls a security profile from a registry and
-    // caches it locally. How the content is stored is up to the runtime.
-    // The returned digest-pinned reference is passed to RunPodSandbox or
-    // CreateContainer via SecurityProfile.oci_ref.
+    // PullSecurityProfile pulls a security profile with authentication config
+    // into the runtime's storage. If the profile is already present, the
+    // runtime must not contact the registry, unless a signature policy that
+    // did not apply to the earlier pull requires it. The profile is applied by
+    // passing its reference in SecurityProfile.oci_ref. Accepted artifact
+    // formats and their validation are up to the runtime.
+    // Pulled profiles are not images: they must only be returned by
+    // ListSecurityProfiles, and the kubelet manages their lifecycle with
+    // RemoveSecurityProfile.
+    // Errors use the well-known messages RegistryUnavailable,
+    // SignatureValidationFailed, or, for permanent rejections of the request
+    // or the artifact, SecurityProfileInvalid as the prefix of the gRPC status
+    // message. The kubelet retries all errors with backoff except
+    // SecurityProfileInvalid and the gRPC code Unimplemented.
     rpc PullSecurityProfile(PullSecurityProfileRequest)
         returns (PullSecurityProfileResponse) {}
+    // ListSecurityProfiles lists the profiles pulled with PullSecurityProfile.
+    rpc ListSecurityProfiles(ListSecurityProfilesRequest)
+        returns (ListSecurityProfilesResponse) {}
+    // RemoveSecurityProfile removes a profile pulled with PullSecurityProfile.
+    // This call is idempotent, and must not return an error if the profile has
+    // already been removed. Containers already running with the profile are
+    // not affected.
+    rpc RemoveSecurityProfile(RemoveSecurityProfileRequest)
+        returns (RemoveSecurityProfileResponse) {}
+}
+
+// SecurityProfileKind identifies the security mechanism of a profile pulled
+// with PullSecurityProfile.
+enum SecurityProfileKind {
+    // Unspecified kind. Runtimes reject it like an unsupported kind.
+    SecurityProfileKindUnspecified = 0;
+    // A seccomp profile.
+    Seccomp = 1;
 }
 
 message PullSecurityProfileRequest {
-    // image is the OCI reference of the profile, using the same
-    // ImageSpec message as PullImage. image.image holds the digest-pinned
-    // reference (e.g., "registry.example.com/profile@sha256:abc123..."),
-    // image.user_specified_image holds the reference as written in the pod
-    // spec, and image.runtime_handler selects the runtime handler. In
-    // containerd, the runtime handler determines which snapshotter is used
-    // for pulls, and snapshotters proxy ImageService to obtain registry
-    // credentials, so carrying the handler here keeps profile pulls on the
-    // same credential path as image pulls.
+    // Spec of the profile. image.image and image.user_specified_image both
+    // hold the canonical, digest-pinned reference from the pod spec, and
+    // image.runtime_handler selects the runtime handler, as for PullImage.
     ImageSpec image = 1;
-
-    // auth contains registry authentication credentials, resolved by the
-    // kubelet from imagePullSecrets, service account credentials, and
-    // credential providers. Uses the same AuthConfig message as the PullImage
-    // RPC.
+    // Authentication configuration for pulling the profile, resolved by the
+    // kubelet the same way as for PullImage.
     AuthConfig auth = 2;
-
-    // sandbox_config holds the pod sandbox configuration, which is used to
-    // pull the artifact in the context of the pod sandbox, matching PullImage.
+    // Config of the PodSandbox, which is used to pull the profile in
+    // PodSandbox context.
     PodSandboxConfig sandbox_config = 3;
-
-    // profile_kind identifies the expected security mechanism. Alpha uses
-    // Seccomp only; AppArmor is reserved for beta. The runtime uses this to
-    // validate that the pulled artifact's config media type matches the
-    // expected kind and to reject mismatches early (e.g., an AppArmor
-    // artifact referenced from a seccomp field).
-    // SecurityProfileKindUnspecified is rejected with InvalidArgument.
+    // profile_kind identifies the expected security mechanism. The runtime
+    // rejects artifacts that do not hold a profile of this kind. Kinds the
+    // runtime does not support are rejected with gRPC code InvalidArgument
+    // and the SecurityProfileInvalid well-known error message.
     SecurityProfileKind profile_kind = 4;
 }
 
-enum SecurityProfileKind {
-    SecurityProfileKindUnspecified = 0;
-    Seccomp = 1;
-    // AppArmor is reserved for beta; runtimes reject it with
-    // InvalidArgument until AppArmor support is implemented.
-    AppArmor = 2;
-}
-
 message PullSecurityProfileResponse {
-    // cached is true if the profile was already present in the runtime's
-    // storage and no registry request was made. The kubelet uses it to
-    // label its pull duration metric.
+    // cached is true if the profile was already present and the runtime made
+    // no registry request, so the credentials of this request were not
+    // checked. It is false if the registry served or verified the profile for
+    // this request. The kubelet calls PullSecurityProfile before a pod
+    // starts and again before each container that uses the profile is
+    // created, emits pull events only for actual pulls, and labels its pull
+    // duration metric with it. The response exists only for a successful call: an
+    // error, whether RegistryUnavailable, SignatureValidationFailed, or
+    // SecurityProfileInvalid, means the profile cannot be used for this
+    // request, whether or not it is present.
     bool cached = 1;
 }
+
+message ListSecurityProfilesRequest {}
+
+// SecurityProfileInfo describes a profile pulled with PullSecurityProfile.
+// The kubelet considers a profile in use if a pod references its digest or
+// one of its refs.
+message SecurityProfileInfo {
+    // digest identifies the profile in the runtime's storage (for example
+    // "sha256:abc123..."). Its algorithm may differ from the digests of refs.
+    string digest = 1;
+    // refs are the image.image values of all PullSecurityProfile calls that
+    // resolved to the profile, including calls that found it already present.
+    repeated string refs = 2;
+    // size is the size of the profile in the runtime's storage, in bytes.
+    uint64 size = 3;
+}
+
+message ListSecurityProfilesResponse {
+    // List of pulled security profiles.
+    repeated SecurityProfileInfo profiles = 1;
+}
+
+message RemoveSecurityProfileRequest {
+    // digest of the profile to remove, as returned by ListSecurityProfiles.
+    string digest = 1;
+}
+
+message RemoveSecurityProfileResponse {}
 ```
 
 The response carries no reference back. Because references are digest-pinned
@@ -998,29 +1093,45 @@ mirror served the content.
 
 `PullSecurityProfile` has pull-if-not-present semantics. If the
 digest-pinned reference is already present in the runtime's storage, the
-runtime returns it without contacting the registry. See the
+runtime returns it without contacting the registry, unless a signature policy
+that did not apply to the earlier pull requires a check. See the
 [KEP-2535 note](#notesconstraintscaveats) for the credential verification
 consequences of this choice.
 
+`ListSecurityProfiles` and `RemoveSecurityProfile` give the kubelet the
+lifecycle of the content it asked for, the way `ListImages` and `RemoveImage`
+do for images, without mixing profiles into the image list: the image garbage
+collector would otherwise treat profiles as unused images. The kubelet does
+not persist which profiles it pulled, so the runtime's list is the source of
+truth. A profile's `digest` is the runtime's storage key, which may use
+another algorithm than the pod's reference (CRI-O stores profiles under the
+SHA-256 manifest digest while a pod may reference by SHA-512), so `refs`
+records every `image.image` that resolved to the profile, cached hits
+included, and the kubelet treats a profile as in use if a pod references its
+digest or one of its refs (see [Kubelet Behavior](#kubelet-behavior)).
+
 Runtime support is reported through the existing `RuntimeFeatures` message
-returned by the `Status` RPC, so that the kubelet can reject pods at
-admission on nodes whose runtime lacks support (see
-[Kubelet Behavior](#kubelet-behavior)):
+returned by the `Status` RPC, so that the node declares the
+`SecurityProfileOCI` feature only with a supporting runtime and the kubelet
+can reject pods bound to the node directly (see
+[Kubelet Behavior](#kubelet-behavior)). The field is named after the
+mechanism it covers, because AppArmor support will have its own:
 
 ```protobuf
 message RuntimeFeatures {
     // ...existing fields...
 
-    // security_profile_oci is set to true if the runtime supports
-    // the PullSecurityProfile RPC and the OCI profile type in
-    // SecurityProfile.
-    bool security_profile_oci = 4;
+    // seccomp_profile_oci is set to true if the runtime supports the `OCI`
+    // profile type in the seccomp fields of sandboxes and containers, and the
+    // security profile RPCs for the Seccomp kind.
+    // Feature gate: SecurityProfileOCI
+    bool seccomp_profile_oci = 5;
 }
 ```
 
-The CRI runtime is responsible for pulling the artifact, caching it by digest,
-validating its content, and merging it with the base profile and runtime
-baseline when applying the profile in `RunPodSandbox` or `CreateContainer`.
+The CRI runtime is responsible for pulling the artifact, storing it by digest,
+validating its content, and merging it with its base profile when applying
+the profile in `CreateContainer`.
 The kubelet resolves image pull secrets and passes credentials via `AuthConfig`,
 the same way it does for `PullImage`. See [Kubelet Behavior](#kubelet-behavior)
 for the full pull-then-prepare sequencing.
@@ -1030,72 +1141,106 @@ for the full pull-then-prepare sequencing.
 When the kubelet encounters a pod with an `OCI` type security profile:
 
 1. **Admission**: Two kubelet admission checks apply. The Node Declared
-   Features admission check rejects the pod if the kubelet's feature gate is
-   disabled, because the node then does not declare
-   `SecurityProfileOCI` (see
+   Features admission check rejects the pod if the node does not declare
+   `SecurityProfileOCI`, which it does only with the kubelet's feature gate
+   enabled and a runtime that reports `seccomp_profile_oci` (see
    [Version Skew Strategy](#version-skew-strategy)). A dedicated admission
    handler (the same mechanism as the existing AppArmor admit handler)
    rejects the pod with reason `SecurityProfileOCIUnsupported` if the CRI
-   runtime does not report `security_profile_oci` in
-   `RuntimeFeatures`. In both cases the pod transitions to `Failed` and is
-   not retried on this node.
+   runtime does not report `seccomp_profile_oci` in `RuntimeFeatures`, which
+   catches pods bound directly with `nodeName` and runtimes that lost support
+   under a running kubelet. In both cases the pod transitions to `Failed`
+   and is not retried on this node.
 2. **Resolve credentials**: The kubelet resolves pull credentials using the
    same code path as container image pulls: `imagePullSecrets` on the pod
    spec, service account image pull secrets, and any configured credential
    provider plugins (`getPullSecretsForPod` in `pkg/kubelet/kubelet_pods.go`
    and the keyring logic in `pkg/credentialprovider`). Credentials are
-   resolved on every `SyncPod`, so re-pulls and ephemeral container pulls use
-   current credentials even if secrets were rotated after pod creation.
-3. **Pull the profiles**: In `Kubelet.SyncPod`, after pull secrets are
-   resolved and before the runtime manager's `SyncPod` is invoked, the
-   kubelet calls `PullSecurityProfile` once for every unique OCI
-   reference in the pod spec. Uniqueness is determined by the full
-   `oci.reference` string, not by digest alone, because different references
-   may resolve through different registries and require different
-   credentials. This is before DRA resource preparation and
-   sandbox creation, which both happen inside the runtime manager, so a pull
-   failure does not require cleaning up already-prepared resources. The call
-   happens on every `SyncPod`, not only before the sandbox exists; when the
-   artifact is already present the runtime returns immediately without
-   touching the registry, so the steady-state cost is one local RPC per
-   reference per sync. Pulls are subject to the kubelet's image pull
-   throttling (`serializeImagePulls` and `maxParallelImagePulls`) and to
-   `runtimeRequestTimeout`, the standard CRI call timeout, which is
-   appropriate for artifacts capped at 1 MiB. Sharing the throttle means a
-   profile pull occupies an image pull slot; with the default serialized
-   pulls this delays other pulls by the few milliseconds a cached call takes
-   or by one small download. If alpha shows contention, profile pulls can
-   move to a dedicated limit without an API change. The CRI runtime pulls the
+   resolved on every `SyncPod`, so the pulls for restarted and ephemeral
+   containers use current credentials even if secrets were rotated after pod
+   creation.
+3. **Pull the profiles**: For a pod that has not started, one without a
+   sandbox or a container in its cached status, `Kubelet.SyncPod` calls
+   `PullSecurityProfile` once for every unique OCI reference in the pod
+   spec, after pull secrets are resolved and before the runtime manager's
+   `SyncPod` is invoked. Uniqueness is determined by the full `oci.ref`
+   string, not by digest alone, because different references may resolve
+   through different registries and require different credentials. This is
+   before DRA resource preparation and sandbox creation, which both happen
+   inside the runtime manager, so a pull failure does not require cleaning
+   up already-prepared resources, and a permanent rejection can fail the
+   pod before anything was created. Once the pod has started, the runtime
+   manager pulls a container's profile, its own or the inherited pod-level
+   one, right before it creates the container, as it ensures the image, so
+   that a failure holds back only that container and the rest of the pod
+   keeps being synced: crashed containers are restarted and ephemeral
+   containers are added even while one profile cannot be pulled. The
+   container waits with reason `SecurityProfilePullBackOff`,
+   `SecurityProfileRejected` or `ErrSecurityProfilePull`, as a container
+   waits for its image. When the artifact is already present the runtime
+   returns immediately without touching the registry. Profile pulls run
+   through a queue of their own with
+   the limits of the image puller (`serializeImagePulls` and
+   `maxParallelImagePulls`) but without the registry QPS limit, so that a
+   check for a present profile does not wait behind an image download, and
+   they are subject to `runtimeRequestTimeout`, the standard CRI call
+   timeout, which is appropriate for artifacts a runtime caps at about
+   1 MiB. A failed pull backs off like a failed image pull, keyed by pod and
+   reference. The CRI runtime pulls the
    artifact (if not present), checks its media type, size, and layer count,
    decodes the profile with the merge library's `UnmarshalStrict`, and
    validates it with `ValidateArtifact`. Strict decoding refuses what
    `encoding/json` accepts silently and another JSON reader may read
    differently: repeated members, unknown members, members that name a field
    only ignoring case, invalid UTF-8, and data after the profile. No
-   profile-vs-baseline comparison happens at pull time; the merge occurs
-   later at apply time (see [Profile Merging](#profile-merging)).
+   comparison with the base happens at pull time; the merge occurs later at
+   apply time (see [Profile Merging](#profile-merging)).
 4. **Pass to CRI**: The kubelet constructs the `SecurityProfile` message with
    `profile_type = OCI` and `oci_ref` set to the spec reference. If the pod
    spec includes a `baseProfile`, the kubelet populates the
-   `SecurityProfile.base_profile` field with the corresponding type and
-   localhost reference. For `RunPodSandbox`, the pod-level profile and base
-   profile are included. For `CreateContainer`, the container-level profile
-   (or the inherited pod-level profile) and base profile are included.
+   `SecurityProfile.base_profile` field with the corresponding type and, for
+   `Localhost`, the absolute path below the kubelet's seccomp profile
+   directory. For `CreateContainer`, the container-level profile (or the
+   inherited pod-level profile) and base profile are included. The sandbox
+   keeps `RuntimeDefault` in `RunPodSandbox`, as it does today for every
+   profile type ([kubernetes/kubernetes#84623][k8s-84623]); the pod-level
+   profile applies to the containers that do not override it.
 5. **CRI runtime merges and applies the profile**: The runtime looks up the
-   cached OCI profile by digest, loads its configured baseline and, if
-   `base_profile` is specified, the base profile, and merges all inputs via
-   intersection (see
+   stored OCI profile by its reference, loads the base profile (its
+   configured default, or the `Localhost` file that `base_profile` names) and
+   merges the two via intersection (see
    [Profile Merging](#profile-merging)). The effective profile permits an
-   operation only if all input profiles permit it. The runtime applies the
-   merged profile to the container. No pull occurs at this stage.
+   operation only if both permit it. The runtime applies the merged profile
+   to the container. No pull occurs at this stage; a profile that is not
+   present fails the call.
 6. **Container restarts and kubelet restarts**: The spec reference is the
-   only state, so nothing needs to be persisted or recovered. Because step 3
-   runs on every `SyncPod`, a restart is preceded by the same
-   `PullSecurityProfile` call, which returns immediately while the content
-   is present; the runtime may have evicted it in the meantime, and if it is
-   missing, that call re-pulls it by digest before `CreateContainer` runs.
-   Ephemeral containers are added through a later `SyncPod`, so the same step
+   only state, so nothing needs to be persisted or recovered. Every
+   container creation is preceded by the `PullSecurityProfile` call of step
+   3, which returns immediately while the content is present; the kubelet's
+   garbage collection may have removed it in the meantime (below), and if it
+   is missing, that call pulls it again by digest before `CreateContainer`
+   runs. Ephemeral containers are created the same way, so the same step
    covers them.
+7. **Garbage collection**: Every five minutes (the image garbage collection
+   period), once all pod sources are ready and if the runtime reports
+   `seccomp_profile_oci`, the kubelet lists the pulled profiles with
+   `ListSecurityProfiles` and removes with `RemoveSecurityProfile` every
+   profile that no pod in its pod manager has referenced for longer than
+   `imageMaximumGCAge`. The setting defaults to zero, which disables the
+   collector for profiles as it does for images, so that an operator who
+   turned age-based image collection off is not surprised by profiles
+   disappearing. A profile is in use
+   if a pod references its digest or one of its `refs`, because a runtime
+   may store a profile under a digest of another algorithm than the pod's
+   reference. The age counts from the last time a pod referenced the profile,
+   or from the first listing for profiles the kubelet finds already present
+   (after a restart, for example), so a profile is never removed within one
+   maximum age of being seen. The collector is time based rather than disk
+   pressure based like the image garbage collector, because profiles are too
+   small for disk pressure to be the right signal. A removal can race with a
+   pod created during the cycle, whose `PullSecurityProfile` found the
+   profile present just before it was removed; its container creation fails
+   once, and the next sync pulls the profile again.
 
 Profile pulls happen before container image pulls, which occur inside the
 runtime manager's `SyncPod`. Pulling the profiles of a pod concurrently with
@@ -1122,13 +1267,21 @@ sandbox or container creation if the file is missing. `OCI` profiles follow
 the same pattern: pull failures surface during pod sync, before sandbox
 creation. The kubelet treats these the same as container image pull failures:
 the pod remains in `Pending` and the kubelet retries with exponential backoff
-(up to a maximum interval). The kubelet emits `SecurityProfilePulled` events
-on successful pulls and `SecurityProfilePullFailed` events on failures.
+(up to a maximum interval). For a pod that has already started, a failed
+pull before a container is created, after the runtime lost the profile or a
+garbage collection removed it, holds back only that container, which waits
+with the reasons above while the kubelet retries with backoff, and the rest
+of the pod keeps being synced. Running containers are not affected, because
+their profile was loaded when they were created. The kubelet emits
+`SecurityProfilePulled` events for pulls that fetched the profile (`cached`
+is false) and `SecurityProfilePullFailed` events on failures.
 
 If the CRI runtime permanently rejects a profile (for example, an invalid
-media type, corrupt content, or an oversized artifact), the kubelet marks the
-pod as `Failed` with reason `SecurityProfileRejected` rather than retrying
-indefinitely. The precedent is the kubelet's handling of
+media type, corrupt content, or an oversized artifact), the kubelet marks a
+pod that has not started yet as `Failed` with reason
+`SecurityProfileRejected` rather than retrying indefinitely; in a pod that
+has started, only the container that needs the rejected profile waits, with
+reason `SecurityProfileRejected`, until the reference changes. The precedent is the kubelet's handling of
 `VolumeAttachmentLimitExceeded`: `Kubelet.SyncPod` calls `rejectPod` when
 volume setup fails deterministically, before the runtime is involved. Profile
 pulls sit at the same point in `SyncPod`, so the same mechanism applies.
@@ -1158,34 +1311,32 @@ images, that registry's credentials must be added to the pod's
 ### Profile Merging
 
 To ensure that OCI-pulled profiles cannot weaken node security, the CRI
-runtime merges every OCI profile with the node's baseline via intersection.
-The effective profile applied to a container permits an operation only if
-all input profiles permit it. This is the core security guarantee of OCI
-profile distribution: even if a profile is tampered with in transit or a
-registry is compromised, the effective profile is always at least as
-restrictive as the baseline.
+runtime merges every OCI profile with its base via intersection. The
+effective profile applied to a container permits an operation only if both
+input profiles permit it. This is the core security guarantee of OCI profile
+distribution: even if a profile is tampered with in transit or a registry is
+compromised, the effective profile is always at least as restrictive as the
+base, and every base is a node administrator's choice.
 
-**Three-way merge**: The CRI runtime merges up to three profile inputs:
-1. The runtime's configured baseline (RuntimeDefault or an admin-supplied
-   profile on disk, configured via the runtime's own configuration such as
-   CRI-O's `crio.conf` or containerd's `config.toml`)
-2. The pod-spec base profile (optional, specified via
-   `oci.baseProfile` in the pod spec; can be `Localhost` or
-   `RuntimeDefault`)
-3. The OCI profile pulled from the registry
+**Two-way merge**: The CRI runtime merges two inputs:
+1. The base profile: the runtime's configured default (RuntimeDefault, or an
+   admin-supplied profile on disk configured via the runtime's own
+   configuration, such as CRI-O's `seccomp_baseline_profile` in `crio.conf`),
+   unless the pod spec selects a `Localhost` base profile via
+   `oci.baseProfile`, which takes the place of the runtime default. A node
+   admin may want a looser base than the default, and `type: Localhost` alone
+   already allows exactly that profile, so stacking the `Localhost` base on
+   the runtime default would only remove a choice the admin already has.
+2. The OCI profile pulled from the registry
 
 The merge is an intersection: for each security-relevant dimension, the
-effective profile uses the most restrictive setting from any input. The
-result is at least as restrictive as every individual input.
+effective profile uses the most restrictive setting of the two inputs. The
+result is at least as restrictive as each of them.
 
-When the pod spec omits `baseProfile`, the merge is two-way (runtime
-baseline and OCI profile). When `baseProfile` is specified, the merge is
-three-way. The inputs are merged in a fixed order: runtime baseline, then
-pod-spec base profile, then OCI profile. The resulting actions do not depend
-on that order (intersection is commutative and associative), but tie-breaks
-for values that do not affect restrictiveness, such as `errnoRet` and the
-listener settings, resolve in favor of the earlier input, so the runtime
-baseline wins.
+The resulting actions do not depend on the order of the inputs (intersection
+is commutative), but tie-breaks for values that do not affect
+restrictiveness, such as `errnoRet` and the listener settings, resolve in
+favor of the base profile.
 
 **Why merge instead of subset-and-reject**: With subset validation, the
 runtime rejects any OCI profile that is more permissive than the baseline
@@ -1215,7 +1366,7 @@ republished.
   when no tracer is attached, and runc refuses to start a container that
   uses `SCMP_ACT_NOTIFY` without a listener. Because OCI profiles cannot
   supply a listener, `SCMP_ACT_NOTIFY` is rejected in OCI profiles at pull
-  validation; a runtime baseline that uses it keeps its own listener. The
+  validation; a base profile that uses it keeps its own listener. The
   top-level `defaultAction` is merged by the same restrictiveness ordering as
   per-syscall actions. When argument filters are present and the intersection
   cannot be expressed in the OCI format, the merge is conservative and falls
@@ -1250,15 +1401,14 @@ republished.
   `valueTwo` is only read for `SCMP_CMP_MASKED_EQ` and is ignored for every
   other operator. When multiple inputs specify the same action for a syscall
   (for example, both use `SCMP_ACT_ERRNO`), the `errnoRet` value comes from
-  the earliest input in merge order: the runtime baseline, then the pod-spec
-  base profile, then the OCI profile. `defaultErrnoRet` follows the same rule.
+  the base profile. `defaultErrnoRet` follows the same rule.
   Top-level `flags` are merged by what they do, so that the effective profile
-  never loosens the baseline: `SECCOMP_FILTER_FLAG_SPEC_ALLOW`, which disables
+  never loosens the base: `SECCOMP_FILTER_FLAG_SPEC_ALLOW`, which disables
   the Speculative Store Bypass mitigation, is present only if every input sets
   it, while `SECCOMP_FILTER_FLAG_LOG`, which adds audit logging, is present if
   any input sets it. An empty list means "no flags". `listenerPath`,
   `listenerMetadata` and `SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV` belong to
-  the node-local listener and are taken from the runtime baseline only; OCI
+  the node-local listener and are taken from the base profile only; OCI
   profiles that set them are rejected at pull validation, as are `errnoRet`
   values above the kernel's maximum errno.
 - **AppArmor (beta)**: The merge operates on the structured AppArmor profile
@@ -1312,23 +1462,25 @@ creation time (`RunPodSandbox`/`CreateContainer`), not at pull time
 (`PullSecurityProfile`). The pull RPC fetches and caches the raw OCI
 artifact with content validation (valid seccomp JSON, correct media type,
 size limits, single-layer enforcement). The merge happens when the runtime
-applies the profile, using the cached OCI artifact, the base profile from the
-CRI message, and the runtime's configured baseline. This allows the same
-cached OCI artifact to be merged with different base profiles for different
-pods, and allows baseline changes to take effect without re-pulling
-artifacts. Because the pull path runs the merge library's validation on
-every artifact and runtimes validate their configured baseline when loading
+applies the profile, using the stored OCI artifact and the base profile: the
+runtime's configured default, or the `Localhost` file named in the CRI
+message. This allows the same stored OCI artifact to be merged with different
+base profiles for different pods, and allows changes to the runtime default
+to take effect without re-pulling artifacts. Because the pull path runs the
+merge library's validation on every artifact and runtimes validate their
+configured default when loading
 configuration, the merge at apply time cannot fail on profile content. A
 failure there indicates a runtime bug and surfaces through the existing
 sandbox or container creation error path (`FailedCreatePodSandBox` or
 `Failed` events, retry with backoff).
 
-**Per-node control**: Each node's CRI runtime has its own baseline profile
-configuration. Different nodes can use different baselines, the same way
-different nodes can have different `Localhost` profile files on disk.
-The runtime's configured baseline is the absolute floor; no pod spec can
-weaken it. The pod-spec `baseProfile` adds per-workload-class restrictions
-on top of the runtime baseline.
+**Per-node control**: Each node's CRI runtime has its own default profile
+configuration, and different nodes can use different defaults, the same way
+different nodes can have different `Localhost` profile files on disk. The
+runtime default is the base of every OCI profile that does not select a
+`Localhost` base; a `Localhost` base replaces it, and which `Localhost`
+profiles exist on a node is the admin's decision, as for `type: Localhost`.
+No pod spec can weaken either: an OCI profile only ever tightens its base.
 
 #### Observability
 
@@ -1336,12 +1488,12 @@ When the merge constrains the OCI profile (the effective
 profile is more restrictive than the OCI profile alone), the CRI runtime
 logs the constrained dimensions at the `warning` level. The log entry
 includes the container name, the OCI profile reference, and a summary of
-which operations were constrained (e.g., "syscall X denied by runtime
-baseline", "capability Y removed by base profile"). This gives
+which operations were constrained (e.g., "syscall X denied by the base
+profile"). This gives
 administrators a clear signal when pods experience unexpected EPERM errors
 due to merge constraints, and it is what answers "why does my profile not
-allow X": X was removed by the node baseline or by the base profile, and the
-entry names which one. Conservative argument filter denials (where the
+allow X": X was removed by the base profile, and the entry names which base
+(the runtime default or the `Localhost` file). Conservative argument filter denials (where the
 intersection cannot be computed precisely) and architectures dropped from the
 effective profile (where 32-bit argument comparison or `socketcall`/`ipc`
 routing would otherwise let it permit more than an input) are also logged. CRI
@@ -1385,8 +1537,11 @@ This KEP documents these media types but does not define them. Both use the
 types; the `vnd.cncf.` names are owned by the publishing projects (SPO and
 CRI-O), and their registration under the IANA vendor tree is a beta
 criterion so that the strings are fixed before the feature is on by
-default. The list of accepted config media types is part of the CRI contract
-documented in `api.proto`. SPO publishes seccomp artifacts with the typed
+default. The CRI does not define the artifact format: accepted formats and
+their validation are up to the runtime (see
+[CRI API Changes](#cri-api-changes)), and this section is the format that
+Kubernetes recommends and that SPO publishes and CRI-O accepts. SPO
+publishes seccomp artifacts with the typed
 config media type since [security-profiles-operator#3421][spo-3421] (merged
 2026-09-10); before that it used the generic
 `application/vnd.unknown.config.v1+json`, and CRI-O's annotation-based
@@ -1394,7 +1549,7 @@ seccomp artifact support does not validate the config media type at all.
 CRI-O accepts the typed media type as part of [cri-o#10037][crio-10037], and
 the e2e tests for this feature use artifacts published with it (see
 [Infrastructure Needed](#infrastructure-needed-optional)). Artifacts
-published with the generic config media type are rejected by
+published with the generic config media type are rejected by CRI-O's
 `PullSecurityProfile` and must be republished; this is a one-time
 migration for early adopters of the annotation-based mechanism.
 
@@ -1428,7 +1583,7 @@ content formats are:
   which is the abstract format that SPO's `AppArmorProfile` API uses:
   `executable`, `filesystem`, `network`, and `capabilities` rule sets. Raw
   AppArmor policy language is not accepted because it cannot be merged with
-  the baseline (see [Profile Merging](#profile-merging)). The format is
+  the base profile (see [Profile Merging](#profile-merging)). The format is
   expressive enough for beta if it can represent the default AppArmor
   profiles shipped by containerd and CRI-O and the example profiles in the
   SPO repository. If it cannot, AppArmor support stays deferred rather than
@@ -1467,20 +1622,25 @@ required.
   profile types with an explicit error (prerequisite fix, not gated by this
   feature); CRI `SecurityProfile` message construction with OCI references
   and base profiles
-- `pkg/apis/core/validation`: the new `OCI` profile type, `oci` field,
-  digest-only reference rule, `baseProfile` rules, and the privileged
-  container rule
-- `pkg/api/pod`: drop-disabled-fields behavior for `oci` when the feature
-  gate is off
+- `pkg/apis/core/validation`: the gate check on the new `OCI` profile type
+  and the privileged container rule; `pkg/apis/core/v1`: the custom
+  validators of the reference grammar and the base profile path;
+  `test/declarative_validation/core/pod`: the declarative `oci` rules
+  (union, required, length, enum) at the pod, container, init container and
+  ephemeral container locations
+- `pkg/api/pod`: the validation option that allows `OCI` when the feature
+  gate is on or the old pod spec already uses it, and that nothing is
+  dropped from the spec
 - `k8s.io/pod-security-admission/policy` (beta): the new versioned
   `baseline` and `restricted` seccomp checks accept `OCI`, and older check
   versions keep rejecting it
 - `pkg/kubelet`: credential resolution for artifact pulls, the admission
-  handler for runtime feature support, and terminal versus transient error
-  classification
+  handler for runtime feature support, terminal versus transient error
+  classification, the dedicated pull queue and its backoff, the sync paths
+  of started and not yet started pods, and garbage collection
 - `k8s.io/component-helpers/nodedeclaredfeatures/features/securityprofileoci`:
-  feature discovery from the kubelet's gate, `MaxVersion`, and inference from
-  pods with `OCI` profiles
+  feature discovery from the kubelet's gate and the runtime feature, and
+  inference from pods with `OCI` profiles
 - Profile merge library ([security-profiles-merger][spm]): seccomp merge
   across architectures, default actions, per-syscall rules, and argument
   filters (including conservative denial when intersection is unprovable),
@@ -1492,39 +1652,43 @@ required.
 - API server integration tests (`test/integration`) for feature gate
   enablement and disablement: `OCI` is rejected with the gate off, accepted
   with the gate on, and existing objects retain the field across a gate flip
-- API validation rejects tag references and short names in `oci.reference`
+- API validation rejects tag references and short names in `oci.ref`, and
+  accepts both base profile types
 - PodSecurity integration tests: `baseline` and `restricted` keep rejecting
   `OCI` during alpha; the new check versions that accept it are covered when
   they land in beta
-- Scheduler integration tests verifying that pods with `OCI` profiles are only
-  placed on nodes declaring the feature
+- The scheduler path is covered by the generic Node Declared Features
+  filter integration test; a feature-specific scheduler test was dropped on
+  SIG Scheduling's request, since the feature's inference is unit-tested
 
 ##### CRI conformance tests (critest)
 
-- Validate that `RuntimeFeatures` reports `security_profile_oci`
-- Validate that `PullSecurityProfile` correctly pulls and caches OCI
-  profiles and that the reference from the pod spec is accepted in
-  `SecurityProfile.oci_ref` afterwards
+- Validate that `RuntimeFeatures` reports `seccomp_profile_oci`
+- Validate that `PullSecurityProfile` pulls and stores OCI profiles and that
+  the reference from the pod spec is accepted in `SecurityProfile.oci_ref`
+  afterwards
 - Validate that the CRI runtime accepts the `OCI` profile type in
   `SecurityProfile` messages for seccomp, referencing a previously pulled
-  digest
-- Verify that the runtime rejects artifacts with invalid media types
-- Verify that the runtime enforces the size limit and rejects oversized
-  artifacts
-- Verify that the runtime rejects artifacts with multiple layers
-- Verify that the runtime rejects OCI profiles that use `SCMP_ACT_NOTIFY`,
-  set listener fields, or exceed the per-syscall entry cap
+  digest, and fails container creation for a profile that is not present
 - Verify that a second pull of the same reference reports `cached`
-- Verify that the `profile_kind` field triggers rejection when the artifact's
-  config media type does not match the expected security mechanism
-- Verify that the runtime correctly merges an OCI profile with the runtime
-  baseline via intersection, producing an effective profile that is at least
-  as restrictive as the baseline
-- Verify that the runtime correctly merges an OCI profile with a pod-spec
-  base profile (Localhost) and the runtime baseline (three-way merge)
+- Verify that `ListSecurityProfiles` lists a pulled profile with its digest
+  and refs, and that `RemoveSecurityProfile` removes it and is idempotent
+- Verify that `oci_ref` or `base_profile` on another profile type, and
+  `localhost_ref` on a `RuntimeDefault` base, are rejected with
+  `InvalidArgument`
+- Verify that an unsupported `profile_kind` is rejected with
+  `InvalidArgument` and the `SecurityProfileInvalid` message
+- Verify that the runtime merges an OCI profile with its base via
+  intersection, with the runtime default and with a `Localhost` base
+  profile, producing an effective profile that is at least as restrictive
+  as both inputs
 - Verify that the runtime returns the well-known `RegistryUnavailable` error
   for unreachable registries, `SecurityProfileInvalid` for rejected
   artifacts, and a retryable error for invalid credentials
+
+The artifact format is not part of the CRI contract, so its checks (config
+media type, single layer, size limit, `SCMP_ACT_NOTIFY`, listener fields,
+per-syscall caps) are the runtime's own tests rather than `critest` cases.
 
 ##### e2e tests
 
@@ -1536,16 +1700,22 @@ running in a dedicated CRI-O job
 images. The tests cover:
 
 - Pull a seccomp profile from an OCI registry and apply it to a container
-- Verify that a static pod with an `OCI` profile pulls using node-level
-  credential providers
-- Verify that pull failures result in appropriate pod events
+- Verify that a static pod with an `OCI` profile is pulled and applied
+  without the API server validating its manifest (node-level credential
+  providers for static pods: follow-up)
+- Verify that pull failures result in appropriate pod events and keep the
+  pod `Pending`, and that transient failures are retried (CRI proxy)
 - Verify caching behavior (second pod using the same profile starts without
   re-pulling)
-- Verify behavior with invalid or oversized artifacts
-- Verify that an OCI profile more permissive than the baseline is silently
-  constrained by the merge (effective profile equals the baseline)
+- Verify that an artifact the runtime rejects as not a seccomp profile fails
+  the pod with reason `SecurityProfileRejected` (the published `invalid`
+  artifact, and an injected rejection through the CRI proxy)
+- Verify that an OCI profile more permissive than the runtime default is
+  silently constrained by the merge (effective profile equals the default)
 - Verify layered profiles: OCI profile merged with a Localhost base profile
   produces the correct intersection
+- Verify that an unused profile is removed by garbage collection (slow,
+  serial, with a short `imageMaximumGCAge`)
 
 ### Graduation Criteria
 
@@ -1556,17 +1726,22 @@ images. The tests cover:
   (prerequisite, not gated by this feature; merged for v1.38 as
   [kubernetes/kubernetes#141958][k8s-141958])
 - Feature implemented behind `SecurityProfileOCI` feature gate
-- CRI API extended with the `OCI` profile type, the `PullSecurityProfile`
-  RPC, the `security_profile_oci` runtime feature, and the
-  `SecurityProfileInvalid` well-known error
+- CRI API extended with the `OCI` profile type, the `PullSecurityProfile`,
+  `ListSecurityProfiles` and `RemoveSecurityProfile` RPCs, the
+  `seccomp_profile_oci` runtime feature, and the `SecurityProfileInvalid`
+  well-known error (merged for v1.38 as
+  [kubernetes/kubernetes#142509][k8s-142509])
+- API types, validation and the node declared feature (merged for v1.38 as
+  [kubernetes/kubernetes#142511][k8s-142511])
 - Kubelet calls `PullSecurityProfile` to pull profiles before DRA
-  preparation and passes the references to `RunPodSandbox`/`CreateContainer`
+  preparation, passes the references to `CreateContainer`, and garbage
+  collects unused profiles ([kubernetes/kubernetes#142515][k8s-142515])
 - Kubelet admission handler rejects pods with `OCI` profiles when the runtime
-  does not report `security_profile_oci`
+  does not report `seccomp_profile_oci`
 - Node Declared Features integration: the kubelet declares the feature when
-  its gate is enabled, the scheduler infers the requirement from pods with
-  `OCI` profiles, and the framework's kubelet admission check rejects such
-  pods when the gate is off
+  its gate is enabled and the runtime reports `seccomp_profile_oci`, the
+  scheduler infers the requirement from pods with `OCI` profiles, and the
+  framework's kubelet admission check rejects such pods when the gate is off
 - Profile merge library ([security-profiles-merger][spm]) implemented with
   seccomp merge support, including architecture-specific syscall handling
   and argument filter intersection, artifact validation
@@ -1574,9 +1749,9 @@ images. The tests cover:
 - The [security-profiles-merger][spm] module moved to a community-owned
   organization with SIG Node owners before any runtime integrates it (done
   2026-09-10, `kubernetes-sigs/security-profiles-merger`)
-- At least one CRI runtime (CRI-O, tracked in [cri-o#10037][crio-10037])
-  implements the pull, merge, and apply flow for seccomp using the merge
-  library
+- At least one CRI runtime (CRI-O, tracked in [cri-o#10037][crio-10037],
+  implementation in [cri-o#10382][crio-10382]) implements the pull, merge,
+  and apply flow for seccomp using the merge library
 - Initial e2e tests for seccomp OCI artifacts, including profile merge tests
   and layered profile tests
 
@@ -1596,9 +1771,6 @@ Required before the feature gate is enabled by default:
   because the API server cannot rely on an older kubelet rejecting an
   unknown profile type (see
   [Kubernetes API Changes](#kubernetes-api-changes)).
-- `ListSecurityProfiles` and `RemoveSecurityProfile` RPCs added and kubelet
-  garbage collection of pulled profiles implemented, so that unreferenced
-  profiles do not accumulate on nodes.
 - KEP-2535 credential verification extended to profile pulls (see
   [Notes/Constraints/Caveats](#notesconstraintscaveats)).
 - Config media types registered under the IANA vendor tree by the
@@ -1613,6 +1785,9 @@ Planned during beta, each gated on its own readiness:
   AppArmor check updated, and pull, merge, render, load, and unload
   implemented and tested in at least one runtime.
 - Profile merge library adopted by both CRI-O and containerd.
+- A `cached` field on `PullImageResponse` evaluated, so that images and
+  profiles can share the KEP-2535 ensure-secret logic; the profile RPC has
+  the field from alpha (see [CRI API Changes](#cri-api-changes)).
 - Merge constraints surfaced through the CRI so that the kubelet can emit a
   pod event, and an evaluation of reporting the effective profile (or the
   dimensions the merge constrained) in the container status (see
@@ -1715,9 +1890,10 @@ This feature involves coordination between the API server and the kubelet.
   only once every kubelet is at v1.38 or later.
 - **Old API server, new kubelet**: The API server rejects `OCI` profile types
   at validation. Pods using this feature cannot be created. This is safe.
-- **CRI version skew**: A CRI runtime that does not support the RPC does not
-  report `security_profile_oci` in `RuntimeFeatures`, so the
-  kubelet's admission handler rejects pods that use it (see
+- **CRI version skew**: A CRI runtime that does not support the RPCs does not
+  report `seccomp_profile_oci` in `RuntimeFeatures`, so the node does not
+  declare the feature and the scheduler does not place such pods there; the
+  kubelet's admission handler rejects pods bound to the node directly (see
   [Kubelet Behavior](#kubelet-behavior)). If a runtime nevertheless returns
   `Unimplemented` (for example, a runtime that reported the feature but was
   downgraded underneath a running kubelet), the kubelet treats this as a
@@ -1727,12 +1903,13 @@ This feature involves coordination between the API server and the kubelet.
 
 [Node Declared Features (KEP-5328)][ndf] is GA since v1.37 and this feature
 uses it from alpha. The kubelet declares `SecurityProfileOCI` in
-`node.status.declaredFeatures` when its feature gate is enabled. Declared
-features must be derivable from feature gates and static kubelet
-configuration alone, so that autoscalers can predict them for nodes that do
-not exist yet; CRI runtime support is therefore deliberately not part of the
-declaration. The feature sets `MaxVersion` to the GA release plus the
-supported kubelet skew, as the framework requires. The scheduler infers the
+`node.status.declaredFeatures` when its feature gate is enabled and the
+runtime reports `seccomp_profile_oci`. The framework records both as the
+feature's requirements (the gate and the runtime feature), so that
+autoscalers can derive the declaration for nodes that do not exist yet from
+the planned gates and runtime, as they do for the user namespaces and mount
+options features. `MaxVersion` is unset until GA, when it becomes the GA
+release plus the supported kubelet skew, as the framework requires. The scheduler infers the
 requirement from any `seccompProfile.type: OCI` in the pod spec and filters
 out nodes that do not declare the feature; a pod with no matching node stays
 `Pending` with an event naming the missing feature. The framework's kubelet
@@ -1749,21 +1926,28 @@ with an `OCI` profile added to a pod already running on an old kubelet is
 not caught either. That is why the fallthrough fix, not Node Declared
 Features, is what makes those paths safe (see
 [Version Skew Strategy](#version-skew-strategy)). Runtime
-support is checked separately at kubelet admission via `RuntimeFeatures` (see
+support is also checked at kubelet admission via `RuntimeFeatures` (see
 [Kubelet Behavior](#kubelet-behavior)): a node whose kubelet has the gate
-enabled but whose runtime lacks support is schedulable and fails such pods at
-admission, the same as the existing AppArmor admit handler on nodes without
-AppArmor.
+enabled but whose runtime lacks support does not declare the feature, so the
+scheduler does not select it, and the admission handler, the same mechanism
+as the existing AppArmor admit handler on nodes without AppArmor, fails pods
+bound to it directly.
 
-Scheduler awareness of a node's baseline profile configuration is another
+Scheduler awareness of a node's default profile configuration is another
 potential optimization: the scheduler could avoid placing pods on nodes whose
-baseline profile is incompatible with the referenced OCI profile. This could
+default profile is incompatible with the referenced OCI profile. This could
 be expressed via node declared features or node labels derived from the
 runtime configuration. This is out of scope for alpha but is a natural
 extension of the node declared features integration.
 
 [ndf]: https://github.com/kubernetes/enhancements/issues/5328
 [k8s-141958]: https://github.com/kubernetes/kubernetes/pull/141958
+[k8s-84623]: https://github.com/kubernetes/kubernetes/issues/84623
+[k8s-142509]: https://github.com/kubernetes/kubernetes/pull/142509
+[k8s-142511]: https://github.com/kubernetes/kubernetes/pull/142511
+[k8s-142515]: https://github.com/kubernetes/kubernetes/pull/142515
+[k8s-143646]: https://github.com/kubernetes/kubernetes/pull/143646
+[crio-10382]: https://github.com/cri-o/cri-o/pull/10382
 
 ## Production Readiness Review Questionnaire
 
@@ -1779,10 +1963,11 @@ extension of the node declared features integration.
 
 No. The feature adds a new profile type (`OCI`). Existing profile types and
 their behavior are unchanged. Pods that do not use OCI profile references
-are unaffected. The CRI runtime uses RuntimeDefault as the implicit baseline
-for profile merging. Node admins can optionally configure a different
-baseline via the runtime's configuration. The only visible change on nodes
-that do not run OCI-profile pods is that kubelets with the gate enabled add
+are unaffected. The CRI runtime uses its default profile as the base for
+profile merging unless a pod selects a `Localhost` base. Node admins can
+optionally configure a different default via the runtime's configuration.
+The only visible change on nodes that do not run OCI-profile pods is that
+kubelets with the gate enabled and a supporting runtime add
 `SecurityProfileOCI` to `node.status.declaredFeatures`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -1827,8 +2012,8 @@ their controllers. No data migration is needed.
 ###### Are there any tests for feature enablement/disablement?
 
 Unit tests verify that API validation rejects or accepts `OCI` profile types
-based on the feature gate state and that disabled fields are dropped from new
-objects but retained on existing ones, for pods and for workload templates.
+based on the feature gate state or the old object's use of the type, for pods
+and for workload templates, and that nothing is dropped from the spec.
 API server integration tests exercise the gate flip sequence (enabled,
 disabled, re-enabled) against stored pods and Deployments, including updates
 to a stored Deployment while the gate is disabled.
@@ -1849,8 +2034,9 @@ downgrade case.
 
 ###### What specific metrics should inform a rollback?
 
-- `kubelet_security_profile_pull_errors_total` increasing, indicating
-  registry connectivity or authentication problems.
+- `kubelet_security_profile_pull_duration_seconds` with a `result` other
+  than `success` increasing, indicating registry connectivity or
+  authentication problems.
 - `kubelet_security_profile_pull_duration_seconds` showing high
   latency, indicating registry performance issues affecting pod startup.
 
@@ -1870,8 +2056,8 @@ No.
   is emitted by the kubelet whenever it calls `PullSecurityProfile`.
   A non-zero count indicates active use.
 - API: Pods with `seccompProfile.type: OCI` can be queried directly.
-- Node status: nodes whose kubelet supports the feature list
-  `SecurityProfileOCI` in `status.declaredFeatures`.
+- Node status: nodes whose kubelet has the gate enabled and whose runtime
+  supports the feature list `SecurityProfileOCI` in `status.declaredFeatures`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1879,10 +2065,12 @@ No.
   - Event Reason: `SecurityProfilePulled` (successful pull),
     `SecurityProfilePullFailed` (failed pull)
 - [x] Other (treat as last resort)
-  - Details: The digest in `oci.reference` identifies the applied content
-    exactly. Pull failures surface as error messages in container status,
-    and the CRI runtime's verbose container status (`crictl inspect`) shows
-    the effective profile in the runtime spec.
+  - Details: The digest in `oci.ref` identifies the applied content
+    exactly. Pull failures surface as pod events and in the `result` label
+    of the pull duration metric, not in the container status (a container
+    status reason is a follow-up); the CRI runtime's verbose container
+    status (`crictl inspect`) shows the effective profile in the runtime
+    spec.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1896,15 +2084,13 @@ runtime implementations. Cached profile lookups should add less than 10 ms.
 - [x] Metrics
   - Metric name: `kubelet_security_profile_pull_duration_seconds`
   - Labels: `cached` (`true` when the runtime served the artifact from local
-    storage, as reported in the CRI response)
+    storage, as reported in the CRI response) and `result` (`success` or
+    the failure reason, one of `registry_unavailable`,
+    `signature_validation_failed`, `security_profile_invalid`,
+    `unauthenticated` and `other`), so that the error rate is the share of
+    observations whose result is not `success` and no separate counter is
+    needed
   - Aggregation method: histogram
-  - Components exposing the metric: kubelet
-- [x] Metrics
-  - Metric name: `kubelet_security_profile_pull_errors_total`
-  - Labels: `reason` with a bounded set of values
-    (`registry_unavailable`, `signature_validation_failed`,
-    `security_profile_invalid`, `unauthenticated`, `other`)
-  - Aggregation method: counter
   - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -1928,8 +2114,8 @@ runtime's metrics endpoint directly.
     will fail to start. Pods referencing cached profiles or using other profile
     types are unaffected.
   - Impact of its degraded performance or high-error rates on the feature:
-    Increased pod startup latency. The kubelet retries container and sandbox
-    creation with backoff, which triggers re-pull attempts.
+    Increased pod startup latency. The kubelet retries the pull with backoff
+    on every pod sync, or on every container start for a started pod.
 
 This feature also depends on the [security-profiles-merger][spm] library at
 build time (not a runtime service). The library is a standalone Go module
@@ -1980,10 +2166,10 @@ latency.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-- Disk: Cached profiles consume disk space on the node. Profiles are small
-  (typically < 100 KB) and bounded by the 1 MiB limit each; the number of
-  cached artifacts is not bounded in alpha (see the resource exhaustion
-  answer below).
+- Disk: Pulled profiles consume disk space on the node. Profiles are small
+  (typically < 100 KB) and bounded by the runtime's size limit each (1 MiB in
+  CRI-O); the kubelet removes profiles that no pod has used for longer than
+  `imageMaximumGCAge` (see the resource exhaustion answer below).
 - Network: Profile pulls add network traffic, but profiles are much smaller
   than container images.
 - Memory: The CRI runtime holds parsed profiles in memory. This is already the
@@ -1991,19 +2177,18 @@ latency.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-Cached profiles consume disk space and inodes. Each artifact is bounded by
-the size limit (1 MiB), but alpha has no kubelet-driven garbage collection
-and the number of distinct artifacts on a node is not bounded, so a stream
-of short-lived pods with distinct profile digests grows the runtime's
-artifact store until beta adds the `ListSecurityProfiles` and
-`RemoveSecurityProfile` RPCs (see
-[Risks and Mitigations](#risks-and-mitigations)). Runtimes should expose
-the store's count and byte size as metrics so operators can watch it, and
-may cap total profile storage by evicting in least-recently-used order; an
-eviction costs a re-pull at the next container creation, never a failed
-pod. This gap is a consequence of the dedicated
-RPC: image volumes (KEP-4639) reuse `PullImage` and are therefore covered
-by the existing image garbage collector from the start.
+Pulled profiles consume disk space and inodes. Each artifact is bounded by
+the runtime's size limit (1 MiB in CRI-O), and the kubelet removes profiles
+that no pod on the node has referenced for longer than `imageMaximumGCAge`
+through the `ListSecurityProfiles` and `RemoveSecurityProfile` RPCs (see
+[Kubelet Behavior](#kubelet-behavior)), so a stream of short-lived pods with
+distinct profile digests is bounded by what one maximum age admits. The
+setting defaults to zero, which disables the collector, so an operator who
+expects such a stream sets it, as for images. A
+runtime, or an `ImageService` proxy in front of it, that does not implement
+the list and remove RPCs leaves profiles accumulating as before, and the
+kubelet logs an error every five minutes; runtimes should expose the store's
+count and byte size as metrics so that operators notice.
 
 ### Troubleshooting
 
@@ -2016,8 +2201,9 @@ unavailability does not affect already-scheduled pods.
 ###### What are other known failure modes?
 
 - Registry unreachable or authentication failure
-  - Detection: `kubelet_security_profile_pull_errors_total` metric
-    increases. Pod events show `SecurityProfilePullFailed`.
+  - Detection: `kubelet_security_profile_pull_duration_seconds` with a
+    `result` of `registry_unavailable` or `unauthenticated` increases. Pod
+    events show `SecurityProfilePullFailed`.
   - Mitigations: Pre-pull profiles so that they are cached (see
     [Pre-pulling](#notesconstraintscaveats)). Configure registry mirrors.
   - Diagnostics: CRI runtime logs show pull attempts and errors.
@@ -2032,28 +2218,29 @@ unavailability does not affect already-scheduled pods.
 
 - Profile merge produces unexpected effective profile
   - Detection: Container behavior differs from expectations because the
-    effective profile (intersection of OCI profile, base profile, and runtime
-    baseline) is more restrictive than the OCI profile alone. CRI runtime
-    warning logs identify which dimensions were constrained and by which
-    input (see [Observability](#observability)).
-  - Mitigations: Review the OCI profile, base profile, and runtime baseline
-    to understand which restrictions each input contributes. The effective
-    profile is the intersection: an operation is only permitted if all
-    inputs permit it.
+    effective profile (intersection of the OCI profile and its base) is more
+    restrictive than the OCI profile alone. CRI runtime warning logs identify
+    which dimensions were constrained (see [Observability](#observability)).
+  - Mitigations: Review the OCI profile and the base profile, the runtime
+    default or the selected `Localhost` profile, to understand which
+    restrictions each contributes. The effective profile is the
+    intersection: an operation is only permitted if both permit it.
   - Diagnostics: CRI runtime warning logs show the per-dimension merge
-    result (e.g., "syscall X denied by runtime baseline", "capability Y
-    removed by base profile"). Conservative argument filter denials are
-    also logged.
+    result (e.g., "syscall X denied by the base profile"). Conservative
+    argument filter denials are also logged.
   - Testing: e2e tests with profiles that are more permissive than the
     baseline, verifying the merge constrains them and emits warning logs.
 
 - Pod `Failed` at kubelet admission with reason
   `SecurityProfileOCIUnsupported`
   - Detection: Pod phase `Failed` with that reason; the node's runtime does
-    not report `security_profile_oci` in `RuntimeFeatures`.
+    not report `seccomp_profile_oci` in `RuntimeFeatures`. Such a node does
+    not declare the feature, so this reason appears only for pods bound to
+    the node directly with `nodeName` or after the runtime lost support
+    under a running kubelet.
   - Mitigations: Upgrade the CRI runtime (and any `ImageService` proxy in
-    front of it), or keep the kubelet feature gate disabled on nodes whose
-    runtime lacks support so that they do not declare the feature.
+    front of it), or do not bind pods with `OCI` profiles to such nodes
+    directly.
   - Diagnostics: `crictl info` shows the runtime's `Status` response,
     including its features; kubelet logs show the admission rejection.
   - Testing: Unit tests for the admission handler with `RuntimeFeatures`
@@ -2065,15 +2252,25 @@ unavailability does not affect already-scheduled pods.
   - Mitigations: Enable the feature gate on kubelets whose runtime supports
     the feature, or remove the `OCI` profile from the pod.
   - Diagnostics: `kubectl get node <name> -o jsonpath='{.status.declaredFeatures}'`.
-  - Testing: Scheduler integration tests.
+  - Testing: The generic Node Declared Features scheduler integration test.
+
+- Pulled profiles accumulate on a node
+  - Detection: The runtime's profile store grows although pods come and go;
+    the kubelet logs that listing or removing security profiles failed every
+    five minutes, or `imageMaximumGCAge` is unset.
+  - Mitigations: Set `imageMaximumGCAge`. Upgrade the CRI runtime or the
+    `ImageService` proxy in front of it to one that implements
+    `ListSecurityProfiles` and `RemoveSecurityProfile`.
+  - Diagnostics: kubelet logs; the runtime's store metrics.
+  - Testing: Unit tests of the garbage collector with a failing runtime.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check `kubelet_security_profile_pull_errors_total` for pull failures.
-2. Check `kubelet_security_profile_pull_duration_seconds` for latency.
-3. Verify registry connectivity from the node.
-4. Check CRI runtime logs for credential resolution or pull issues.
-5. Verify the artifact exists and has the correct media type.
+1. Check the `result` label of `kubelet_security_profile_pull_duration_seconds`
+   for pull failures and its buckets for latency.
+2. Verify registry connectivity from the node.
+3. Check CRI runtime logs for credential resolution or pull issues.
+4. Verify the artifact exists and has the correct media type.
 
 ## Implementation History
 
@@ -2129,6 +2326,39 @@ unavailability does not affect already-scheduled pods.
   architectures, and the pull path decodes profiles strictly with
   `UnmarshalStrict` before `ValidateArtifact`; the merge description above
   follows
+- 2026-09-28: KEP merged for v1.38 after PRR approval (2026-09-23)
+- 2026-10-01: Merge library released as v0.7.0, which keeps a
+  single-condition `socket` clause where v0.6.0 dropped x86 from the filter
+- 2026-10-07: Profile lifecycle moved from the runtime to the kubelet during
+  the CRI review: `ListSecurityProfiles` and `RemoveSecurityProfile` in
+  alpha, no runtime-side eviction, `SecurityProfileBase.BaseType` with
+  `RuntimeDefault = 0`, and the artifact format a recommendation rather than
+  part of the CRI contract
+- 2026-10-13: The merge became two-way, a `Localhost` base taking the place
+  of the runtime default; `oci_ref` and `base_profile` on other profile
+  types and `localhost_ref` on a `RuntimeDefault` base are `InvalidArgument`;
+  the declared feature requires the `seccomp_profile_oci` runtime feature
+- 2026-10-14: `SecurityProfileKind` no longer reserves an `AppArmor` value
+- 2026-10-26: CRI API merged for v1.38
+  ([kubernetes/kubernetes#142509][k8s-142509])
+- 2026-11-03: Merge library released as v0.7.1: `ValidateArtifact` rejects
+  multiplexed rule sets that libseccomp refuses, and the integration guide
+  describes the baseline self-check
+- 2026-11-04: API types, validation and node declared feature merged for
+  v1.38 ([kubernetes/kubernetes#142511][k8s-142511]): `oci.ref` instead of
+  `oci.reference` (kube-api-linter naming), capped at 1024 characters,
+  `baseProfile.localhostProfile` capped at 4096, declarative validation with
+  custom validators for the reference and the path, no field stripping, and
+  `sha256`, `sha384` and `sha512` as the accepted digest algorithms; the
+  kubelet ([kubernetes/kubernetes#142515][k8s-142515]) and CRI-O
+  ([cri-o#10382][crio-10382]) implementations in review; this KEP updated to
+  the implementation
+- 2026-11-12: Kubelet merged for v1.38
+  ([kubernetes/kubernetes#142515][k8s-142515]): profiles pulled through a
+  queue of their own with the image puller's limits, up front for pods that
+  have not started and per container afterwards, the sandbox keeping
+  `RuntimeDefault`, garbage collection after `imageMaximumGCAge`, and one
+  pull duration histogram labeled with the result
 
 ## Drawbacks
 
@@ -2139,13 +2369,14 @@ unavailability does not affect already-scheduled pods.
 - **Registry dependency for pod startup**: Pods using OCI profiles cannot start
   if the registry is unreachable and profiles are not cached. This is the same
   trade-off that exists for container images.
-- **Profiles sit outside the kubelet's image garbage collector until beta**:
-  Because profiles are pulled through a dedicated RPC and must not appear in
-  `ListImages`, the kubelet cannot garbage collect them in alpha, and the
-  beta RPCs exist to close that. Image volumes (KEP-4639) avoided the gap by
-  reusing `PullImage`. The cost is the unbounded profile count described in
-  the resource exhaustion answer; the benefit is profile-specific validation
-  in the CRI contract.
+- **Profiles have a garbage collector of their own**: Because profiles are
+  pulled through a dedicated RPC and must not appear in `ListImages`, the
+  image garbage collector does not see them, and the kubelet runs a separate,
+  time-based collector over the `ListSecurityProfiles` and
+  `RemoveSecurityProfile` RPCs. Image volumes (KEP-4639) avoided the second
+  collector by reusing `PullImage`. The cost is two more RPCs and a second
+  loop in the kubelet; the benefit is that profile pulls, storage and
+  validation are not entangled with image semantics.
 - **CRI runtime implementation burden**: Each CRI runtime must implement the
   pull, cache, merge, and apply logic. Profile merging requires integrating
   the [security-profiles-merger][spm] library, which handles the complexity
@@ -2277,8 +2508,8 @@ This would give the kubelet a registry client and content store of its own,
 which it deliberately does not have (all pulls go through the CRI), would
 duplicate credential and mirror handling that runtimes already implement,
 and would produce plain `Localhost` semantics: a file on disk that any pod
-on the node can reference and that is never merged with the baseline. The
-CRI-based design keeps a single pull path and keeps the baseline guarantee.
+on the node can reference and that is never merged with a base. The
+CRI-based design keeps a single pull path and keeps the merge guarantee.
 
 ### Init Container Writing the Profile to a Volume
 
