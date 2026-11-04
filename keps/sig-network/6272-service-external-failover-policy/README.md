@@ -298,8 +298,8 @@ The behavior of `ipMode: Router` compared to the existing modes:
 | Set by                                     | LB controller                     | LB controller                      | LB controller, only for anycast addresses               |
 | Packet arrives as                          | dst = LB IP:port                  | dst = nodeIP:nodePort or podIP     | dst = LB IP:port                                        |
 | Proxy programs DNAT for the IP             | yes                               | no (IP ignored)                    | yes                                                     |
-| Usable endpoints                           | DNAT                              | n/a                                | DNAT (same as VIP)                                      |
-| Zero endpoints                             | REJECT                            | n/a                                | no verdict, follows node routing table                  |
+| Behavior when endpoints exist              | DNAT                              | n/a                                | DNAT (same as VIP)                                      |
+| Behavior when no endpoints exist           | REJECT                            | n/a                                | no verdict, follows node routing table                  |
 | eTP:Local, no local eps, ext. eps          | DROP (external origin)            | n/a                                | open (falls back to the routing table)                  |
 | eTP:Local, no local eps, Pod/host origin   | DNAT cluster-wide                 | n/a                                | DNAT cluster-wide (unchanged)                           |
 | healthCheckNodePort                        | unhealthy without local eps       | n/a                                | same                                                    |
