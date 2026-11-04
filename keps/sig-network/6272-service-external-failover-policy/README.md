@@ -398,7 +398,7 @@ Some Gateway API implementations (Calico Envoy Gateway, Cilium, etc.) create a
 running, so the LB Service always has endpoints. kube-proxy never triggers
 the no-endpoint DROP/REJECT path for these Services.
 
-This means `ipMode: Router` has no effect on Gateway API Services — the
+This means `ipMode: Router` has no effect on this sort of Gateway API Services — the
 no-endpoint code path is never reached. This is expected: Gateway API inserts
 an always-on proxy between the VIP and the backends. BGP speakers see the
 proxy as a healthy endpoint and never withdraw the route, so packets are
