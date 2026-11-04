@@ -963,8 +963,9 @@ The v1.38 Alpha milestone is scoped to **Layer 1 only**. The goal is to prove th
 Layer 2 targets a subsequent milestone once the Layer 1 ecosystem contracts are validated and the open design questions in [Open Questions for Layer 2](#open-questions-for-layer-2) are resolved. The criteria below are provisional.
 
 * Feature is disabled by default via the `InPlaceNodeResourceResize` feature gate (kubelet, kube-apiserver, kube-scheduler).
-* The `Node.Spec.ConfiguredCapacity` API field is introduced. The Kubelet reconciles capacity mismatches for CPU and Memory — covering both the live-node and Kubelet-restart-on-resized-hardware cases. The Kubelet updates cgroups, re-initialises sub-managers (`cpuManagerPolicy: none`, `memoryManagerPolicy: None`), and evicts starved pods.
+* The `Node.Spec.ConfiguredCapacity` API field is introduced. The Kubelet reconciles capacity mismatches for CPU and Memory — covering both the live-node and Kubelet-restart-on-resized-hardware cases. The Kubelet updates cgroups, re-initialises sub-managers (`cpuManagerPolicy: none`, `memoryManagerPolicy: None`), and evicts starved pods when physical capacity is lost (Path B).
 * The optional `Node.Spec.ConfiguredKubeReserved` field and `KubeletConfiguration.CPUSetSourceFile` setting are introduced to support hypervisor-driven (non-hotplug) resize.
+* A downscale requested through `Node.Spec.ConfiguredCapacity` that does not fit the requests of running pods is reported as `CapacityConfigured=False` (Reason: `Deferred`) and is not applied, and no pod is evicted.
 * The cAdvisor metrics-based hardware-drift trigger is implemented, enabling the emergency downscale path (Path B).
 * The Scheduler Node UPDATE queueing hint for `WaitingForPreemption` pods is implemented and validated.
 * All Layer 1 pre-requisite tests continue to pass.
