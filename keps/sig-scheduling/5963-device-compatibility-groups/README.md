@@ -165,7 +165,7 @@ nothing to attach the field to.
 Evaluating compatibility constraints during device selection adds work to each 
 scheduling cycle that involves DRA devices.
 
-**Gate-disabled schedulers ignoring devices with compatibilityGroups**
+**Gate-disabled schedulers ignoring pools that contain devices with compatibilityGroups**
 
 At alpha, if the `DRADeviceCompatibilityGroups` feature-gate is disabled, 
 slices that contain devices which present the `compatibilityGroups` field are ignored, which leaves their pool incomplete, so none of the pool's devices are allocated.
