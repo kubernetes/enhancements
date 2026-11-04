@@ -316,7 +316,7 @@ The two key changes from `VIP`:
 Traffic that kube-proxy already serves — the Pod/host cluster-wide
 short-circuit when other endpoints exist — is unchanged.
 
-`Router` never introduces a new forwarding path; it only removes a
+`Router` never introduces a new forwarding path at the service proxy level; it only removes a
 no-endpoint DROP/REJECT so normal node networking can take over.
 
 `loadBalancerSourceRanges` and other independent Service policy remain in
