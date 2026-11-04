@@ -231,7 +231,8 @@ The `Workload` API defines the scheduling policy and references one or more `pod
 is a standalone runtime object created from those templates, representing a self-contained scheduling unit that 
 encapsulates the runtime state.
 
-In v1.38, the API is promoted to `v1`.
+In v1.37, the API was promoted to v1beta1. At the same time, a new v1alpha3 version was created to replace v1alpha2,
+enabling backward-incompatible changes around DisruptionMode for planned alpha features.
 
 The `spec.schedulingGroup` on the Pod object is used to identify the scheduling context, which is the runtime `PodGroup`.
 
@@ -284,7 +285,7 @@ serves as a policy template, containing the PodGroupTemplates with their corresp
 
 The `Workload` object defines these templates:
 ```yaml
-apiVersion: scheduling.k8s.io/v1
+apiVersion: scheduling.k8s.io/v1beta1
 kind: Workload
 metadata:
   namespace: ns-1
@@ -299,7 +300,7 @@ spec:
 
 A sample `PodGroup` instantiated from the above template would look like this:
 ```yaml
-apiVersion: scheduling.k8s.io/v1
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: training-worker-0
@@ -496,7 +497,7 @@ The example below shows how this could look with the decoupled architecture for 
 A Workload object defines the static PodGroup template:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1
+apiVersion: scheduling.k8s.io/v1beta1
 kind: Workload
 metadata:
   name: jobset
@@ -511,7 +512,7 @@ spec:
 A standalone PodGroup object is created to define the scheduling policy and track a specific runtime instance:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: job-instance-worker-0
@@ -685,10 +686,10 @@ type GangSchedulingPolicy struct {
 }
 ```
 
-The `PodGroup` resource is a separate API object in `scheduling.k8s.io/v1`:
+The `PodGroup` resource is a separate API object in `scheduling.k8s.io/v1beta1`:
 
 ```go
-// API Group: scheduling.k8s.io/v1
+// API Group: scheduling.k8s.io/v1beta1
 
 // PodGroup represents a runtime instance of pods grouped together.
 // PodGroups are created by workload controllers (Job, LWS, JobSet, etc...) from
@@ -1898,6 +1899,7 @@ retried with standard exponential backoff once connectivity is restored.
 - 2026-03: KEP-5832 merged into KEP-4671 as a single consolidated KEP.
 - 2026-05: KEP updated to promote to beta in v1.37.
 - 2026-09: KEP updated to promote to stable in v1.38.
+- 2026-11: KEP updated to stay in beta in v1.38 and promote to GA in v1.39.
 
 ## Drawbacks
 
