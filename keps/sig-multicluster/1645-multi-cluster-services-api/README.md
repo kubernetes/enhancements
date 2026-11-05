@@ -125,7 +125,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Export via annotation](#export-via-annotation)
   - [Other conflict resolution algorithms](#other-conflict-resolution-algorithms)
   - [Exporting labels/annotations from the Service/ServiceExport objects](#exporting-labelsannotations-from-the-serviceserviceexport-objects)
-  - [Requiring one clusterset for all services](#requiring-one-clusterset-for-all-services)
+  - [Defining a clusterset per service](#defining-a-clusterset-per-service)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -366,14 +366,23 @@ namespace of C. Workloads in A and B use `invoices`, and workloads in D use
 both in the `billing` namespace, so that each cluster discovers only the
 services it uses. Without choosing where each service is exported, both
 services would be visible to every cluster that has the `billing` namespace.
+Choosing export destinations reduces the operational burden of maintaining
+unused `ServiceImport`s and, in implementations that distribute `EndpointSlice`s,
+unused endpoint data. It also avoids creating `ServiceImport`s that could lead
+users to assume a service is intended for use by workloads in their cluster.
+
+Defining a separate clusterset for each service-sharing pattern would increase
+the number of clustersets and membership relationships operators need to manage.
+This proposal allows export destinations to vary by service within the existing
+clusterset, while preserving namespace sameness across all its members.
 
 ![the billing namespace in four clusters, where cluster C exports invoices to clusters A and B and ledger to cluster D, and the dashed ServiceImports show unused imports that would appear if each service were exported to every cluster](./export-to-a-subset-of-clusters.svg)
 
 #### Troubleshooting a Service Export
 
 I operate a cluster that exports services to other clusters in a clusterset.
-When troubleshooting an export, I want to see which clusters the service is
-exported to.
+When troubleshooting a service export, I want to see which clusters the service
+is currently exported to.
 
 ### Constraints
 
@@ -415,11 +424,6 @@ Consumers that assume a service is unreachable from the clusters it is not
 exported to may leave it without access control (see
 [Exporting Services](#exporting-services)).
 
-Consumers that assume namespace sameness beyond the clusterset of a service may
-treat two unrelated services with the same name as one service.
-`ServiceImport.Status.Clusters` lists the exporting clusters from which a
-`ServiceImport` was derived.
-
 ## Design Details
 
 <!--
@@ -434,7 +438,8 @@ Services will not be visible to other clusters in the clusterset by default.
 They must be explicitly marked for export by the user. This allows users to
 decide exactly which services should be visible outside of the local cluster.
 
-Access to exported services is controlled by other tools.
+Access to endpoints, including from clusters to which the service is not
+exported, is controlled separately, for example through `NetworkPolicy`.
 
 A service may be exported to any set of other clusters in the clusterset.
 Which clusters it is exported to is implementation-defined. In the figure
@@ -442,12 +447,12 @@ below, exporting every service to all other clusters is the default pattern.
 An implementation may instead limit where each service is exported, and may
 report those destinations in `ServiceExport.Status.Clusters`.
 
-![four clusters and three exported services, exported to every other cluster as one clusterset and only to the clusters that use them as a clusterset per service](./one-clusterset-or-one-per-service.svg)
+![four clusters in one clusterset, with every service exported to all other clusters above and each service exported only to the clusters that use it below](./one-clusterset-or-one-per-service.svg)
 
 In the figure below, `web` and `api` are exported to the same clusters, while
 `db` is exported to B only.
 
-![four clusters where three services exported by cluster A form two clustersets](./three-services-two-clustersets.svg)
+![four clusters in one clusterset, where cluster A exports web and api to B, C and D, and db to B only](./three-services-two-clustersets.svg)
 
 Tooling may (and likely will, in the future) be built on top of this to simplify
 the user experience. Some initial ideas are to allow users to specify that all
@@ -535,15 +540,16 @@ the result of the implementation's export decisions and does not control
 export, import, or routing. Entries identify clusters by cluster name.
 
 An entry means that the service is available for that cluster to import, even
-if the cluster does not have the namespace or has not imported it. An absent or
-empty list does not mean that there are no such clusters.
+if the cluster does not have the namespace or has not imported it. An
+implementation that does not report export destinations may leave the list
+absent or empty. An absent or empty list does not mean
+that there are no such clusters.
 
 To export a service, a `ServiceExport` should be created within the cluster and
 namespace that the service resides in, name-mapped to the service for export -
 that is, they reference the `Service` with the same name as the export. If
 multiple clusters within the clusterset have `ServiceExports` with the same name
-and namespace, these will be considered the same service and will be combined in
-each importing cluster.
+and namespace, these will be considered the same service.
 
 _Note: A `Service` without a corresponding `ServiceExport` in its local cluster
 will not be exported even if other clusters are exporting a `Service` with the
@@ -552,11 +558,11 @@ same namespaced name._
 This requires that within a clusterset, a given namespace is governed by a
 single authority across all clusters. It is that authority’s responsibility to
 ensure that a name is shared by multiple services within the namespace if and
-only if they are instances of the same service. In the figure, cluster B
-exports to cluster C an unrelated service with the same name and namespace as
-the billing team's `ledger`. B, C and D are then the clusterset of `ledger`,
-and without namespace sameness among them the `ServiceImport` in C combines
-two unrelated services.
+only if they are instances of the same service.
+
+In the figure below, B violates namespace sameness by exporting to C an
+unrelated service with the same name and namespace as the billing team's
+`ledger`. The `ServiceImport` in C then combines two unrelated services.
 
 ![four clusters where cluster B exports an unrelated service named ledger to cluster C, whose ServiceImport combines it with the billing team's ledger](./unrelated-services-with-the-same-name.svg)
 
@@ -629,10 +635,10 @@ the clusterset, and every member imports both.
 
 The importing clusters may differ from service to service. In the figure
 below, each dashed circle represents the exporting scope for the services
-exported by one cluster. G and L both export their own services and import
+exported by one cluster. G, K and L both export their own services and import
 services exported by other clusters.
 
-![sixteen clusters with seven overlapping clustersets, each containing an exporting cluster and the clusters that import its services](./a-clusterset-per-exporting-cluster.svg)
+![sixteen clusters in one clusterset with seven overlapping export scopes, each containing an exporting cluster and the clusters that import its services](./a-clusterset-per-exporting-cluster.svg)
 
 Because of the potential wide impact a `ServiceImport` may have within a
 cluster, non-cluster-admin users should not be allowed to create or modify
@@ -1147,10 +1153,10 @@ directly impact service consumption and must be consistent across all child
 services. If these properties are out of sync for a subset of exported services,
 there is no clear way to determine how a service should be accessed.
 
-Conflict resolution policy: **If any properties of the `ServiceExport`s
-combined by a `ServiceImport` have conflicting values that can not simply be
-merged, a `Conflict` condition with a `true` status will be set on all of those
-`ServiceExport`s with a description of the conflict. The conflict will be
+Conflict resolution policy: **If any properties of the exported services
+combined in a `ServiceImport` have conflicting values that can not simply be
+merged, a `Conflict` condition with a `true` status will be set on all
+corresponding `ServiceExport`s with a description of the conflict. The conflict will be
 resolved by assigning precedence based on each `ServiceExport`'s
 `creationTimestamp`, from oldest to newest.**
 
@@ -1473,13 +1479,16 @@ from the `Service` and `ServiceExport` metadata. More flexibility could also be
 achieved with CEL expression on the `ServiceExport` at the cost of greater
 complexity (managing CEL expressions on potentially many `ServiceExport` across clusters).
 
-### Requiring one clusterset for all services
+### Defining a clusterset per service
 
-Each cluster could be required to be in a single clusterset, used for all the
-services it exports or imports. This was ruled out because membership in a
-clusterset is symmetric and transitive, so a cluster that shares services with
-clusters in two clustersets makes them one clusterset, and namespace sameness
-would then apply between clusters that share no service.
+An implementation could define a separate clusterset for each service's
+exporting and importing clusters, with namespace sameness applying only within
+that service's clusterset. A smaller clusterset is unnecessary for choosing
+export destinations and would change the trust and namespace sameness
+assumptions of the existing API. This proposal instead preserves namespace
+sameness across the existing clusterset while allowing each service to be
+exported to a subset of its members. Export destinations do not redefine
+clusterset membership.
 
 ## Infrastructure Needed
 <!--

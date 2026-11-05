@@ -60,10 +60,7 @@ sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/n
 applies and all namespaces with a given name are considered to be the same
 namespace. Implementations of this API are responsible for defining and
 tracking membership in a clusterset. The specific mechanism is out of scope of
-this proposal. An implementation may define a clusterset per service, as the
-clusters that export the service or that it is exported to (see [Exporting
-Services](README.md#exporting-services)). Within such a clusterset, namespace
-sameness applies only to the service's namespace.”
+this proposal.”
 
 `<clusterset-zone>` = domain for multi-cluster services in the clusterset, which
 must be `clusterset.local`; as this may become configurable in the future, this
@@ -201,7 +198,7 @@ _ready_ endpoints accessible to the consuming cluster with the IPv4 address
 The subset of _ready_ endpoints _may_ be all _ready_ endpoints, but the exact
 subset is implementation dependent due to performance restrictions and response
 size limit of the DNS server used, as the number of potential endpoints could be
-quite high depending on the number of backends exported to the given cluster.
+quite high depending on the number of backends exported across the ClusterSet.
 
 
 

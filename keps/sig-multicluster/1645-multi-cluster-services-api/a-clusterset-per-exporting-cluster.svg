@@ -1,7 +1,8 @@
 <svg version="1.1" viewBox="0 0 960 650" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
   <rect x="0" y="0" width="960" height="650" fill="#ffffff"/>
+  <text x="20" y="24" font-family="Arial, sans-serif" font-size="13" fill="#595959">One clusterset; dashed circles show export scopes</text>
 
-  <!-- each dashed circle is the clusterset of the services exported by one cluster -->
+  <!-- each dashed circle is the export scope of the services exported by one cluster -->
   <circle cx="200" cy="260" r="150" fill="#c9daf8" fill-opacity="0.45" stroke="#3c78d8" stroke-width="1.5" stroke-dasharray="6.0,3.0"/>
   <circle cx="400" cy="200" r="150" fill="#fce5cd" fill-opacity="0.45" stroke="#e69138" stroke-width="1.5" stroke-dasharray="6.0,3.0"/>
   <circle cx="480" cy="300" r="145" fill="#d0e0e3" fill-opacity="0.45" stroke="#45818e" stroke-width="1.5" stroke-dasharray="6.0,3.0"/>
@@ -38,7 +39,7 @@
   <line x1="235.0" y1="505.0" x2="150.0" y2="540.0" stroke="#674ea7" stroke-width="1"/>
   <line x1="235.0" y1="505.0" x2="285.0" y2="555.0" stroke="#674ea7" stroke-width="1"/>
 
-  <!-- clusters: colored box = exporting cluster, white box = importing cluster -->
+  <!-- colored boxes identify exporters, which may also import other clusters' services -->
   <rect x="134" y="227" width="72" height="26" rx="4" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
   <text x="170" y="244.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Cluster A</text>
   <rect x="264" y="222" width="72" height="26" rx="4" fill="#ffffff" stroke="#595959" stroke-width="1"/>
