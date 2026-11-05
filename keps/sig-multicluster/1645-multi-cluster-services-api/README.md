@@ -259,10 +259,7 @@ nitty-gritty.
   Within a clusterset, [namespace sameness] applies and all namespaces with a
   given name are considered to be the same namespace. Implementations of this
   API are responsible for defining and tracking membership in a clusterset. The
-  specific mechanism is out of scope of this proposal. An implementation may
-  define a clusterset per service, as the clusters that export the service or
-  that it is exported to (see [Exporting Services](#exporting-services)). Within
-  such a clusterset, namespace sameness applies only to the service's namespace.
+  specific mechanism is out of scope of this proposal.
 - **mcs-controller** - A controller that syncs services across clusters and
   makes them available for multi-cluster service discovery and connectivity.
   There may be multiple implementations, this doc describes expected common
@@ -439,7 +436,8 @@ They must be explicitly marked for export by the user. This allows users to
 decide exactly which services should be visible outside of the local cluster.
 
 Access to endpoints, including from clusters to which the service is not
-exported, is controlled separately, for example through `NetworkPolicy`.
+exported, is controlled separately from MCS, for example through
+`NetworkPolicy`.
 
 A service may be exported to any set of other clusters in the clusterset.
 Which clusters it is exported to is implementation-defined. In the figure
@@ -559,6 +557,16 @@ This requires that within a clusterset, a given namespace is governed by a
 single authority across all clusters. It is that authority’s responsibility to
 ensure that a name is shared by multiple services within the namespace if and
 only if they are instances of the same service.
+
+Namespace sameness applies throughout the clusterset even when a service is
+exported to different subsets of clusters. For example, if A exports `bar/foo`
+only to B and C exports `bar/foo` only to D, both exports still represent the
+same service. Clients accessing `foo.bar.svc.clusterset.local` should be able
+to rely on the same API and behavior wherever the service is available.
+Backends and data may differ, for example to provide data locality. Differences
+in service properties among the exports combined in a `ServiceImport` are
+handled by [Constraints and Conflict
+Resolution](#constraints-and-conflict-resolution).
 
 In the figure below, B violates namespace sameness by exporting to C an
 unrelated service with the same name and namespace as the billing team's
