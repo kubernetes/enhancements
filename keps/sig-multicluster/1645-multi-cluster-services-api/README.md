@@ -436,15 +436,16 @@ decide exactly which services should be visible outside of the local cluster.
 
 Access to exported services is controlled by other tools.
 
-A service may be exported to any set of other clusters. Which clusters it is
-exported to is implementation-defined. In the figure below, exporting every
-service to all other clusters makes A, B, C and D one clusterset. Exporting
-each service only to the clusters that use it makes a clusterset per service.
+A service may be exported to any set of other clusters in the clusterset.
+Which clusters it is exported to is implementation-defined. In the figure
+below, exporting every service to all other clusters is the default pattern.
+An implementation may instead limit where each service is exported, and may
+report those destinations in `ServiceExport.Status.Clusters`.
 
 ![four clusters and three exported services, exported to every other cluster as one clusterset and only to the clusters that use them as a clusterset per service](./one-clusterset-or-one-per-service.svg)
 
-In the figure below, `web` and `api` are exported to the same clusters and
-share one clusterset, while `db` is exported to B only and has its own.
+In the figure below, `web` and `api` are exported to the same clusters, while
+`db` is exported to B only.
 
 ![four clusters where three services exported by cluster A form two clustersets](./three-services-two-clustersets.svg)
 
@@ -529,8 +530,9 @@ status:
 ```
 
 Implementations may list in `ServiceExport.Status.Clusters` the other clusters
-to which the service is exported. The field is informational only and does not
-affect export, import, or routing. Entries identify clusters by cluster name.
+to which the service is exported. The field is informational only; it reports
+the result of the implementation's export decisions and does not control
+export, import, or routing. Entries identify clusters by cluster name.
 
 An entry means that the service is available for that cluster to import, even
 if the cluster does not have the namespace or has not imported it. An absent or
@@ -611,9 +613,10 @@ includes 3 scenarios:
    cluster(s) as well.
 
 A multi-cluster service will be imported only by clusters in which the service's
-namespace exists. A service may be imported by any set of the clusters it is
-exported to. Which clusters import it is implementation-defined. _An
-implementation may or may not decide to create missing namespaces
+namespace exists. By default, all exporting clusters will also import the
+multi-cluster service. However, a service may be imported by any set of the
+clusters it is exported to. Which clusters import it is implementation-defined.
+_An implementation may or may not decide to create missing namespaces
 automatically, that behavior is out of scope of this spec._
 
 A cluster's `ServiceImport` combines only the local `ServiceExport`, if any, and
@@ -625,8 +628,9 @@ the clusterset, and every member imports both.
 ![six clusters in one clusterset, each importing the services exported by A and D](./imports-in-one-clusterset.svg)
 
 The importing clusters may differ from service to service. In the figure
-below, each dashed circle is the clusterset of the services exported by one
-cluster. G and L are in other clusters' clustersets as well as their own.
+below, each dashed circle represents the exporting scope for the services
+exported by one cluster. G and L both export their own services and import
+services exported by other clusters.
 
 ![sixteen clusters with seven overlapping clustersets, each containing an exporting cluster and the clusters that import its services](./a-clusterset-per-exporting-cluster.svg)
 

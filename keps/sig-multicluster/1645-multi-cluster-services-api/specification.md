@@ -195,7 +195,7 @@ must be created to cover both IPv4 and IPv6 assigned pod IPs._
 
 Given a headless Service named `<service>` in Namespace `<ns>` that has been
 exported via a name-mapped ServiceExport with name `<service>`, for a subset of
-_ready_ endpoints accessible from a given cluster with the IPv4 address
+_ready_ endpoints accessible to the consuming cluster with the IPv4 address
 `<endpoint-ip>`, the following records must exist.
 
 The subset of _ready_ endpoints _may_ be all _ready_ endpoints, but the exact
