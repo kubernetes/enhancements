@@ -1,0 +1,22 @@
+title: Cluster Selection for Multi-Cluster Services
+kep-number: 5939
+authors:
+  - "@MrFreezeex"
+owning-sig: sig-multicluster
+# TODO: check with sig-network
+# participating-sigs:
+#   - sig-network
+status: implementable
+creation-date: 2026-03-01
+reviewers:
+  - TBD
+approvers:
+  - "@skitt"
+  - "@jeremyot"
+
+see-also:
+  - "/keps/sig-multicluster/1645-multi-cluster-services-api"
+  - "/keps/sig-multicluster/2149-clusterid"
+
+latest-milestone: "0.0"
+stage: alpha
