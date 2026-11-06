@@ -58,7 +58,9 @@ aware, and agree about their collective association. Within a clusterset,
 [namespace
 sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md)
 applies and all namespaces with a given name are considered to be the same
-namespace.”
+namespace. Implementations of this API are responsible for defining and
+tracking membership in a clusterset. The specific mechanism is out of scope of
+this proposal.”
 
 `<clusterset-zone>` = domain for multi-cluster services in the clusterset, which
 must be `clusterset.local`; as this may become configurable in the future, this
@@ -191,7 +193,7 @@ must be created to cover both IPv4 and IPv6 assigned pod IPs._
 
 Given a headless Service named `<service>` in Namespace `<ns>` that has been
 exported via a name-mapped ServiceExport with name `<service>`, for a subset of
-_ready_ endpoints accessible across the cluster set with the IPv4 address
+_ready_ endpoints accessible to the consuming cluster with the IPv4 address
 `<endpoint-ip>`, the following records must exist.
 
 The subset of _ready_ endpoints _may_ be all _ready_ endpoints, but the exact
@@ -285,8 +287,8 @@ prescribed by this specification.
 Unnamed ports do not have an `SRV` record.
 
 In the following example, the cluster ID for each answer example is in bold to
-emphasize that the union of records from all clusters are returned by a SRV
-record request.
+emphasize that a SRV record request returns the union of records from every
+cluster the service is imported from.
 
 *   Question Example:
     *    `_https._tcp.headless.test.svc.clusterset.local. IN SRV`
