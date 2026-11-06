@@ -101,10 +101,7 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 	}
 
 	if !fi.IsDir() {
-		return nil, errors.Wrap(
-			err,
-			"checking if proposal path is a directory",
-		)
+		return nil, fmt.Errorf("proposal path %s is not a directory", proposalPath)
 	}
 
 	prrApprovalPath := filepath.Join(proposalPath, PRRApprovalPathStub)
@@ -118,10 +115,7 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 	}
 
 	if !fi.IsDir() {
-		return nil, errors.Wrap(
-			err,
-			"checking if PRR approval path is a directory",
-		)
+		return nil, fmt.Errorf("PRR approval path %s is not a directory", prrApprovalPath)
 	}
 
 	proposalReadme := filepath.Join(proposalPath, "README.md")
@@ -135,10 +129,7 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 	}
 
 	if !fi.Mode().IsRegular() {
-		return nil, errors.Wrap(
-			err,
-			"checking if proposal README is a file",
-		)
+		return nil, fmt.Errorf("proposal README %s is not a regular file", proposalReadme)
 	}
 
 	groups, err := fetcher.FetchGroups()
