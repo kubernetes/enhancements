@@ -171,10 +171,13 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 #### Metrics
 
-Two new metrics are introduced:
+A new non-gated metric `route_controller_route_sync_total` counts route reconciliations with the cloud provider. It has two labels:
 
-1. `route_controller_route_sync_total` (non-gated): tracks the total number of route reconciliations. Useful for A/B testing the impact of watch-based route reconciliation.
-2. `route_controller_route_corrections_total` (gated): tracks how often routes required adjustment after a periodic reconcile. This signals whether our node update filters are accurate or need revision.
+- `trigger`: `node_change` if the reconcile was caused by a relevant Node update, `periodic` if it was caused by the periodic resync (or by the sync period timer when the feature gate is disabled).
+- `outcome`: `error` if the reconcile failed, `changed` if at least one route was created or deleted, otherwise `noop`.
+
+The total rate is useful for A/B testing the impact of watch-based route reconciliation.
+With the feature gate enabled, `trigger="periodic",outcome="changed"` counts route corrections made during periodic reconciles. This signals whether our node update filters are accurate or need revision.
 
 ### Test Plan
 
@@ -204,7 +207,7 @@ Two new metrics are introduced:
 #### Beta
 
 - A non-gated metric (`route_controller_route_sync_total`) is available to A/B test the feature's impact on the number of route reconciliations.
-- A gated metric is available to track the number of route corrections made during periodic reconciles.
+- The `trigger` and `outcome` labels on `route_controller_route_sync_total` allow tracking the number of route corrections made during periodic reconciles (`trigger="periodic",outcome="changed"`).
 
 #### GA
 
@@ -261,6 +264,7 @@ This will not impact already running nodes/workloads, but they might be affected
 ###### What specific metrics should inform a rollback?
 
 The metric `route_controller_route_sync_total` can be used to determine if the route controller is syncing correctly, when new nodes are added. Furthermore, this metric can indicate if reconciles are happening more frequently than the previous 10s interval.
+An increase of `outcome="error"` or a sustained rate of `trigger="periodic",outcome="changed"` indicates that route reconciliation is failing or that Node updates are being missed.
 
 Note that these metrics are only available from the CCM.
 
