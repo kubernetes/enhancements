@@ -43,4 +43,3 @@ feature-gates:
 # The following PRR answers are required at beta release
 metrics:
   - route_controller_route_sync_total
-  - route_controller_route_corrections_total
