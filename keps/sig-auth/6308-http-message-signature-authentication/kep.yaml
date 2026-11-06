@@ -1,0 +1,44 @@
+title: HTTP Message Signature Authentication
+kep-number: 6308
+authors:
+  - "@micahhausler"
+owning-sig: sig-auth
+status: implementable
+creation-date: 2026-09-08
+reviewers:
+  - "@enj"
+  - "@liggitt"
+  - "@deads2k"
+approvers:
+  - "@enj"
+  - "@liggitt"
+  - "@deads2k"
+
+see-also:
+  - "/keps/sig-auth/3331-structured-authentication-configuration"
+  - "/keps/sig-auth/541-external-credential-providers"
+  - "/keps/sig-auth/4317-pod-certificates"
+  - "/keps/sig-auth/5681-conditional-authorization"
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: HTTPSignatureAuthentication
+    components:
+      - kube-apiserver
+      - client-go
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - apiserver_httpsig_signature_outcomes_total
+  - apiserver_httpsig_unclaimed_signatures_total
+  - apiserver_httpsig_resolver_request_total
+  - apiserver_httpsig_resolver_request_duration_seconds
+  - apiserver_httpsig_key_cache_lookup_total
+  - apiserver_httpsig_certificate_validation_cache_lookups_total
