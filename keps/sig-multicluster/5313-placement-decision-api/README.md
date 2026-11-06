@@ -24,6 +24,7 @@
   - [API Example](#api-example)
   - [Implementation Details](#implementation-details)
     - [Consumer Discovery and Usage](#consumer-discovery-and-usage)
+    - [Decision Groups](#decision-groups)
     - [Slicing](#slicing)
     - [Lifecycle](#lifecycle)
     - [Ownership](#ownership)
@@ -216,6 +217,7 @@ Key characteristics:
 - Data-only resource: No business logic, just a list of selected clusters
 - Namespace-scoped: Aligns with Work and ClusterProfile for consistent RBAC
 - Sliceable: Can represent decisions with hundreds of clusters using multiple slice objects
+- Optional ordered groups: Can divide a decision into groups that consumers apply in order
 - Optional correlation: Can be tied to specific workloads via labels, or published as generic streams
 - Read-only for consumers: Clear ownership model prevents conflicts
 
@@ -344,6 +346,8 @@ This section provides the technical specification of the PlacementDecision API.
 - **Decision key**: An opaque correlation string chosen by implementers to group decision slices.
   When used, it is carried in the `multicluster.x-k8s.io/decision-key` label.
 
+- **Decision group**: An indexed subset of the clusters in a decision.
+
 - **Scheduler**: A controller that writes `PlacementDecisions` based on `ClusterProfiles` and
   scheduling/placement requirements/specs.
 
@@ -385,6 +389,12 @@ const DecisionKeyLabel = "multicluster.x-k8s.io/decision-key"
 
 // Optional: label that indicates the index position of this slice when order matters.
 const DecisionIndexLabel = "multicluster.x-k8s.io/decision-index"
+
+// Optional: index of the group that contains this slice.
+const DecisionGroupIndexLabel = "multicluster.x-k8s.io/decision-group-index"
+
+// Optional: display name of the group that contains this slice.
+const DecisionGroupNameLabel = "multicluster.x-k8s.io/decision-group-name"
 
 // Optional: label that links a decision to an originating workload when applicable.
 const PlacementKeyLabel = "multicluster.x-k8s.io/placement-key"
@@ -456,6 +466,24 @@ Consumers can discover and use `PlacementDecision` in one of the following ways:
 - When using naming for grouping, the consumer is responsible for correlating all slices that share the same base.
 
 Controllers may implement both options simultaneously.
+
+#### Decision Groups
+
+Producers can divide a decision's slices into decision groups. A decision is grouped when any slice carries
+`decision-group-index`. Every slice in a grouped decision MUST carry `decision-key`, `decision-index`, and
+`decision-group-index`. `decision-index` uniquely numbers slices across the whole decision from `0`.
+`decision-group-index` is a decimal number without a sign or leading zeros. Group indexes are contiguous from `0`.
+Each slice belongs to one group and a group may span multiple slices.
+A group-aware consumer verifies these rules and processes groups in ascending group-index order.
+
+`decision-group-name` is an optional display name. A slice that carries it MUST also carry `decision-group-index`,
+and every slice of that group MUST carry the same non-empty value.
+Consumers that do not support group ordering MAY ignore the group labels and act on all selected clusters
+without observing group order.
+
+For example, five slices can contain 370 clusters in three groups:
+
+![Five slices of my-service-v2-rollout: group 0 canary contains slice 0 (100 clusters) and slice 1 (50); group 1 staging contains slice 2 (40); group 2 production contains slice 3 (100) and slice 4 (80). Groups are processed in index order.](./decision-groups.svg)
 
 #### Slicing
 
