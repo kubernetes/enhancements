@@ -1,0 +1,31 @@
+title: Configurable Container Level field for Pod Readiness
+kep-number: 6432
+authors:
+  - "@cshiv"
+owning-sig: sig-node
+participating-sigs:
+  - sig-api-machinery
+  - sig-cli
+status: provisional
+creation-date: 2026-09-25
+reviewers:
+  - "@SergeyKanzhelev"
+  - "@haircommander"
+approvers:
+  - "@SergeyKanzhelev"
+
+see-also:
+  - "/keps/sig-node/753-sidecar-containers"
+
+stage: alpha
+
+latest-milestone: "v1.39"
+
+milestone:
+  alpha: "v1.39"
+
+feature-gates:
+  - name: ContainerPodReadinessPolicy
+    components:
+      - kube-apiserver
+      - kubelet
