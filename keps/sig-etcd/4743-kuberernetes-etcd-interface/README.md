@@ -159,7 +159,7 @@ Alternative code locations are discussed at the end of the document.
 To ensure smoother transition we propose the adoption of the etcd-Kubernetes interface to be done in two stages:
 
 1. **KV Interface:** Covering the basic get, list, count, put, and delete operations.
-2. **Watch Interface: **Covering Watch operation and requesting progress notification for it.
+2. **Watch Interface:** Covering Watch operation and requesting progress notification for it.
 
 
 ### KV interface
