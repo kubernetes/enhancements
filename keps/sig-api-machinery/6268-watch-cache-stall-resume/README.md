@@ -168,9 +168,12 @@ watchers at once (node churn, zone-connectivity blips).
   feature is proven (see Notes/Constraints/Caveats).
 - Terminating a client that never reads (a cull). That belongs with the
   handling of misbehaving clients, which crosses into API Priority and
-  Fairness. It is out of scope for alpha. Such a watcher stays bounded by the
-  request deadline, as today, and the stalled-watchers gauge measures that
-  population before any decision about it.
+  Fairness. It is out of scope for alpha. The request deadline bounds such a
+  watcher, but on a busy resource that is longer than today, because the
+  force-close of today ends it sooner. With the gate on, a client that reads
+  nothing in its initial phase holds its API Priority and Fairness seat until
+  the deadline. The stalled-watchers gauge measures that population before any
+  decision about it.
 
 ## Proposal
 
@@ -185,17 +188,19 @@ the simulator will revise.
   does not fit in a watcher's input channel, the dispatcher marks the watcher
   unsynced, records the position from which it must resume, and moves on. It
   never waits for that watcher and never force-closes it for a full channel.
-  While a watcher is unsynced the dispatcher offers it nothing.
-- **One serialization per event per pass, shared by every watcher that needs
-  it.** A pass serves the unsynced watchers that need the same stretch of
-  history from one history read. Each event is wrapped once per pass, and the
-  same object with its cached serialization is pushed to every watcher that
-  selects it. The cost of a burst of stalls scales with the number of events,
-  not with the number of watchers.
-- **Every unsynced watcher with room in its channel is served within a bounded
-  number of passes.** A pass takes the watchers that have room and rotates
-  among them across passes (round robin from a cursor that persists between
-  passes), so no watcher is starved by its position. A watcher that cannot
+  While a watcher is unsynced the live path offers it nothing.
+- **One serialization per event per cohort, shared by every watcher in it.** A
+  pass serves the unsynced watchers that need the same stretch of history from
+  one history read. Each event is wrapped once per cohort, and the same object
+  with its cached serialization is pushed to every member that selects it.
+  Cohorts of one pass whose windows overlap read and wrap the overlap again.
+  The cost of a burst of stalls scales with the number of events, not with the
+  number of watchers.
+- **Unsynced watchers with room in their channel take turns.** Room means at
+  least one free slot. A pass takes the watchers that have room and rotates
+  among them across passes, from a cursor that persists between passes. Alpha
+  does not guarantee a bound on the number of passes; that bound is
+  measurement 4 under How we measure success. A watcher that cannot
   accept an event stays unsynced, keeps its last accepted resource version,
   and is offered again in a later pass.
 - **Termination only when the history no longer holds the needed events.** A
@@ -213,13 +218,18 @@ the simulator will revise.
   while a watcher is unsynced, and after resync a bookmark below the watcher's
   position is skipped. This differs from etcd, where a watch can be opened at a
   future revision, so etcd's synced set also holds watchers that legitimately
-  skip events. Kubernetes watches never start in the future, so a skip on the
-  live path here is a safety check, not a mechanism (see Design Details).
+  skip events. A Kubernetes watcher's position never starts above the watch
+  cache, even when the client asks for a higher resource version, but it can
+  start above the dispatcher: its initial interval already covers the events
+  still queued for the dispatcher, so the live path skips them.
+  That skip is a safety check, not a mechanism: the watcher goroutine also
+  drops events at or below the interval's resource version (see Design
+  Details).
 - **The trade-off: event reuse first, fairness by rotation second.** A pass
   groups watchers by position so that one history read and one serialization
   serve as many watchers as possible. That is efficiency. Rotation across
-  passes guarantees that every watcher with room is served within a bounded
-  number of passes. That is fairness. When the two conflict inside one pass,
+  passes gives every watcher with room its turn. That is fairness; its known
+  limit is under Risks and Mitigations. When the two conflict inside one pass,
   the pass favors reuse, and fairness comes from rotation across passes. The
   simulator described under How we measure success is the tool to revisit this
   choice.
@@ -259,27 +269,31 @@ no replay runs without the cache.
   bounds how long a client may lag before it must re-list.
 - Follow-up work, once the feature is proven in production: simplify the
   heuristics that size the per-watcher channels, and reduce the memory those
-  channels cost. With the history as the unit of tolerance, a large channel no
-  longer buys a slow client anything.
+  channels cost. With the history as the unit of tolerance, the channel size
+  no longer decides whether a slow client survives. In alpha it still decides
+  how fast an unsynced watcher catches up (see Risks and Mitigations).
 - Correctness across the unsynced and synced transitions rests on these
   invariants, which the code enforces and documents at their call sites:
   1. Position. Every event a watcher must see with a resource version at or
-     below its position is already in its input channel, and every relevant
-     event above its position is still to be offered (by the live path if
-     synced, by a pass if unsynced). A failed push of event X sets the position
-     to at most X minus one; X is in the history because the history is
-     appended before dispatch, so a pass re-offers X.
+     below its position is in its initial interval or already in its input
+     channel, and every relevant event above its position is still to be
+     offered (by the live path if synced, by a pass if unsynced). The position
+     starts at the watch cache resource version at registration, which is what
+     the initial interval covers. A failed push of event X sets the position to
+     at most X minus one; X is in the history because the history is appended
+     before dispatch, so a pass offers X again.
   2. Order and single delivery. One goroutine writes into every input channel,
      history order equals dispatch order, and the channel is FIFO, so a client
      sees increasing resource versions. The live path skips any event at or
      below a watcher's position, so an event a pass already pushed is never
-     pushed again after resync. That skip is a safety check with a counter;
-     the target resync point makes it unnecessary (see Design Details).
+     pushed again after resync. That skip has a counter; the target resync point
+     removes the skip for resynced watchers, not for a new watcher (see Design
+     Details).
   3. Bookmarks. No bookmark is delivered while a watcher is unsynced. After
      resync, a bookmark below the watcher's position is skipped, so a client's
      last seen resource version never moves backwards and a reconnect never
-     replays events the client already received. Unlike etcd, no watcher here
-     starts at a future resource version.
+     replays events the client already received. Unlike etcd, no watcher's
+     position here starts at a future resource version.
   4. Selection. A pass applies the same namespace, name, and trigger index
      selection the live path applies, from a copy of the watcher's scope taken
      at registration, so a watcher receives exactly what live dispatch would
@@ -290,7 +304,9 @@ no replay runs without the cache.
 - All unsynced cohorts share one scan rate. A cohort catches up only while its
   share of that rate exceeds the write rate. Stalled watchers cluster in
   practice (they stall on the same burst and converge onto one position once
-  served together), so the number of active cohorts stays small.
+  served together), so the number of active cohorts stays small. A watcher
+  with a small channel can fall out of its cohort and lead its own (see Risks
+  and Mitigations).
 
 ### Risks and Mitigations
 
@@ -304,24 +320,48 @@ no replay runs without the cache.
   data loss.
 - **A watcher that never recovers holds resources.** An unsynced watcher
   retains its channels and goroutine. Mitigations: the request deadline bounds
-  its lifetime as today, and the `apiserver_watch_cache_stalled_watchers` gauge
-  makes the population visible. That measurement comes before any decision on
+  its lifetime, and the `apiserver_watch_cache_stalled_watchers` gauge makes
+  the population visible. On a busy resource that lifetime is longer than
+  today, and in the initial phase the watcher also holds its API Priority and
+  Fairness seat (see Non-Goals). That measurement comes before any decision on
   reclaiming such watchers sooner.
 - **Catch-up delays live dispatch.** In alpha a pass runs on the dispatcher
-  goroutine. It is bounded in watchers served, history events read, and pushes
-  per watcher, and its period is scaled so passes stay under about a tenth of
-  the dispatcher's time (initial values in Design Details). The dispatcher also
+  goroutine. It is bounded in watchers served, history events read, and
+  pushes, and its period is scaled so passes take about a tenth of the
+  dispatcher's time for a pass of up to about 1 ms (initial values in Design
+  Details). The dispatcher also
   takes the watch cache read lock during a pass, which the previous design
   never did from that goroutine; the budget bounds how often it asks, and the
   reflector's hold time (microseconds per event) bounds how long one wait
   takes. At the boundary of the apiserver's watch throughput this bound is
   still a cost paid by live dispatch; the target design removes it by serving
   unsynced watchers from their own goroutine, which is a Beta criterion.
+  Expiry is outside the bounds of a pass: a pass expires every aged out
+  watcher it finds, so a mass expiry makes one long pass.
+- **The catch-up path carries less than the live path.** A burst longer than
+  the channel can mark every watcher that selects those events unsynced at
+  once, healthy ones included. The history read and the serialization are
+  shared, but each push is per watcher. The passes get about a tenth of the
+  dispatcher's time. The initial values give the capacity: 2000 pushes per pass
+  and a 10 ms period are 200,000 pushes per second. A busy period is shorter,
+  so a faster pass gives more. If the number of unsynced watchers times the
+  event rate is above that capacity, the set does not shrink while the writes
+  continue. The lag grows to the history window, and the watchers end with the
+  `410`. With free CPU, the force-close of today recovers faster in that case.
+  An unsynced watcher gets about one channel of events per turn, whatever its
+  read rate. So a small channel catches up slowly next to many slow readers.
+  The target design (own goroutine) raises the capacity. The simulator measures
+  it before Beta.
 - **Starvation of new or synced watchers by stale ones.** A large population of
-  stale watchers could take every pass. Mitigations: candidates are chosen by
-  free room and rotated from a persistent cursor, so a watcher that can catch
-  up is served first and every watcher with room is served within a bounded
-  number of passes; the simulator measures this fairness before Beta.
+  stale watchers could take every pass. Mitigations: a candidate must have a
+  free slot in its channel, so a client that reads nothing takes no scan and
+  no push; candidates are rotated from a persistent cursor, so they take
+  turns. Known limit: a cohort that accepts everything it is offered stays at
+  the cursor and leads again. If it spends the budget of every pass, a
+  candidate below the cursor waits, and only the history window bounds that
+  wait. Alpha does not guarantee a bound on the number of passes; that bound
+  is measurement 4 under How we measure success, and the simulator measures
+  it before Beta.
 
 ## Design Details
 
@@ -338,13 +378,13 @@ only the dispatcher goroutine writes: a position (resource version), an
 unsynced flag, the count of events pushed by passes since it went unsynced, a
 copy of its namespace, name and trigger selection taken at registration, and a
 flag that says whether the watcher reached its live loop (set by the watcher
-goroutine on its first receive; the dispatcher reads it to pick the `410`
+goroutine when it enters that loop; the dispatcher reads it to pick the `410`
 reason). The cacher carries the set of unsynced watchers and the pass cursor.
 
 **Live path.** For each object event, the dispatcher skips watchers that are
 unsynced or whose position is at or above the event's resource version. The
-second skip is counted in `apiserver_watch_cache_watcher_skipped_events_total`,
-which lands in the follow-up PR with the gauge (see the resync point below). On a successful non-blocking push the position
+second skip is counted in `apiserver_watch_cache_watcher_skipped_events_total`
+(see the resync point below). On a successful non-blocking push the position
 becomes the event's resource version. On a failed push the position becomes
 the event's resource version minus one (never lower than it was) and the
 watcher is marked unsynced. For each bookmark, the dispatcher skips unsynced
@@ -359,18 +399,17 @@ advances the position.
    and marks every watcher whose position is below that oldest version minus
    one as expired. Expired watchers are stopped in drain mode so their backlog
    is still delivered before the `410`. The candidates are the remaining
-   unsynced watchers with room in their input channel. Candidates are ordered
-   by three keys: first by the free share of their channel (a share, so a
-   watcher with a small channel and one with a large channel compare fairly),
-   then by whether the watcher is new to the unsynced set or drained its
-   channel since its last service,
-   then by rotation from a cursor that persists across passes (a position at
-   or above the cursor comes first). When there are more candidates than the
-   member cap, the first ones in that order are kept. A watcher that can catch
-   up is served first, laggards take turns across passes, and no watcher is
-   starved by its position.
-2. It forms cohorts. The lead is the first unserved candidate by the same
-   keys. The pass opens one history interval from the lead's position and
+   unsynced watchers with at least one free slot in their input channel,
+   sorted by position. When there are more candidates than the member cap,
+   the pass keeps that many by rotation from a cursor that persists across
+   passes: positions at or above the cursor come first, in ascending order,
+   and then the pass wraps to the lowest positions. Candidates take turns
+   across passes.
+2. It forms cohorts. The lead is the first unserved candidate at or above the
+   cursor, or else the first unserved candidate. A lead that accepted its
+   whole window is at the cursor and leads again. A lead that rejected a push
+   is below the cursor and waits for the wrap.
+   The pass opens one history interval from the lead's position and
    scans it up to the remaining budget. Followers join as the scan passes
    their position: the cohort is the lead plus every unserved candidate above
    it whose position is below the last scanned resource version. A candidate
@@ -384,13 +423,13 @@ advances the position.
    Events no member selects are never wrapped.
 4. For each member, it pushes every selected event above the member's position
    in order with a non-blocking add. A success advances the position. A
-   failure ends the offering to that member for this cohort; the member keeps
-   its last accepted resource version and records the scanned events it is
-   still owed. At the end of the pass, after the other cohorts ran, the owed
-   events are offered once more to the fast-draining members whose channel has
-   room again, in up to two rounds, because the watcher goroutine drains the channel
-   concurrently. A member that still rejects stays unsynced with its last
-   accepted resource version and is offered again in a later pass.
+   failure ends the offering to that member for this pass. The member keeps
+   its last accepted resource version and stays unsynced, and a later pass
+   offers again from there. The scan of a cohort stops when the scan budget
+   or the push budget is spent, when every member has rejected a push, or
+   when the interval ends or is invalidated. The pass checks this between
+   events, so every scanned event is offered to every member that selects it
+   and has not rejected a push.
 5. A member that accepted everything it was offered has its position advanced
    to the last scanned resource version. This is what lets a scope-filtered
    watcher cross a window that holds nothing for it, and what makes cohort
@@ -407,29 +446,37 @@ to skip for it. Alpha resyncs at the end of the history instead. The history
 runs ahead of the dispatcher's incoming channel by up to that channel's
 capacity, so an alpha watcher can resync at a position the live path has not
 dispatched yet, and the live path then skips the events at or below its
-position. That skip stays as a safety check in both cases, and
-`apiserver_watch_cache_watcher_skipped_events_total` counts it. Once the
-resync point is the last dispatched resource version, a non-zero value means
-the resync point is wrong. Moving the resync point is a Beta criterion.
+position. A new watcher skips too: it starts at the watch cache resource
+version, so events queued for the dispatcher at that moment are at or below
+its position. For a new watcher that skip is a safety check; after an alpha
+resync it is what stops a duplicate.
+`apiserver_watch_cache_watcher_skipped_events_total` counts both, so a non-zero
+value alone does not mean the resync point is wrong. Moving the resync point
+is a Beta criterion.
 
 **Bounds.** A pass is bounded in four ways: the number of watchers it serves,
 the scan units it spends (history events read plus interval opens), the pushes
-it makes, and one wrap per selected event. The scan and push budgets are
-totals for the whole pass across all cohorts, not per watcher. The initial
-values are listed below.
+it makes, and one wrap per selected event per cohort. The scan and push
+budgets are totals for the whole pass across all cohorts, not per watcher. The
+initial values are listed below.
 
 **When passes run.** A pass runs after a dispatched event when the unsynced set
 is not empty and the current period has elapsed since the last pass, and on a
 timer so an idle cacher still drains. The period has three values. Normal is
-the default. After a pass that left a member owed events with a full channel
-(that client is draining), or that spent its push budget, the period drops to a busy value, scaled from the
+the default. After a pass in which a member rejected a push, or that spent
+its push budget, the period drops to a busy value, scaled from the
 measured duration of the pass so that passes take under about a tenth of the
 dispatcher's time. After a pass that served and expired nothing, the period
-rises to an idle value. A new stall resets it to normal. The precedent is
-etcd: its victim retry and its unsynced loop both yield after progress.
+rises to an idle value if the previous period was at least normal. After a
+shorter period it is normal, so a slow reader that was blocked gets a full
+normal period to free a slot before the idle value. A new stall only shortens
+the wait: it changes an idle period to normal and keeps a busy one. A pass in
+the same dispatcher turn as the stall keeps the normal period even if it
+serves nothing, because the new member still has a full channel. The precedent
+is etcd: its victim retry and its unsynced loop both yield after progress.
 
 **Watcher goroutine.** The watcher's processing loop is the existing one, with
-two additions. It marks itself live on its first receive. When its input
+two additions. It marks itself live when it enters the loop. When its input
 channel closes and the dispatcher marked it expired, it sends the in-stream
 `410` and returns. In drain mode the done channel stays open, so the backlog
 and then the `410` are delivered as long as the client reads; a wedged client
@@ -461,17 +508,15 @@ mechanism exists for, the memory is far below one copy per watcher and event.
   synced to unsynced.
 - `apiserver_watch_cache_watcher_deferred_events_total` (counter): events
   pushed by sync passes rather than by the live path.
-- `apiserver_watch_cache_watcher_catchup_rounds_total` (counter): transitions
-  from unsynced back to synced. It equals the count of the histogram below.
 - `apiserver_watch_cache_watcher_catchup_events` (histogram): events pushed to
-  one watcher between going unsynced and resyncing.
+  one watcher between going unsynced and resyncing. Its `_count` is the number
+  of transitions from unsynced back to synced.
 - `apiserver_watch_cache_stalled_watchers` (gauge): the number of unsynced
-  watchers. It lands in a follow-up PR.
+  watchers.
 - `apiserver_watch_cache_watcher_skipped_events_total` (counter): events the
-  live path skipped because they were at or below a watcher's position. It
-  lands in the follow-up PR with the gauge. Once
-  the resync point is the last dispatched resource version, a non-zero value
-  means the resync point is wrong.
+  live path skipped because they were at or below a watcher's position. A
+  resync ahead of the dispatcher and a new watcher opened while events are
+  queued both move it.
 - `apiserver_terminated_watchers_total` gains a `reason` label:
   `unresponsive` (today's force-close, gate off), `resource_expired` (gate on:
   a live watcher's position aged out of the history), and
@@ -497,12 +542,13 @@ to revise them.
   units, because an open takes the watch cache read lock and allocates a
   buffer, so many watchers with tiny windows cannot multiply the per-open
   cost.
-- Push budget: 2000 pushes per pass across all cohorts, plus the same
-  allowance again for the end-of-pass retry rounds, and at most one channel's
-  capacity per watcher per cohort.
+- Push budget: 2000 pushes per pass, in total across all cohorts. The pass
+  checks it between events, so it can overshoot by at most one push per
+  cohort member.
 - Pass period: 10 ms normal. Busy: scaled from the measured duration of the
   pass to keep passes under about a tenth of the dispatcher's time, at least
-  1 ms and at most 10 ms. Idle: 100 ms.
+  1 ms and at most 10 ms. Idle: 100 ms. A pass longer than about 1 ms takes
+  more than a tenth, because the busy period stops at 10 ms.
 - Measured on the benchmark host, a full pass costs about a millisecond, so
   the scan rate is about 200,000 history events per second at the 10 ms
   period. A pass never dispatches 512 times 2000 events; the budgets are
@@ -512,7 +558,8 @@ to revise them.
 
 Alpha runs the passes on the dispatcher goroutine. That keeps one writer per
 input channel and made the first implementation reviewable, and the pass is
-bounded so it stays under about a tenth of that goroutine's time. That bound
+bounded, with a period that keeps it at about a tenth of that goroutine's time
+for a pass of up to about 1 ms. That bound
 is still a cost paid by live dispatch. In an environment with many stalled
 watchers, at the boundary of the apiserver's watch throughput, serving them
 from the dispatcher goroutine makes the healthy watchers lag, which works
@@ -538,8 +585,7 @@ dispatcher goroutine:
   unsynced set, so each can be scanned independently, and the linear walk of
   the unsynced population moves off the dispatcher goroutine with the rest.
 - **Resync at the last dispatched resource version**, so the live path never
-  has an event to skip and `apiserver_watch_cache_watcher_skipped_events_total`
-  stays at zero.
+  has an event to skip for a resynced watcher.
 
 These are Beta graduation criteria.
 
@@ -571,6 +617,12 @@ cap, the scan and push budgets, the periods) and the candidate order, and to
 compare algorithm variants on the same input. The simulator and measured
 values for the four measurements above are Beta criteria.
 
+Three refinements of the pass are possible: to order candidates by the free
+share of their channel, to prefer candidates that drain fast, and to offer
+rejected events again within the same pass. They aim at the small channel
+limit under Risks and Mitigations. None is part of alpha. The simulator and
+real use must show a measurable gain before one is added.
+
 ### Rollout
 
 The mechanism ships behind the `WatchCacheStallResume` feature gate on
@@ -581,12 +633,13 @@ of the watch cache and the old force-close path is removed.
 
 **Gate off.** With the gate off, the dispatch path and the watcher processing
 loop keep their previous control flow on every dispatch and delivery path: no
-pass, no pass timer, no extra state read. The gate-independent changes are the
+pass and no pass timer. The gate-independent changes are the
 `reason` metric label above, the formatting of one pre-existing warning log
-line, and one latent bug fix: a hard stop (a client `Stop` or a
-`terminateAllWatchers` on relist or shutdown) can no longer be reopened into
-drain mode by a later graceful stop. That path only closes the done channel
-where the previous code left it open, which otherwise leaked the goroutine.
+line, and one latent bug fix: each stop deferred to the end of a dispatch
+keeps its own drain mode, so a later graceful stop in that dispatch can no
+longer turn a hard stop (a client `Stop` or a `terminateAllWatchers` on relist
+or shutdown) into a drain. That path only closes the done channel where the
+previous code left it open, which otherwise leaked the goroutine.
 
 ### Test Plan
 
@@ -601,18 +654,21 @@ None.
 
 - `staging/src/k8s.io/apiserver/pkg/storage/cacher`: existing coverage plus new
   cases, all run under the race detector: the synced to unsynced transition
-  and the position it records; the candidate order (free share of the
-  channel, drained since the last service, rotation from the cursor); cohort
-  formation and the single wrap per selected event; the scan budget and the
-  member cap; the owed events re-offered at the end of the pass; position
-  following the scan for scope-filtered and trigger-indexed watchers after
-  unrelated churn; the resync condition and the skipped-events counter; no
+  and the position it records; the candidate criterion (at least one free
+  slot in the channel) and the rotation from the cursor; cohort
+  formation and the single wrap per selected event per cohort; the scan
+  budget and the member cap; a rejected push that ends the offering for the
+  pass, and the later pass that resumes from the last accepted resource
+  version; position following the scan for scope-filtered and trigger-indexed
+  watchers after unrelated churn; the resync condition and the skipped-events
+  counter; no
   bookmarks while unsynced and the bookmark skip after resync; both `410`
   reasons and the delivery of the backlog before the `410`; a watcher stopped
   by its client between the stall and the pass; clean closes on context
-  cancellation and Cacher shutdown; the hard stop fix; and gate-off parity,
-  where several pre-existing watch cache tests run with the gate both on and
-  off and the gate-off path must match prior behavior.
+  cancellation and Cacher shutdown; the drain mode that each deferred stop
+  keeps; and gate-off parity, where several pre-existing watch cache tests
+  run with the gate both on and off and the gate-off path must match prior
+  behavior.
 
 ##### Integration tests
 
@@ -627,11 +683,12 @@ None.
 None planned for alpha; the behavior is exercised by the integration test and
 the two validations below.
 
-- Benchmark (`kubernetes/kubernetes#141475`, merged): a healthy watcher next
-  to slow ones. With the gate on there are zero force-closes and the healthy
-  watcher's p99 delivery latency is under 100 microseconds. With the gate off
-  the same run shows 16 to 24 ms and 20 force-closes.
-- Model-based correctness harness (`kubernetes/kubernetes#142381`) stacked on
+- Benchmark (`BenchmarkSlowWatcherTax`, scenario `stalled-reconnecting-1000`):
+  a healthy watcher next to slow ones. With the gate on there are zero
+  force-closes and the healthy watcher's p99 delivery latency is under 100
+  microseconds. With the gate off the same run shows 16 to 24 ms and 20
+  force-closes.
+- Model-based correctness harness (`kubernetes/kubernetes#142381`) run on
   the change with slow readers: every watch session is validated against the
   linearized write history across stalls and resyncs.
 
@@ -656,8 +713,9 @@ the only path.
 - One resync path serves both a watch that starts at an old resource version
   and a watch that fell behind, with the synced and unsynced sets kept
   separate (Target design).
-- The resync point is the last dispatched resource version, and
-  `apiserver_watch_cache_watcher_skipped_events_total` is zero in the tests.
+- The resync point is the last dispatched resource version, and a test that
+  resyncs a watcher while events are queued for the dispatcher moves
+  `apiserver_watch_cache_watcher_skipped_events_total` by zero.
 - The simulator exists, the four measurements under How we measure success
   have measured values, and the initial values are revised from them.
 - Scalability sign-off, based on those measurements, that the sync does not
@@ -768,8 +826,8 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-The `apiserver_watch_cache_watcher_stalls_total` and
-`apiserver_watch_cache_watcher_catchup_rounds_total` counters are non-zero when
+The `apiserver_watch_cache_watcher_stalls_total` counter and the `_count` of
+the `apiserver_watch_cache_watcher_catchup_events` histogram are non-zero when
 watches go unsynced and resync, and `apiserver_watch_cache_stalled_watchers`
 shows the current unsynced population.
 
@@ -796,9 +854,9 @@ objective.
     spike means clients cannot catch up within the history window).
   - `apiserver_watch_cache_watcher_catchup_events` distribution (bounded per
     stall episode by the history window).
-  - `apiserver_watch_cache_watcher_skipped_events_total` (zero once the resync
-    point is the last dispatched resource version; a non-zero value then means
-    the resync point is wrong).
+  - `apiserver_watch_cache_watcher_skipped_events_total` (a new watcher opened
+    while events are queued moves it, so a non-zero value is not a failure on
+    its own).
 
 ###### Are there any missing metrics that would be useful to have?
 
@@ -836,10 +894,11 @@ watcher no longer stalls the shared dispatch path; the benchmark shows a
 healthy watcher's p99 delivery latency drop from 16 to 24 ms to under 100
 microseconds). In alpha it adds sync passes on the dispatcher goroutine, each
 bounded in watchers served, history events read, and pushes, and run on a
-period scaled so that passes take at most about a tenth of the dispatcher's
-time (initial values in Design Details). It adds no goroutine in alpha. The
-target design moves the passes off the dispatcher goroutine, which is a Beta
-criterion.
+period scaled so that passes take about a tenth of the dispatcher's time for
+a pass of up to about 1 ms (initial values in Design Details). It adds no
+goroutine in alpha. The target design moves the passes off the dispatcher
+goroutine, which is a Beta criterion. The known limits of the catch-up path
+are under Risks and Mitigations.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage in any components?
 
@@ -895,6 +954,8 @@ inspect the metrics above to characterize the slow-client population.
   shared passes, following etcd's watchable store.
 - 2026-09-30: review round; cull removed from alpha scope; target design and
   success metrics added as Beta criteria.
+- 2026-11-02: follow-up to the review: simplified candidate criterion, no
+  re-offer rounds; known limits of the simplified pass added.
 
 ## Drawbacks
 
@@ -940,8 +1001,9 @@ one is proven.
   but not the reconnect/replay collapse of healthy-but-behind watchers, which
   is the main motivation. It also adds a third watcher state, which etcd found
   costly in complexity for little gain and which etcd's cache library skips.
-  It is out of scope for alpha; the request deadline bounds such a client as
-  today, and the stalled-watchers gauge measures the population first.
+  It is out of scope for alpha; the request deadline bounds such a client
+  (see Non-Goals), and the stalled-watchers gauge measures the population
+  first.
 - **A hard cap on catch-up work per watcher.** Bounding the number of catch-up
   rounds and terminating past it was considered; it re-introduces a force-close
   for slow-but-live clients and is unnecessary because aging out of the history
