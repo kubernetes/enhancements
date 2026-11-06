@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-multicluster
 participating-sigs:
   - sig-network
-status: implementable
+status: implemented
 creation-date: 2020-03-30
 reviewers:
   - "@johnbelamaric"
@@ -18,4 +18,4 @@ approvers:
   - "@thockin"
 
 latest-milestone: "0.0"
-stage: "beta"
+stage: "stable"
