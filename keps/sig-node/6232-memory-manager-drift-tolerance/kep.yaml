@@ -38,4 +38,4 @@ disable-supported: true
 # The following PRR answers are required at beta release.
 metrics:
   - kubelet_memory_manager_drift_tolerance_bytes
-  - kubelet_memory_manager_memory_drift_bytes
+  - kubelet_memory_manager_drift_bytes
