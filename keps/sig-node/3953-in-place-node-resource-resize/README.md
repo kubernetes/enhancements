@@ -1459,7 +1459,7 @@ information to express the idea and why it was not acceptable.
 
   * _Why it was rejected:_ This causes temporary node `NotReady` states, breaks active `exec`/`port-forward` sessions, and risks triggering historic edge-case bugs associated with Kubelet restarts.
 
-* **Fake Placeholder ("Balloon") Pods:** Pre-provisioning virtual machines at maximum capacity and scheduling fake high-priority pause ("balloon") pods to artificially reserve resources from the Kubelet, shrinking or deleting those placeholder pods when real workload capacity is needed.
+* **Balloon Drivers / Fake Placeholder Resources:** Pre-provisioning massive virtual machines but using memory ballooning or fake placeholder resources to artificially restrict the Kubelet, "inflating" them when capacity is needed.
 
   * _Why it was rejected:_ This is highly inefficient, complex to manage at the hypervisor level, and confuses the Kubernetes Scheduler, which relies on accurate, native cgroup boundaries.
 
