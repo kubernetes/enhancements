@@ -77,15 +77,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This KEP proposes adding an optional `name` field to `PodFailurePolicyRule` in
 the Job API. When a rule with `action: FailJob` matches a failed Pod, the Job
-controller will set the Job `Failed` condition reason to
-`PodFailurePolicy_<ruleName>`. If the field is unset, the controller derives the
-suffix from the rule index, preserving a deterministic machine-readable reason
-without requiring users to name every rule.
+controller will include the rule name in the Job failure condition message.
+The `FailureTarget` and `Failed` condition reasons remain `PodFailurePolicy`.
+The message continues to identify the matching rule by its zero-based index,
+including when the name is unset.
 
 The purpose of naming rules is to expose more detailed failure information in
 the Job status condition. This lets users configure multiple pod failure policy
-rules and lets higher-level controllers distinguish which rule, if any, caused a
-Job failure.
+rules and identify which rule caused a Job failure when inspecting status.
+The message is diagnostic text, not a structured programmatic interface.
 
 ## Motivation
 
@@ -104,14 +104,16 @@ For a concrete use case, see the JobSet
 [Configurable Failure Policy KEP], which highlighted the need for more granular
 pod failure policy reasons.
 
+The Alpha implementation addresses diagnostics first. Structured identification
+for those controllers is deferred for reconsideration during graduation.
+
 [Configurable Failure Policy KEP]: https://github.com/kubernetes-sigs/jobset/blob/main/keps/262-ConfigurableFailurePolicy/README.md
 
 ### Goals
 
-- Allow pod failure policy rules to communicate distinct failure types to
-  higher-level APIs and controllers.
-- Provide a stable, machine-readable Job failure condition reason for the
-  matching `FailJob` rule.
+- Allow users to identify the matching `FailJob` rule by name in Job failure
+  condition messages.
+- Preserve the stable, machine-readable `PodFailurePolicy` condition reason.
 - Preserve the existing pod failure policy matching and action semantics.
 - Keep observability bounded by avoiding user-provided rule names in metric
   label values.
@@ -121,172 +123,123 @@ pod failure policy reasons.
 - Changing `PodFailurePolicy` matching, ordering, or actions.
 - Allowing users to set arbitrary Job condition reasons directly.
 - Having the Job controller use the new field for any purpose other than the
-  Job failure condition reason described in this KEP.
+  Job failure condition message described in this KEP.
+- Providing structured, machine-readable identification of individual rules
+  during Alpha. This can be revisited during graduation.
 - Adding new Job APIs or new Job controller metrics.
 
 ## Proposal
 
 Add an optional `name` field to `PodFailurePolicyRule`. When a
 `PodFailurePolicyRule` matches a Pod failure and the rule action is `FailJob`,
-the Job controller will append the rule name to the Job `Failed` condition
-reason using the format `PodFailurePolicy_<ruleName>`.
+the Job controller will append the rule name in parentheses to the Job
+`FailureTarget` condition message. The final `Failed` condition carries the
+same reason and message. Both condition reasons remain `PodFailurePolicy`.
 
-If `name` is unset, the controller will use the zero-based index of the matching
-rule in `podFailurePolicy.rules` as the suffix. For example, if the first rule
-is unnamed and causes the Job to fail, the condition reason will be
-`PodFailurePolicy_0`.
+The message retains the zero-based index of the matching rule in
+`podFailurePolicy.rules`. If `name` is unset, the message is unchanged.
+
+This follows the [API review recommendation] adopted in
+[kubernetes/kubernetes#142913]. Names provide diagnostics without changing the
+reason selected by existing clients.
+
+[API review recommendation]: https://github.com/kubernetes/kubernetes/pull/142913#discussion_r4391207198
+[kubernetes/kubernetes#142913]: https://github.com/kubernetes/kubernetes/pull/142913
 
 ### User Stories
 
 #### Story 1
 
-As a user, I am using a JobSet to manage a group of Jobs, and I want to decide
-whether to fail the JobSet based on the exact container exit code that caused a
-child Job failure.
+As a user managing a group of Jobs, I want to identify the rule that failed a
+Job without looking up the rule index in its specification.
 
-Example JobSet:
+Example Job:
 
 ```yaml
-apiVersion: jobset.x-k8s.io/v1alpha2
-kind: JobSet
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: fail-jobset-example
+  name: named-rule-example
 spec:
-  failurePolicy:
+  podFailurePolicy:
     rules:
-    # If the Job fails due to a Pod failing with exit code 2, fail the JobSet
-    # immediately without attempting restarts.
-    - action: FailJobSet
-      targetReplicatedJobs:
-      - workers
-      onJobFailureReasons:
-      - PodFailurePolicy_ExitCode2
-    maxRestarts: 10
-  replicatedJobs:
-  - name: workers
-    replicas: 10
-    template:
-      spec:
-        parallelism: 1
-        completions: 1
-        backoffLimit: 0
-        podFailurePolicy:
-          rules:
-          - name: ExitCode2
-            action: FailJob
-            onExitCodes:
-              containerName: main
-              operator: In
-              values: [2]
-        template:
-          spec:
-            restartPolicy: Never
-            containers:
-            - name: main
-              image: python:3.10
-              command: ["..."]
+    - name: exit-code-2
+      action: FailJob
+      onExitCodes:
+        containerName: main
+        operator: In
+        values: [2]
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: main
+        image: busybox
+        command: ["sh", "-c", "exit 2"]
 ```
+
+The failure condition reason is `PodFailurePolicy`. Its message identifies
+`rule at index 0 (exit-code-2)`. Higher-level controllers can continue selecting
+the stable reason; they must not depend on parsing this message.
 
 #### Story 2
 
-As a user, I am using a JobSet to manage a group of Jobs, each running an HPC
-simulation. Each Job runs a simulation with different random initial parameters.
-When a simulation ends, the application exits with one of two exit codes:
+As a user running HPC simulations, I want to distinguish failures caused by
+invalid starting parameters from failures caused by invalid results when
+inspecting Jobs. The application exits with one of two exit codes:
 
 - Exit code 2 indicates the simulation produced an invalid result due to bad
   starting parameters and should not be retried.
 - Exit code 3 indicates the simulation produced an invalid result, but the
   initial parameters were reasonable, so the simulation should be restarted.
 
-When a Job fails due to exit code 2, I want my job management software to leave
-the Job in a failed state. When a Job fails due to exit code 3, I want my job
-management software to restart the Job.
-
-Example JobSet:
+I can name the corresponding rules `invalid-parameters` and `invalid-result`
+to make the failure message easier to interpret:
 
 ```yaml
-apiVersion: jobset.x-k8s.io/v1alpha2
-kind: JobSet
-metadata:
-  name: restart-job-example
-  annotations:
-    alpha.jobset.sigs.k8s.io/exclusive-topology: {{topologyDomain}}
-spec:
-  failurePolicy:
-    rules:
-    # If the Job fails due to a Pod failing with exit code 2, leave it in a
-    # failed state.
-    - action: FailJob
-      targetReplicatedJobs:
-      - simulations
-      onJobFailureReasons:
-      - PodFailurePolicy_ExitCode2
-    # If the Job fails due to a Pod failing with exit code 3, restart that Job.
-    - action: RestartJob
-      targetReplicatedJobs:
-      - simulations
-      onJobFailureReasons:
-      - PodFailurePolicy_ExitCode3
-    maxRestarts: 10
-  replicatedJobs:
-  - name: simulations
-    replicas: 10
-    template:
-      spec:
-        parallelism: 1
-        completions: 1
-        backoffLimit: 0
-        podFailurePolicy:
-          rules:
-          - name: ExitCode2
-            action: FailJob
-            onExitCodes:
-              containerName: main
-              operator: In
-              values: [2]
-          - name: ExitCode3
-            action: FailJob
-            onExitCodes:
-              containerName: main
-              operator: In
-              values: [3]
-        template:
-          spec:
-            restartPolicy: Never
-            containers:
-            - name: main
-              image: python:3.10
-              command: ["..."]
+podFailurePolicy:
+  rules:
+  - name: invalid-parameters
+    action: FailJob
+    onExitCodes:
+      operator: In
+      values: [2]
+  - name: invalid-result
+    action: FailJob
+    onExitCodes:
+      operator: In
+      values: [3]
 ```
+
+These names do not enable different automatic restart actions based on
+`onJobFailureReasons`: both rules produce the same `PodFailurePolicy` reason.
+Structured identification for higher-level controllers remains a possible
+graduation follow-up.
 
 ### Notes/Constraints/Caveats
 
 Pod failure policy rules are evaluated in order when a Pod fails. Only the first
 matching rule is executed, even if multiple rules match the same Pod failure.
-The emitted reason therefore reflects the first matching `FailJob` rule.
+The failure message therefore identifies the first matching `FailJob` rule.
 
-The new reason format is feature-gated. While the feature gate is disabled, Jobs
-continue to use the existing `PodFailurePolicy` condition reason.
+Including names in messages is feature-gated. While the feature gate is
+disabled, the message retains the existing index-only format. The condition
+reason is `PodFailurePolicy` regardless of the feature gate.
 
 ### Risks and Mitigations
 
-The main compatibility risk is that enabling the feature changes the condition
-reason observed by clients when a pod failure policy rule fails a Job. Clients
-that read Job failure reasons will need to handle both the legacy
-`PodFailurePolicy` reason and the new `PodFailurePolicy_<ruleName>` format
-during rollout, rollback, and version skew. The feature gate limits this change
-to clusters that opt in during alpha.
+The failure message changes when a named rule fails a Job with the feature
+enabled. Clients must treat messages as diagnostic text rather than a stable
+machine-readable interface. Keeping the condition reason unchanged preserves
+existing reason-based selection during rollout, rollback, and version skew.
 
-The main API risk is that a user-provided value becomes part of a
-machine-readable status reason. Validation mitigates malformed or colliding
-inputs by checking uniqueness, generated reason syntax, generated reason length,
-and conflicts with Job controller reasons.
+Validation bounds names to unique DNS labels of at most 63 characters, avoiding
+arbitrary text in messages.
 
 The main observability risk is metric cardinality. The Job controller's
 `jobs_finished_total` metric has a `reason` label. Implementations of this KEP
-must not use user-provided rule names as metric label values. Any granular
-`PodFailurePolicy_<ruleName>` condition reason must be normalized back to the
-bounded `PodFailurePolicy` label value before recording `jobs_finished_total`.
+must not use user-provided rule names as metric label values. Because the
+condition reason remains `PodFailurePolicy`, no metric normalization is needed.
 
 ## Design Details
 
@@ -297,9 +250,13 @@ Add an optional `name` field to `PodFailurePolicyRule`.
 ```go
 type PodFailurePolicyRule struct {
     // Name is an optional name for this rule. When the rule matches a Pod
-    // failure and the action is FailJob, the Job controller appends this name to
-    // the Job Failed condition reason as "PodFailurePolicy_<name>".
-    Name string
+    // failure and the action is FailJob, the Job controller appends this name
+    // in parentheses to the failure condition message.
+    // +featureGate=PodFailurePolicyName
+    // +optional
+    // +k8s:optional
+    // +k8s:format=k8s-short-name
+    Name *string `json:"name,omitempty" protobuf:"bytes,4,opt,name=name"`
 
     // Existing fields omitted.
 }
@@ -308,53 +265,48 @@ type PodFailurePolicyRule struct {
 ### Defaulting
 
 There is no API defaulting for `PodFailurePolicyRule.name`. If `name` is unset,
-the stored Job spec remains unchanged. At reconciliation time, the Job
-controller derives the reason suffix from the zero-based index of the matching
-rule in `podFailurePolicy.rules`.
+the stored Job spec remains unchanged, and the controller uses the existing
+index-only failure message.
 
 ### Validation
 
-- Validate that all non-empty pod failure policy rule names are unique within a
-  Job.
-- Validate that a rule name does not collide with an index-generated reason for
-  another rule. For example, `name: "0"` is only allowed on rule index 0.
-- Validate that the generated Job condition reason
-  `PodFailurePolicy_<ruleName>` is a valid Kubernetes condition reason, including
-  syntax and the 128-character maximum length.
-- Validate that the generated Job condition reason does not conflict with the
-  Job controller's internal failure reasons.
+- Declarative validation uses `k8s-short-name`: a name must be a non-empty DNS
+  label of at most 63 characters, containing only lowercase alphanumeric
+  characters or hyphens, starting and ending with an alphanumeric character.
+- Handwritten validation checks that names are unique within the Job.
+- Unnamed rules are allowed. An explicitly empty name is invalid.
+- Numeric names are allowed, including names equal to another rule's index,
+  because names and indexes are separate in the message.
 
 ### Business logic
 
 When a `PodFailurePolicyRule` matches a Pod failure and `action` is `FailJob`,
-the Job controller will set the Job `Failed` condition reason deterministically:
+the Job controller will set the Job `FailureTarget` condition reason to
+`PodFailurePolicy` and construct the failure message:
 
-- `PodFailurePolicy_<name>` when the rule has `name` set.
-- `PodFailurePolicy_<index>` when the rule has `name` unset.
+- Retain the existing failure details and `rule at index <index>` text.
+- Append ` (<name>)` when the feature is enabled and the rule has `name` set.
+- Leave the message unchanged for unnamed rules or when the feature is disabled.
 
-Rules with `Count` or `Ignore` actions do not set the Job `Failed` condition and
-therefore do not use the new reason format.
+The final `Failed` condition carries the same reason and message. Names on
+`Count`, `Ignore`, or `FailIndex` rules do not affect failure messages.
 
 If the `PodFailurePolicyName` feature gate is disabled, the API server will not
-preserve the new field and the Job controller will continue to use the legacy
-`PodFailurePolicy` reason. If `PodFailurePolicyName` is enabled but the
-underlying `PodFailurePolicy` behavior is disabled, the new field has no effect
-because the Job controller only evaluates it as part of pod failure policy
-handling.
+preserve newly introduced names, unless names are already in use in the stored
+Job spec. This pruning behavior is shared by Jobs and CronJob templates. The
+Job controller ignores names when the gate is disabled; the reason stays
+`PodFailurePolicy` in all cases.
 
 ### Metrics
 
 This KEP does not add new metrics.
 
 The Job controller already records finished Jobs in `jobs_finished_total` with a
-bounded `reason` label. To preserve that bounded cardinality, the implementation
-must record granular pod failure policy reasons as `PodFailurePolicy` in this
-metric instead of recording the full `PodFailurePolicy_<ruleName>` condition
-reason.
+bounded `reason` label. Since the condition reason remains `PodFailurePolicy`,
+metric recording is unchanged and rule names do not appear in labels.
 
 The existing `pod_failures_handled_by_failure_policy_total` metric remains
-unchanged and continues to report the matched action (`FailJob`, `Ignore`, or
-`Count`).
+unchanged and continues to report the matched action.
 
 ### Test Plan
 
@@ -370,18 +322,18 @@ No prerequisite testing updates are required.
 
 Unit tests will cover:
 
-- API validation for duplicate rule names, generated reason syntax, generated
-  reason length, index collisions, and conflicts with internal Job failure
-  reasons.
+- API validation for duplicate rule names, DNS label syntax, and the 63-character
+  limit, including rejection of empty, uppercase, and dotted names.
+- Declarative validation equivalence for Jobs and CronJobs, including CronJob
+  template updates.
 - API strategy behavior with the feature gate enabled and disabled.
 - Controller handling for named and unnamed `FailJob` rules matching
   `onExitCodes`.
 - Controller handling for named and unnamed `FailJob` rules matching
   `onPodConditions`.
-- Controller behavior when the feature gate is disabled after a Job already has
-  a granular failure reason.
+- Controller behavior with names present while the feature gate is disabled.
 - Metric recording that keeps `jobs_finished_total` reason labels bounded by
-  using `PodFailurePolicy` rather than user-provided rule names.
+  retaining the `PodFailurePolicy` reason.
 
 Current coverage for packages expected to be touched:
 
@@ -395,25 +347,23 @@ Current coverage for packages expected to be touched:
 Integration tests will cover:
 
 - When the feature gate is enabled and a Job's pod failure policy triggers a Job
-  failure through a named rule, the Job `Failed` condition reason is
-  `PodFailurePolicy_<name>`.
+  failure through a named rule, the `FailureTarget` and `Failed` conditions have
+  reason `PodFailurePolicy` and include the name in their messages.
 - When the feature gate is enabled and a Job's pod failure policy triggers a Job
-  failure through an unnamed rule, the Job `Failed` condition reason is
-  `PodFailurePolicy_<index>`.
-- When the feature gate is disabled, the API server does not preserve the new
-  field and Job failures continue to use the legacy `PodFailurePolicy` reason.
-- When the feature gate is disabled after a Job already has a granular failure
-  condition reason, the Job controller does not rewrite that existing condition
-  reason.
+  failure through an unnamed rule, the message retains the index-only format.
+- When the feature gate is disabled, new names are pruned and the Job failure
+  message retains the index-only format.
+- The `jobs_finished_total` reason label remains `PodFailurePolicy`.
 
 ##### e2e tests
 
 An e2e test will create a Job with `podFailurePolicy.rules[*].name`, trigger a
 Pod failure that matches the named `FailJob` rule, and verify that the Job
-`Failed` condition has the expected `PodFailurePolicy_<name>` reason.
+`Failed` condition has reason `PodFailurePolicy` and includes the name in its
+message.
 
 An additional e2e test will cover an unnamed rule and verify the
-`PodFailurePolicy_<index>` fallback.
+unchanged index-only message.
 
 ### Graduation Criteria
 
@@ -429,6 +379,7 @@ An additional e2e test will cover an unnamed rule and verify the
 #### Beta
 
 - Address feedback and bug reports from Alpha users.
+- Revisit whether higher-level controllers need structured rule identification.
 - Feature is stable in Alpha for one release cycle.
 - Feature gate enabled by default.
 - e2e tests are implemented, running regularly, and linked in this KEP.
@@ -445,23 +396,24 @@ An additional e2e test will cover an unnamed rule and verify the
 ### Upgrade / Downgrade Strategy
 
 On upgrade to a Kubernetes version that supports this feature, no changes are
-required for existing Jobs. Users can opt in to granular reasons by enabling the
-`PodFailurePolicyName` feature gate and setting
+required for existing Jobs. Users can opt in to named failure messages by
+enabling the `PodFailurePolicyName` feature gate and setting
 `.spec.podFailurePolicy.rules[*].name` on new Jobs.
 
 On downgrade, or when the feature gate is disabled:
 
 - New Jobs cannot rely on `PodFailurePolicyRule.name`; older API servers or API
-  servers with the gate disabled will not preserve the field.
+  servers with the gate disabled will prune newly introduced names.
 - Existing Jobs that already have the field may be reconciled by a Job
   controller that ignores it, causing new pod-failure-policy-triggered Job
-  failures to use the legacy `PodFailurePolicy` reason.
+  failures to use index-only messages. API servers with the gate disabled
+  preserve names when they are already in use in the stored spec.
 - Existing terminal Job conditions are not rewritten solely because the feature
   is disabled or the control plane is downgraded.
 
-Controllers that consume Job failure reasons should tolerate both
-`PodFailurePolicy` and `PodFailurePolicy_<ruleName>` during upgrade, downgrade,
-and rollback.
+Controllers that consume Job failure reasons continue to see `PodFailurePolicy`
+during upgrade, downgrade, and rollback. They must not parse messages to
+identify individual rules programmatically.
 
 ### Version Skew Strategy
 
@@ -474,9 +426,10 @@ by some API servers and pruned or rejected by others until rollout is complete.
 
 If the kube-controller-manager leader is an older version or has
 `PodFailurePolicyName` disabled, the built-in Job controller ignores the new
-field and continues to set the legacy `PodFailurePolicy` condition reason. When
+field and uses index-only failure messages. When
 a new controller-manager with the gate enabled becomes leader, subsequent
-pod-failure-policy-triggered Job failures use the granular reason format.
+pod-failure-policy-triggered Job failures include configured names in messages.
+The condition reason remains `PodFailurePolicy` in both cases.
 
 ## Production Readiness Review Questionnaire
 
@@ -497,17 +450,17 @@ kube-controller-manager. It can be disabled by setting the feature gate to
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. For Jobs whose pod failure policy has a matching `FailJob` rule, enabling
-the feature changes the Job `Failed` condition reason from `PodFailurePolicy` to
-`PodFailurePolicy_<name>` or `PodFailurePolicy_<index>`. Pod failure policy
-matching, ordering, and actions are unchanged.
+For Jobs whose pod failure policy has a named matching `FailJob` rule, enabling
+the feature appends the name to the failure condition message. Unnamed rules
+retain their existing messages. Condition reasons, pod failure policy matching,
+ordering, and actions are unchanged.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Disable the `PodFailurePolicyName` feature gate on kube-apiserver and
-kube-controller-manager. New writes will not preserve the new field, and the Job
-controller will resume using the legacy `PodFailurePolicy` reason for subsequent
-Job failures.
+kube-controller-manager. New writes prune newly introduced names, while names
+already in use in the stored spec are preserved. The Job controller resumes
+using index-only messages for subsequent Job failures.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -522,8 +475,7 @@ The implementation will add unit and integration tests for:
 - Feature gate enabled with `PodFailurePolicyRule.name` set.
 - Feature gate enabled with `PodFailurePolicyRule.name` unset.
 - Feature gate disabled with the field set on incoming objects.
-- Feature gate disabled after Jobs already have granular Job failure condition
-  reasons.
+- Feature gate disabled with names already in use in stored specs.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -532,11 +484,11 @@ The implementation will add unit and integration tests for:
 Partial rollout can result in mixed behavior while different API servers or
 controller-manager instances run with different versions or feature-gate values.
 Some requests may preserve `PodFailurePolicyRule.name` while others prune or
-reject it, and the active Job controller may emit either the legacy or granular
-condition reason.
+reject it, and the active Job controller may emit index-only messages or
+messages with rule names. The condition reason is unchanged.
 
 This does not stop already running Pods or Jobs. The impact is limited to Job
-spec persistence for the new field and the failure reason observed when a pod
+spec persistence for the new field and the failure message observed when a pod
 failure policy fails a Job.
 
 ###### What specific metrics should inform a rollback?
@@ -548,20 +500,20 @@ Operators should also monitor `jobs_finished_total{reason="PodFailurePolicy"}`
 and `pod_failures_handled_by_failure_policy_total{action="FailJob"}` to check
 whether Jobs are failing through pod failure policy at the expected rate. The
 `jobs_finished_total` metric must keep the bounded `PodFailurePolicy` reason
-label even when Job conditions use granular reasons.
+label regardless of whether Job condition messages include rule names.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not yet. The feature implementation is pending. Before Beta, the
-upgrade->downgrade->upgrade path will be tested to verify field preservation,
-field pruning, legacy reason fallback, granular reason restoration, and
-non-rewriting of existing terminal Job conditions.
+The Alpha implementation includes tests for enabled and disabled behavior and
+preservation of names already in use. The full upgrade->downgrade->upgrade path
+has not yet been tested. Before Beta, it will be tested to verify field
+preservation, field pruning, index-only message fallback, restoration of names
+in messages, and non-rewriting of existing terminal Job conditions.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No APIs, fields, feature gates, or flags are removed. The legacy unsuffixed
-`PodFailurePolicy` Job condition reason remains the rollback and version-skew
-behavior during Alpha and Beta.
+No APIs, fields, feature gates, or flags are removed. The `PodFailurePolicy`
+Job condition reason is unchanged.
 
 ### Monitoring Requirements
 
@@ -576,9 +528,9 @@ many Jobs finished with the bounded `PodFailurePolicy` reason label.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] Job API `.status`
-  - Condition name: `Failed`
-  - Other field: `reason` is set to `PodFailurePolicy_<name>` or
-    `PodFailurePolicy_<index>`
+  - Condition names: `FailureTarget` and `Failed`
+  - Other fields: `reason` is `PodFailurePolicy`, and `message` includes the
+    configured rule name in parentheses after the rule index.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -613,7 +565,7 @@ No. The feature only depends on kube-apiserver and kube-controller-manager.
 ###### Will enabling / using this feature result in any new API calls?
 
 No. The Job controller already updates Job status when a Job fails. This feature
-only changes the condition reason used in that existing update.
+only changes the condition message used in that existing update.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -625,15 +577,15 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes, only for Jobs that set `PodFailurePolicyRule.name` or Jobs that later
-receive a granular failure condition reason.
+Yes, for Jobs and CronJob templates that set `PodFailurePolicyRule.name`, and
+Jobs that later receive a failure condition message containing the name.
 
-- API type: Job
-- Estimated spec size increase: up to the validated length of each configured
-  rule name.
-- Estimated status size increase: one Job condition `reason` value grows from
-  `PodFailurePolicy` to `PodFailurePolicy_<name>` or
-  `PodFailurePolicy_<index>` when a pod failure policy fails the Job.
+- API types: Job and CronJob
+- Estimated spec size increase: up to 63 characters per configured rule name,
+  plus serialization overhead.
+- Estimated status size increase: each Job failure condition message may grow
+  by up to 66 characters for the name and its ` (<name>)` suffix. Condition
+  reasons are unchanged.
 - Estimated object count increase: none.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -665,14 +617,13 @@ updates when the API server and etcd become available.
 
 - Invalid rule name
   - Detection: Job creation or update is rejected by kube-apiserver validation.
-  - Mitigation: Change the rule name so the generated
-    `PodFailurePolicy_<ruleName>` reason is valid, unique, within length limits,
-    and non-conflicting.
+  - Mitigation: Use a unique, non-empty lowercase DNS label of at most 63
+    characters, with alphanumeric characters at both ends.
   - Diagnostics: The API validation error identifies the invalid field.
   - Testing: Covered by API validation unit and integration tests.
 - Feature gate disabled or old controller-manager leader
-  - Detection: Jobs fail with the legacy `PodFailurePolicy` reason even though
-    rule names are configured.
+  - Detection: Job failure messages omit names even though rule names are
+    configured and a named `FailJob` rule matches.
   - Mitigation: Confirm `PodFailurePolicyName=true` on kube-apiserver and
     kube-controller-manager, and complete the control-plane rollout.
   - Diagnostics: Inspect component feature-gate configuration and Job
@@ -701,17 +652,15 @@ verify that Job sync latency returns to its previous level.
 - 2026-06-09: Updated the target milestone to v1.38.
 - 2026-09-06: Modernized KEP text, PRR answers, and metrics-cardinality
   requirements for the v1.38 Alpha target.
+- 2026-11-07: Alpha implementation merged in [kubernetes/kubernetes#142913],
+  retaining the `PodFailurePolicy` reason and including rule names in messages.
 
 ## Drawbacks
 
-The prefixed `PodFailurePolicy_<ruleName>` format is less direct than allowing
-users to set the entire Job condition reason themselves. The prefix is
-intentional: it preserves Job controller ownership of the reason namespace while
-still exposing the specific matching rule.
-
-Clients that consume Job failure reasons need to handle both the legacy
-`PodFailurePolicy` reason and granular reasons during rollout, rollback, and
-version skew.
+Rule names improve diagnostics but do not provide a structured way for
+higher-level controllers to select individual failure rules. Such controllers
+must continue using the `PodFailurePolicy` reason and must not rely on message
+parsing. Structured identification can be revisited during graduation.
 
 ## Alternatives
 
@@ -724,6 +673,11 @@ Another alternative was to derive more specific reasons automatically, such as
 `PodFailurePolicy_ExitCode143` for `onExitCodes` rules. This does not generalize
 well to `onPodConditions`, and it gives users less control over the stable
 machine-readable value consumed by higher-level controllers.
+
+The earlier proposal generated `PodFailurePolicy_<name>` or
+`PodFailurePolicy_<index>` reasons. API review favored keeping the existing
+reason stable and including names in messages, because generated reasons are
+harder to select programmatically and require more complex validation.
 
 ## Infrastructure Needed
 
