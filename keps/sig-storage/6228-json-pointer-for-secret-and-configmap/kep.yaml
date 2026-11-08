@@ -1,0 +1,46 @@
+title: JSON Pointer extraction for Secret and ConfigMap data
+kep-number: 6228
+authors:
+  - "@aqeelat"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-node
+  - sig-auth
+status: provisional
+creation-date: 2026-07-10
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-node/3721-support-for-env-files"
+  - "/keps/sig-node/4369-allow-special-characters-environment-variable"
+  - "/keps/sig-storage/1412-immutable-secrets-and-configmaps"
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has
+# been done. This can be the current (upcoming) milestone, if it is being
+# actively worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: SecretConfigMapJSONPointer
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
