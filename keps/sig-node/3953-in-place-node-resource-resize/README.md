@@ -1407,11 +1407,11 @@ For each of them, fill in the following information by copying the below templat
 
   - **Detection**: The `CapacityConfigured` condition remains `False (Reason: Deferred)`; the condition message lists the resources whose allocated requests exceed the target allocatable.
 
-  - **Mitigations**: Remove or resize down pods on the node, or patch `Node.Spec.ConfiguredCapacity` back to `Node.Status.Capacity` to cancel the downscale.
+  - **Mitigations**: Remove or resize down pods on the node; the Kubelet applies the downscale at its next reconciliation, which is triggered by a change to `Node.Spec.ConfiguredCapacity` or to physical capacity. To cancel the downscale, patch `Node.Spec.ConfiguredCapacity` back to `Node.Status.Capacity`.
 
 * **Downscale Stuck in InProgress (Eviction Stall)**
 
-  - **Scenario**: Physical capacity dropped below the applied capacity (Path B), for example because hardware was hot-unplugged before a downscale requested through `Node.Spec.ConfiguredCapacity` was applied. The Kubelet set the `CapacityConfigured` condition to `False (Reason: InProgress)` and began evicting starved pods. However, the eviction never completes — for example, because affected pods have `PodDisruptionBudgets` that block eviction, or the pods are `Guaranteed` QoS with no safe eviction path, or the Kubelet crashed mid-eviction.
+  - **Scenario**: Physical capacity dropped below the applied capacity (Path B), for example because hardware was hot-unplugged before a downscale requested through `Node.Spec.ConfiguredCapacity` was applied. The Kubelet set the `CapacityConfigured` condition to `False (Reason: InProgress)` and began evicting starved pods. However, the eviction never completes — for example, because the pods are `Guaranteed` QoS with no safe eviction path, or the Kubelet crashed mid-eviction.
 
   - **Detection**: The `CapacityConfigured` condition remains `False (Reason: InProgress)` for longer than expected. No `kubelet_node_resize_requests_total` increment is observed for the direction `decrease`. The external controller's watch on the `Accepted` condition never fires.
 
