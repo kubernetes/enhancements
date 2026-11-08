@@ -35,7 +35,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 5: Zero-Disruption Operations](#story-5-zero-disruption-operations)
     - [Story 6: Emergency Hardware Removal (Self-Protection)](#story-6-emergency-hardware-removal-self-protection)
     - [Story 7: Dynamic Storage Expansion](#story-7-dynamic-storage-expansion)
-    - [Story 8: Orchestrated Capacity Downscale](#story-8-orchestrated-capacity-downscale)
+    - [Story 8: Orchestrated Capacity Downscale (Hotplug)](#story-8-orchestrated-capacity-downscale-hotplug)
+    - [Story 9: Hypervisor-Driven Resize Without Hotplug](#story-9-hypervisor-driven-resize-without-hotplug)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [OOMScoreAdjust Drift for Existing Pods](#oomscoreadjust-drift-for-existing-pods)
@@ -334,9 +335,13 @@ As a Storage Administrator, I want to dynamically expand the root block volume o
 
 > **Note:** Ephemeral storage resize follows the same declarative API model as CPU and Memory. The Kubelet's capacity reconciliation loop updates `Node.Status.Capacity[ephemeral-storage]` and the corresponding eviction thresholds when `Node.Spec.ConfiguredCapacity` includes an updated ephemeral storage value. Physical block-device expansion (e.g., resizing the underlying volume via a cloud provider) remains an external operation outside the scope of this KEP.
 
-#### Story 8: Orchestrated Capacity Downscale
+#### Story 8: Orchestrated Capacity Downscale (Hotplug)
 
-As a Cluster Administrator, I want to dynamically reclaim (hot-unplug) underutilized memory or CPU from a node without restarting the Kubelet. I want to orchestrate this via the Kubernetes API first, so workloads are gracefully evicted and the scheduler stops sending pods before I physically remove the hardware, avoiding node crashes and workload scheduling races.
+As a Cluster Administrator, I want to dynamically reclaim (hot-unplug) underutilized memory or CPU from a node without restarting the Kubelet. I want to orchestrate this via the Kubernetes API first, so the scheduler stops sending pods and the Kubelet applies the reduction only once running workloads fit, before I physically remove the hardware, avoiding node crashes and workload scheduling races. If workloads do not fit, I drain pods through the Eviction API first.
+
+#### Story 9: Hypervisor-Driven Resize Without Hotplug
+
+As a Cloud Provider operator running resizable VMs, I resize a VM through the hypervisor while the guest keeps seeing its maximum CPUs and memory. To grow a node, my autoscaler resizes the VM first and then raises `Node.Spec.ConfiguredCapacity`, so the Kubelet immediately expands cgroups and `Node.Status.Allocatable`. To shrink a node, it lowers `Node.Spec.ConfiguredCapacity` first, so the Kubelet shrinks cgroups once running pods fit (deferring the downscale without evicting pods otherwise), and only then has the hypervisor reclaim the capacity. This keeps the Kubelet's cgroup limits, eviction thresholds, and scheduling aligned with the VM's current size instead of its maximum shape.
 
 ### Notes/Constraints/Caveats (Optional)
 
