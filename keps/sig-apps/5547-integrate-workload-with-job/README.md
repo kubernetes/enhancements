@@ -754,8 +754,7 @@ The integration is designed to be idempotent and crash-safe:
 - **Ordering:** `Workload` is created (or found) before the `PodGroup`, and both before pods, so
   references always resolve.
 - **Invalid `spec.scheduling`:** a compilation error from `BuildWorkload` is terminal for that spec.
-  Because `spec.scheduling` is immutable, the controller fails the Job without creating pods, with
-  reason `FailedWorkloadCompilation` on both the `Failed` condition and the Warning event. The user 
+  Because `spec.scheduling` is immutable, the controller fails the Job without creating pods. The user 
   recreates the Job with a valid `spec.scheduling`. API validation runs the same `workloadbuilder` 
   checks, so this is not expected after admission.
 - **API errors are retryable:** an API error creating the `Workload`/`PodGroup` emits
@@ -1228,8 +1227,7 @@ to implement this enhancement.
   - `workloadbuilder` compilation: `Basic` vs `Gang` policy, and that topology constraints,
     disruption mode (single/all), and resourceClaims are mapped into the generated `Workload`/
     `PodGroup`; that a `Job` builds a flat single-node tree via the shared
-    `WorkloadInput`/`WorkloadItemForJob` helpers. A compilation error fails the Job with reason
-    `FailedWorkloadCompilation` and creates no pods.
+    `WorkloadInput`/`WorkloadItemForJob` helpers. A compilation error fails the Job.
   - A `Basic` `Workload`/`PodGroup` is created for a Job with `spec.scheduling` omitted.
   - pod creation includes the correct `schedulingGroup`.
   - Mutability/validation: updates to `spec.scheduling.schedulingPolicy.gang.minCount` are allowed; updates to
@@ -1578,7 +1576,7 @@ in use. For a specific Job, `kubectl get workloads,podgroups -n <ns>` lists the 
 
 - [x] Events
   - Event Reason: `WorkloadCreated`, `PodGroupCreated`, `PodGroupDeleted` (Normal);
-    `FailedWorkloadCompilation`, `FailedWorkloadCreate`, `SchedulingDependencyNotFound`,
+    `FailedWorkloadCreate`, `SchedulingDependencyNotFound`,
     `UnsupportedWorkloadStructure` (Warning)
 - [x] API .spec
   - Other field:
@@ -1590,8 +1588,7 @@ in use. For a specific Job, `kubectl get workloads,podgroups -n <ns>` lists the 
       cannot safely select or use the scheduling objects.
     - `SchedulingBlocked=True` with reason `WorkloadNotFound` or `PodGroupTemplateNotFound` while a
       delegated scheduling dependency is unavailable. The condition clears after recovery.
-    - `Failed=True` with reason `FailedWorkloadCompilation` when `spec.scheduling` cannot be
-      compiled into a `Workload`.
+    - `Failed=True` when `spec.scheduling` cannot be compiled into a `Workload`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
