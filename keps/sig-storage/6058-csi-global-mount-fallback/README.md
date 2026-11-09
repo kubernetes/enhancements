@@ -452,7 +452,7 @@ node.
 ##### e2e tests
 
 For alpha: a CSI mock e2e test for the orphaned global mount, in review in
-[kubernetes/kubernetes#NNNNNN](https://github.com/kubernetes/kubernetes/pull/NNNNNN)
+[kubernetes/kubernetes#143995](https://github.com/kubernetes/kubernetes/pull/143995)
 as `test/e2e/storage/csimock/csi_global_mount_reconstruction.go`. It is Serial and
 Disruptive, since it stops and starts kubelet over SSH. Raw block volumes are
 covered by unit tests in alpha: only the orphaned global mount applies to them,
@@ -493,7 +493,7 @@ mounts at `NodeStageVolume`.
   block mapper, with unit tests. The two layouts are read separately, so this
   can land after the filesystem path within alpha.
 - A CSI mock e2e test for the orphaned global mount
-  ([kubernetes/kubernetes#NNNNNN](https://github.com/kubernetes/kubernetes/pull/NNNNNN)).
+  ([kubernetes/kubernetes#143995](https://github.com/kubernetes/kubernetes/pull/143995)).
   The pod-local fallback is covered by unit tests, since the mock driver mounts
   nothing at `NodeStageVolume`.
 - All of it behind `CSIGlobalMountReconstruction`, default off, with unit tests
@@ -770,7 +770,7 @@ gate and report the bug.
 - 2026-11-09: Implementation merged for alpha in v1.38
   ([#138454](https://github.com/kubernetes/kubernetes/pull/138454)). The e2e
   plan for alpha is a CSI mock test of the orphaned global mount
-  ([#NNNNNN](https://github.com/kubernetes/kubernetes/pull/NNNNNN)), and this
+  ([#143995](https://github.com/kubernetes/kubernetes/pull/143995)), and this
   update proposes moving the pod-local fallback e2e to beta, pending SIG
   Storage review.
 
