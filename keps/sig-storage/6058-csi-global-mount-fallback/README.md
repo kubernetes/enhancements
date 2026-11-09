@@ -451,29 +451,27 @@ node.
 
 ##### e2e tests
 
-Written during alpha, in CI before beta: node e2e tests that cover both
-recovery paths. Raw block volumes are covered by unit tests in alpha: only the
-orphaned global mount applies to them, and it reaches them through the same
-listing the e2e exercises.
+Written during alpha: a CSI mock e2e test for the orphaned global mount, in
+`test/e2e/storage/csimock/csi_global_mount_reconstruction.go`. It is Serial and
+Disruptive, since it stops and starts kubelet over SSH. Raw block volumes are
+covered by unit tests in alpha: only the orphaned global mount applies to them,
+and it reaches them through the same listing the e2e exercises.
 
-Pod-local fallback:
+Orphaned global mount, run twice, once with the pod directory removed and once
+with an empty pod directory left behind:
 
-1. Mount a CSI volume via a pod using a mock CSI driver.
-2. Kill kubelet, delete the pod-local `vol_data.json`, restart kubelet.
-3. Assert the volume is reconstructed (no `volumesFailedReconstruction`
-   entry, normal unmount on pod deletion).
+1. Mount a CSI volume via a pod using the mock CSI driver, with attach
+   disabled, and make `NodeUnstageVolume` fail while the first kubelet runs.
+2. Delete the pod, wait for the failed `NodeUnstageVolume`, stop kubelet with
+   the volume still staged, then start it again.
+3. Assert that the new kubelet calls `NodeUnstageVolume` for the global mount
+   and that the call succeeds.
 
-Orphaned global mount:
-
-1. Mount a CSI volume via a pod using a mock CSI driver that delays
-   `NodeUnstageVolume`.
-2. Delete the pod and stop kubelet after `NodeUnpublishVolume` succeeds but
-   before the unstage completes, then restart kubelet.
-3. Assert the scan registers the global mount, `NodeUnstageVolume` is
-   called, the directory is removed, and the volume leaves
-   `node.status.volumesInUse` only after the unstage.
-
-Tests will live in `test/e2e_node/csi_volume_reconstruction_test.go`.
+The mock driver mounts nothing in `NodeStageVolume`, and the pod-local
+fallback finds the global mount through the mount reference of the pod's bind
+mount, so the pod-local path cannot be exercised with it. In alpha that path
+is covered by unit tests in `pkg/volume/csi`; its e2e needs a driver that
+mounts at `NodeStageVolume`.
 
 ### Graduation Criteria
 
@@ -493,8 +491,9 @@ Tests will live in `test/e2e_node/csi_volume_reconstruction_test.go`.
 - Raw block volumes, listed from their own subtree and registered through the
   block mapper, with unit tests. The two layouts are read separately, so this
   can land after the filesystem path within alpha.
-- Node e2e tests for both recovery paths, written during alpha so that they are
-  in CI before the gate goes beta.
+- A CSI mock e2e test for the orphaned global mount, written during alpha. The
+  pod-local fallback is covered by unit tests, since the mock driver mounts
+  nothing at `NodeStageVolume`.
 - All of it behind `CSIGlobalMountReconstruction`, default off, with unit tests
   in `pkg/volume/csi` and `pkg/kubelet/volumemanager` for both gate states.
 - KEP merged.
@@ -502,8 +501,9 @@ Tests will live in `test/e2e_node/csi_volume_reconstruction_test.go`.
 #### Beta
 
 - Every path implemented and tested, raw block volumes included.
-- The node e2e tests from alpha green in CI for at least one release, covering
-  both recovery paths.
+- e2e tests green in CI for at least one release, covering both recovery
+  paths: the orphaned global mount test from alpha, and a pod-local fallback
+  test with a driver that mounts at `NodeStageVolume`.
 - Metrics: a label on `reconstruct_volume_operations_total` distinguishing
   `pod-local` from `global-mount`, so operators can see recovery frequency.
 - One release cycle at alpha with no open bugs against either recovery path.
@@ -765,6 +765,10 @@ gate and report the bug.
 - 2026-09-16: Brought raw block volumes and the node e2e tests into alpha per
   SIG Storage review, and recorded the missing `NodeUnpublishVolume` after a
   reboot as a known alpha gap.
+- 2026-11-09: Implementation merged for alpha in v1.38
+  ([#138454](https://github.com/kubernetes/kubernetes/pull/138454)). The e2e
+  plan narrowed to a CSI mock test of the orphaned global mount, with the
+  pod-local fallback left to unit tests until beta.
 
 ## Drawbacks
 
