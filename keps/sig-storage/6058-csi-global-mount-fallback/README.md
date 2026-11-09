@@ -451,8 +451,9 @@ node.
 
 ##### e2e tests
 
-Written during alpha: a CSI mock e2e test for the orphaned global mount, in
-`test/e2e/storage/csimock/csi_global_mount_reconstruction.go`. It is Serial and
+For alpha: a CSI mock e2e test for the orphaned global mount, in review in
+[kubernetes/kubernetes#NNNNNN](https://github.com/kubernetes/kubernetes/pull/NNNNNN)
+as `test/e2e/storage/csimock/csi_global_mount_reconstruction.go`. It is Serial and
 Disruptive, since it stops and starts kubelet over SSH. Raw block volumes are
 covered by unit tests in alpha: only the orphaned global mount applies to them,
 and it reaches them through the same listing the e2e exercises.
@@ -491,8 +492,9 @@ mounts at `NodeStageVolume`.
 - Raw block volumes, listed from their own subtree and registered through the
   block mapper, with unit tests. The two layouts are read separately, so this
   can land after the filesystem path within alpha.
-- A CSI mock e2e test for the orphaned global mount, written during alpha. The
-  pod-local fallback is covered by unit tests, since the mock driver mounts
+- A CSI mock e2e test for the orphaned global mount
+  ([kubernetes/kubernetes#NNNNNN](https://github.com/kubernetes/kubernetes/pull/NNNNNN)).
+  The pod-local fallback is covered by unit tests, since the mock driver mounts
   nothing at `NodeStageVolume`.
 - All of it behind `CSIGlobalMountReconstruction`, default off, with unit tests
   in `pkg/volume/csi` and `pkg/kubelet/volumemanager` for both gate states.
@@ -599,8 +601,8 @@ versus pre-rollout. If it does, disable the gate.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be exercised in the node e2e tests, which are written during alpha and in
-CI before beta.
+Not tested in alpha: the CSI mock e2e does not restart with the gate flipped.
+To be covered before beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -767,8 +769,10 @@ gate and report the bug.
   reboot as a known alpha gap.
 - 2026-11-09: Implementation merged for alpha in v1.38
   ([#138454](https://github.com/kubernetes/kubernetes/pull/138454)). The e2e
-  plan narrowed to a CSI mock test of the orphaned global mount, with the
-  pod-local fallback left to unit tests until beta.
+  plan for alpha is a CSI mock test of the orphaned global mount
+  ([#NNNNNN](https://github.com/kubernetes/kubernetes/pull/NNNNNN)), and this
+  update proposes moving the pod-local fallback e2e to beta, pending SIG
+  Storage review.
 
 ## Drawbacks
 
