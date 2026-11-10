@@ -1267,18 +1267,10 @@ implementing this enhancement to ensure the enhancements have also solid foundat
   issues, limitations, or areas for improvement. Address this feedback
   by making the necessary changes to the API and iterating on its design
   and functionality.
-- The API should support the addition of scheduling features, such as:
-  - Load balancing: Distribute workloads evenly across clusters based on
-    their current load and capacity.
-  - Affinity and anti-affinity rules: Allow users to define rules for
-    placing workloads on specific clusters or ensuring that certain
-    workloads are not placed on the same cluster.
-  - Priority-based scheduling: Enable users to assign priorities to
-    workloads, ensuring that higher-priority workloads are scheduled
-    before lower-priority ones.
-  - Resource-based scheduling: Schedule workloads based on the
-    availability of specific resources, such as CPU, memory, or storage,
-    in each cluster.
+- A properties ladder is defined and documented, classifying cluster
+  properties as extension, standard, or core and defining how a property is
+  promoted between the stages, so consumers can rely on the meaning of the
+  properties a cluster manager publishes.
 - The API should expose access information including but not limited to:
   - APIServer endpoint url of the member cluster.
   - Credential with limited access to the member cluster.
