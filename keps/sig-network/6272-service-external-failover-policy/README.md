@@ -103,55 +103,33 @@ This allows BGP, ECMP, anycast, or other routing mechanisms to redirect traffic
 to another node, cluster, or location without requiring coordination between the
 Service proxy and the routing system.
 
-The `ipMode` field is set by the LoadBalancer controller (not the user) in
-Service status, making it the natural place to express "this IP is a routed
-anycast address" rather than "this IP is a cloud load balancer VIP."
-
 ## Motivation
 
-With `externalTrafficPolicy: Local`, kube-proxy currently installs DROP or
-REJECT rules for external Service destinations when there are no locally
-eligible endpoints.
+Some deployments use the same LoadBalancer IP across multiple clusters or
+locations, with routing mechanisms such as BGP anycast determining where traffic
+is delivered.
 
-This is appropriate for deployments where an external load balancer stops
-sending traffic to a node before the absence of local endpoints matters.
-However, in BGP/anycast deployments, endpoint state and route advertisement are
-updated independently. Whenever a node has no local endpoints, kube-proxy blocks
-traffic to the external VIP even when normal routing could still deliver it:
+In these deployments, a Service IP may remain reachable through another node or
+cluster even when the node receiving the packet cannot serve it locally. The
+Service proxy should not prevent the network from forwarding that traffic to
+another available location.
 
-1. The last locally eligible endpoint disappears.
-2. kube-proxy installs a DROP or REJECT rule.
-3. Traffic still arriving at the node is blocked by kube-proxy instead of being
-   handled by normal routing.
+Currently, Service proxies drop or reject traffic destined for a LoadBalancer IP
+when no eligible endpoints are available. This prevents normal network routing
+from providing failover, even when the IP is reachable elsewhere.
 
-This persists for as long as the block applies (no local endpoints for the DROP,
-no endpoints anywhere in the cluster for the REJECT) and is not removed by other
-means. The convergence window before a routing controller withdraws the route is
-one instance, but the block also applies when no controller withdraws the route
-at all, or when the VIP is anycast and still serving from another cluster or
-location.
-
-The same issue exists when a Pod in the local cluster accesses the externally
-advertised VIP and the cluster has no endpoints at all: kube-proxy rejects that
-traffic (via the `FORWARD` hook) instead of letting it follow the external
-routing path to another cluster or location. (When other cluster-local
-endpoints exist, kube-proxy already load-balances such Pod traffic cluster-wide
-without loss, so that case needs no change.)
-
-The Service proxy should therefore be able to abstain from making a negative
-reachability decision for an external Service address when the operator has
-explicitly delegated failover to the network.
+This KEP introduces `ipMode: Router` to support LoadBalancer IPs whose
+reachability is managed by the network. When the Service can serve the traffic,
+normal Service load balancing applies. Otherwise, the packet is left to normal
+node routing, allowing the network to handle failover.
 
 ### Goals
 
-- Add a new `LoadBalancerIPMode` value `Router` that suppresses no-endpoint
-  DROP/REJECT for the LoadBalancer IP while preserving DNAT when endpoints
-  exist.
-- The value is set by the LoadBalancer controller in Service status, not by
-  the user in Service spec.
-- Preserve `healthCheckNodePort` behavior so routing or load-balancer
-  integrations can continue to observe local endpoint availability.
-- Preserve all existing behavior by default.
+- Support routed LoadBalancer IPs that can remain reachable through other
+  locations when the Service cannot handle traffic locally.
+- Preserve normal Service load balancing when eligible endpoints are available.
+- Preserve `healthCheckNodePort` behavior.
+- Preserve existing behavior by default.
 
 ### Non-Goals
 
@@ -165,8 +143,16 @@ explicitly delegated failover to the network.
 
 ## Proposal
 
-A BGP speaker acting as a LoadBalancer controller sets `ipMode: Router` on
-the ingress IP it assigns:
+A user creates a Service of type `LoadBalancer` using a LoadBalancer controller
+that supports routed or anycast addresses.
+
+The controller allocates an ingress IP and sets `ipMode: Router` to indicate
+that the IP is network-routed and may be reachable through other locations.
+
+When eligible endpoints exist, the Service proxy performs normal Service load
+balancing. When the Service cannot serve the traffic, packets continue through
+normal node routing, allowing an external routing mechanism to deliver them
+elsewhere.
 
 ```yaml
 apiVersion: v1
@@ -175,7 +161,7 @@ metadata:
   name: my-anycast-service
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Local   # Router works with any externalTrafficPolicy
   ports:
   - port: 80
     targetPort: 8080
@@ -185,10 +171,6 @@ status:
     - ip: "10.0.0.1"
       ipMode: Router
 ```
-
-The user does not set `ipMode` — it is a status field managed by the
-LoadBalancer controller. From the user's perspective, nothing changes in the
-Service spec. The controller signals to kube-proxy how to handle the IP.
 
 ### User Stories
 
@@ -244,7 +226,7 @@ otherwise be lost:
 | Risk | Mitigation |
 |------|------------|
 | `Router` set without a usable routing path | Traffic follows the routing table; if no route exists, standard IP routing behavior applies (e.g., ICMP unreachable). Document that the feature delegates to node networking. |
-| LB controller sets `Router` incorrectly | The field is in status, not spec. Only controllers with status write access can set it. Incorrect use degrades gracefully. |
+| LB controller sets `Router` incorrectly | Only controllers with status write access can set it. Incorrect use degrades gracefully. |
 | Interaction with Gateway API | Gateway API implementations create a LoadBalancer Service per Gateway. The envoy-proxy pod is always an endpoint, so kube-proxy never triggers the no-endpoint path regardless of `ipMode`. See [Gateway API Interaction](#gateway-api-interaction). |
 
 ## Design Details
@@ -273,8 +255,7 @@ const (
 )
 ```
 
-No new fields are added. The change extends an existing enum in an existing
-status field.
+No new fields are added. The change extends an existing enum.
 
 ### Semantics
 
@@ -302,8 +283,6 @@ The behavior of `ipMode: Router` compared to the existing modes:
 | Behavior when no endpoints exist           | REJECT                            | n/a                                | no verdict, follows node routing table                  |
 | eTP:Local, no local eps, ext. eps          | DROP (external origin)            | n/a                                | open (falls back to the routing table)                  |
 | eTP:Local, no local eps, Pod/host origin   | DNAT cluster-wide                 | n/a                                | DNAT cluster-wide (unchanged)                           |
-| healthCheckNodePort                        | unhealthy without local eps       | n/a                                | same                                                    |
-| BGP / LB controller                        | eTP:Local: nodes with local eps; eTP:Cluster: all nodes | n/a | advertise only while the node would DNAT; never with zero endpoints |
 
 The two key changes from `VIP`:
 
@@ -312,6 +291,13 @@ The two key changes from `VIP`:
    routing table.
 2. **Zero-endpoints REJECT suppressed.** Traffic that would be REJECTed
    (because no endpoints exist anywhere) instead follows the routing table.
+
+`ipMode: Router` is compatible with both `externalTrafficPolicy: Local` and
+`Cluster`. The configured external traffic policy determines endpoint
+selection. `Router` does not change which endpoints are eligible or how traffic
+is load-balanced when endpoints are available. It only allows packets that would
+otherwise be dropped or rejected due to the absence of eligible endpoints to
+continue through normal node routing.
 
 Traffic that kube-proxy already serves — the Pod/host cluster-wide
 short-circuit when other endpoints exist — is unchanged.
@@ -327,7 +313,6 @@ NodePort handling is unchanged by this KEP.
 ### Validation
 
 - `Router` is a valid value for `status.loadBalancer.ingress[].ipMode`.
-- The value is set by the LB controller in status, not by users in spec.
 - `ipMode: Router` applies **only** to the LoadBalancer ingress IP it is set
   on. ExternalIPs, NodePorts, and ClusterIPs on the same Service retain their
   existing DROP/REJECT behavior regardless of `ipMode`.
@@ -406,7 +391,7 @@ consumed by the proxy (returning 503 when backends are gone) rather than
 following routing.
 
 For anycast failover, a plain `LoadBalancer` Service with
-`externalTrafficPolicy: Local` and `ipMode: Router` is the appropriate
+`ipMode: Router` is the appropriate
 mechanism. See the [reproducer](https://gist.github.com/defo89/99fba7a7b575ccb3175df2164d4a82e1)
 for a demonstration.
 
@@ -443,7 +428,7 @@ API tests:
 
 #### Integration tests
 
-- `Router` accepted as a valid `ipMode` value in Service status;
+- `Router` accepted as a valid `ipMode` value;
 - `Router` rejected when feature gate is disabled;
 - LB controller can write `ipMode: Router` via status subresource;
 - kube-proxy reads and acts on the value;
@@ -531,7 +516,7 @@ server.
   - Components depending on the feature gate: kube-apiserver, kube-proxy
 
 No downtime beyond the normal component restart. A LoadBalancer controller opts
-in by setting `ipMode: Router` in Service status.
+in by setting `ipMode: Router`.
 
 ###### Does enabling the feature change any default behavior?
 
