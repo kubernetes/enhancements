@@ -96,6 +96,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 3: Node autoscaler consolidates a node](#story-3-node-autoscaler-consolidates-a-node)
     - [Story 4: Two actors, one answer](#story-4-two-actors-one-answer)
     - [Story 5: Custom workload controller as a consumer](#story-5-custom-workload-controller-as-a-consumer)
+    - [Story 6: Zone-balanced scale-down](#story-6-zone-balanced-scale-down)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -298,7 +299,11 @@ and make progress.
   "keep this pod". All actors count equally and scores only say "delete
   first".
 - Deletion plans that depend on the number or combination of pods
-  removed, such as topology-aware or gang-aware scale-down.
+  removed, such as topology-aware or gang-aware scale-down. This KEP
+  adds no zone-aware writer and does not guarantee balanced zones
+  ([kubernetes/kubernetes#124149](https://github.com/kubernetes/kubernetes/issues/124149)).
+  An actor can approximate it with per-pod scores; see
+  [Story 6](#story-6-zone-balanced-scale-down).
 - Deprecating `controller.kubernetes.io/pod-deletion-cost`.
 
 ## Proposal
@@ -375,6 +380,12 @@ idle and on a draining node is the first to go.
 As the author of a controller that owns its own pods, I want the same
 signals the ReplicaSet controller gets, without reimplementing the
 aggregation so I could implement the scale down logic myself.
+
+#### Story 6: Zone-balanced scale-down
+
+As an application owner, I spread a Deployment across zones. I want a
+controller to score the pods in the fullest zones, so scale-down keeps
+the zones even.
 
 ### Notes/Constraints/Caveats (Optional)
 
