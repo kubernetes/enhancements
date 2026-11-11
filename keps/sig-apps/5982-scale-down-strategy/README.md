@@ -115,6 +115,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [The ReplicaSet controller as consumer](#the-replicaset-controller-as-consumer)
   - [Coexistence with pod-deletion-cost](#coexistence-with-pod-deletion-cost)
   - [The HPA as writer](#the-hpa-as-writer)
+    - [Per-HPA policy](#per-hpa-policy)
     - [Converting metrics to scores](#converting-metrics-to-scores)
   - [Out-of-tree writers](#out-of-tree-writers)
   - [Hub mode](#hub-mode)
@@ -281,7 +282,8 @@ know that this has succeeded?
   other. Scale-down stays synchronous.
 - Define how the new API coexists with the
   `controller.kubernetes.io/pod-deletion-cost` annotation.
-- Make the HPA the first in-tree writer, behind its own gate.
+- Make the HPA the first in-tree writer, behind its own gate and
+  enabled per HPA.
 
 ### Non-Goals
 
@@ -806,6 +808,8 @@ status:
   and ignores the rest.
 - `PodDeletionOrder`: `spec.targetRef` is required and immutable. At
   most 2000 entries in `status.deletionOrder`.
+- `HorizontalPodAutoscaler`: `spec.behavior.podDeletionPreference.policy`,
+  when set, must be `ScalingMetrics` or `Disabled`.
 
 ### Scores and aggregation semantics
 
@@ -968,7 +972,8 @@ controller.
 
 The HPA controller becomes the first in-tree actor, with actor name
 `horizontalpodautoscaler.autoscaling.k8s.io`, behind the
-`HPAPodDeletionPreference` gate.
+`HPAPodDeletionPreference` gate, for HPAs that opt in through the
+[per-HPA policy](#per-hpa-policy).
 
 **Scoring, every sync.** The HPA already lists the pods behind its scale
 target, using the selector from the Scale subresource and its pod
@@ -1012,6 +1017,27 @@ order already names them. Only a change in the last 15 seconds is
 missed, and the metrics behind the scores are older than that anyway.
 Users who shorten the window to 0 fall back to the one-sync lag, which
 is still acceptable because preferences are advisory.
+
+#### Per-HPA policy
+
+The HPA writes preferences only for HPAs that ask for it.
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+spec:
+  behavior:
+    podDeletionPreference:
+      policy: ScalingMetrics
+```
+
+| Policy           | What the HPA does                                              |
+|------------------|----------------------------------------------------------------|
+| `Disabled`       | Default - Writes no preferences.                               |
+| `ScalingMetrics` | Scores pods with the metrics it scales on, and writes them.    |
+
+If the policy goes back to `Disabled`, the HPA deletes the preferences
+it wrote.
 
 #### Converting metrics to scores
 
@@ -1140,8 +1166,10 @@ Two gates, both alpha and off by default:
 - `PodDeletionPreference` (kube-apiserver, kube-controller-manager).
   Serves the three kinds, runs the aggregator, and makes the ReplicaSet
   controller read `PodDeletionOrder`.
-- `HPAPodDeletionPreference` (kube-controller-manager). Makes the HPA
-  controller write preferences and slices. Depends on
+- `HPAPodDeletionPreference` (kube-apiserver, kube-controller-manager).
+  Serves the `podDeletionPreference` field on the HPA and makes the HPA
+  controller write preferences and slices for HPAs that set the
+  `ScalingMetrics` policy. Depends on
   `PodDeletionPreference`; with the API gate off the HPA writes nothing.
 
 The HPA writer has its own gate so the API and its first consumer can
@@ -1167,6 +1195,7 @@ turned off without losing the API.
 - **Per-actor weights.** Let users control how much each actor counts.
   Today all actors are weighted equally and summed.
 - **Signed scores.** Let an actor say "prefer to keep this pod".
+- **More HPA policies.** The per-HPA policy can be extended if needed(based on community feedback).
 - **Workload- and batch-aware deletion planning.** Per-pod scores
   cannot represent decisions that depend on the number or combination
   of pods deleted. A future integration with the Workload API, or a
@@ -1275,10 +1304,14 @@ Added under `test/integration/` for alpha:
 - Delete the ReplicaSet; the order is garbage collected and the inputs
   get `TargetGone` and are not recreated.
 - Delete an HPA; its inputs and slices are garbage collected.
-- HPA writer: create a Deployment and an HPA, drive metrics so that
+- HPA writer: create a Deployment and an HPA with the `ScalingMetrics`
+  policy, drive metrics so that
   some pods are idle, scale down, and check the idle pods were removed.
   Roll the Deployment and check there is one input per ReplicaSet and
   the old one is removed when it has no pods.
+- HPA policy: an HPA with no policy writes nothing. Set the policy to
+  `Disabled` on an HPA that has written preferences; they are deleted
+  and none are written until the policy is set back.
 - Claim an order with `spec.aggregatorName`; the in-tree aggregator
   stops writing it; clear the field and it resumes.
 - Feature gate off in kube-controller-manager with objects present; the
@@ -1435,8 +1468,9 @@ enhancement:
 **Upgrade.** Enabling `PodDeletionPreference` serves the API, starts the
 aggregator and makes the ReplicaSet controller read orders. Until an
 actor writes something, nothing changes: there are no orders and the
-sort is today's. Enabling `HPAPodDeletionPreference` makes the HPA start
-writing on its next sync.
+sort is today's. Enabling `HPAPodDeletionPreference` changes nothing
+for existing HPAs; an HPA starts writing on the next sync after its
+policy is set to `ScalingMetrics`.
 
 **Downgrade.** Disabling the gates stops the aggregator, makes the
 ReplicaSet controller ignore orders, and makes the HPA stop writing.
@@ -1449,9 +1483,9 @@ longer exists are ignored, so stale data is harmless. The HPA resumes
 and deletes inputs for owners that no longer have pods.
 
 Nothing about the feature is required to keep previous behaviour on
-upgrade. Nothing has to be configured to use it beyond the gates, for
-the HPA path. Out-of-tree actors need the RBAC described under
-[Permissions](#permissions).
+upgrade. To use the HPA path, enable the gates and set the
+`ScalingMetrics` policy on the HPA. Out-of-tree actors need the RBAC
+described under [Permissions](#permissions).
 
 ### Version Skew Strategy
 
@@ -1484,6 +1518,9 @@ kube-controller-manager, then
 - The aggregator has nothing to watch and does not run.
 - The ReplicaSet controller finds no `PodDeletionOrder` and scales down
   as today. It does not block on the missing informer.
+
+If the apiserver does not serve the HPA's `podDeletionPreference`
+field, the policy cannot be set and no HPA writes preferences.
 
 ## Production Readiness Review Questionnaire
 
@@ -1532,7 +1569,8 @@ well as the [existing list] of feature gates.
   - Components depending on the feature gate: kube-apiserver,
     kube-controller-manager
   - Feature gate name: `HPAPodDeletionPreference`
-  - Components depending on the feature gate: kube-controller-manager
+  - Components depending on the feature gate: kube-apiserver,
+    kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1545,11 +1583,11 @@ Enabling `PodDeletionPreference` alone changes nothing until an actor
 writes a preference. There are no orders, and the ReplicaSet controller
 sorts as today.
 
-Enabling `HPAPodDeletionPreference` as well changes which pods the
-ReplicaSet controller deletes when an HPA scales a workload down: the
-pods the HPA scored as idle are deleted first instead of the pods the
-existing sort would pick. It does not change how many pods are deleted
-or when.
+Enabling `HPAPodDeletionPreference` as well changes nothing by default
+either: the HPA writer is off until an HPA sets the `ScalingMetrics`
+policy. For such an HPA, the pods it scored as idle are deleted first
+on scale-down instead of the pods the existing sort would pick. How
+many pods are deleted, and when, does not change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1600,6 +1638,9 @@ Yes:
   ignored with the gate off and used with the gate on.
 - HPA controller unit tests that nothing is written with
   `HPAPodDeletionPreference` off, and with `PodDeletionPreference` off.
+- HPA registry unit tests that the `podDeletionPreference` field is
+  dropped on create with `HPAPodDeletionPreference` off and kept on
+  update when already set.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1835,7 +1876,8 @@ Focusing mostly on:
 
 Yes.
 
-- HPA controller: CREATE and DELETE `PodDeletionPreference`, once per
+- HPA controller, only for HPAs with the `ScalingMetrics` policy:
+  CREATE and DELETE `PodDeletionPreference`, once per
   ReplicaSet that gains or loses pods (rollouts); UPDATE
   `PodDeletionPreferenceSlice`, at most once per HPA per sync period
   (15 s by default) and only when the rounded ranking changed.
@@ -1882,7 +1924,10 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No.
+- API type: `HorizontalPodAutoscaler`
+- Estimated increase in size: one optional enum field, a few tens of
+  bytes, only when set.
+- Estimated amount of new objects: none.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1993,9 +2038,10 @@ For each of them, fill in the following information by copying the below templat
     reports no order found, or the deleted pods were not the scored
     ones.
   - Mitigations: check the gate in kube-controller-manager; check the
-    order targets the ReplicaSet's UID, not its name; check the pod UIDs
-    match live pods; remember that unscheduled, not running, not ready
-    pods and pod-deletion-cost come first in the sort.
+    HPA's policy is `ScalingMetrics`; check the order targets the
+    ReplicaSet's UID, not its name; check the pod UIDs match live pods;
+    remember that unscheduled, not running, not ready pods and
+    pod-deletion-cost come first in the sort.
   - Testing: unit and integration tests for the sort position.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
