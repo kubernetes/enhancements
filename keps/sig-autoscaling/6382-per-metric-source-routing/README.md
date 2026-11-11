@@ -9,7 +9,7 @@
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Story 1: Two External Providers on a Single HPA](#story-1-two-external-providers-on-a-single-hpa)
-    - [Story 2: KEDA Alongside a Vendor Adapter](#story-2-keda-alongside-a-vendor-adapter)
+    - [Story 2: Migrating Between External Metrics Providers](#story-2-migrating-between-external-metrics-providers)
     - [Story 3: Managed Cluster with a Provider-Managed Add-on](#story-3-managed-cluster-with-a-provider-managed-add-on)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -80,9 +80,8 @@ Today, the HPA controller fetches every `External` metric from a single,
 hardcoded API group: `external.metrics.k8s.io`. Because the aggregation layer
 allows only one `APIService` per group version, the whole cluster is locked to
 a single external metrics provider. Two HPAs that need metrics from two
-different providers (for example one using KEDA and another using a
-vendor-specific adapter) cannot coexist, and a single HPA cannot mix metrics
-from two providers.
+different providers (for example adapters from two different vendors) cannot
+coexist, and a single HPA cannot mix metrics from two providers.
 
 Kubernetes already has the `APIService` object, which allows registering
 aggregated API servers under any API group. This KEP leverages that existing
@@ -100,10 +99,10 @@ in `k8s.io/metrics` and is left as future work, see [Non-Goals](#non-goals).
 As described in the summary, only one `APIService` can register for the
 external metrics API group. This means the entire cluster is locked to a
 single provider for external metrics (`external.metrics.k8s.io`). Teams that
-need external metrics from multiple sources - for example, KEDA for
-queue-based scaling and a model-serving adapter for inference metrics - must
-either funnel everything through one provider or give up on one of them
-entirely.
+need external metrics from multiple sources - for example, a monitoring
+vendor's adapter for queue-based scaling and a model-serving adapter for
+inference metrics - must either funnel everything through one provider or
+give up on one of them entirely.
 
 ### Goals
 
@@ -152,14 +151,17 @@ both in a single HPA because only one provider can register for
 metric served by the second provider, and the HPA fetches each metric from the
 correct source.
 
-#### Story 2: KEDA Alongside a Vendor Adapter
+#### Story 2: Migrating Between External Metrics Providers
 
-As a platform engineer, my cluster already runs KEDA, which owns
-`external.metrics.k8s.io`. A team wants to scale on metrics that only a
-vendor-specific adapter can serve. Today the vendor adapter cannot be
-installed without replacing KEDA. With source routing, the vendor adapter is
-deployed under its own API group, and only the HPAs that need it set
-`source.apiGroup`. KEDA and every existing HPA continue to work unchanged.
+As a platform engineer, my cluster uses one vendor's adapter for external
+metrics and I want to move to another vendor's adapter. Today the two cannot
+be registered for `external.metrics.k8s.io` at the same time, so the
+migration is a single cutover: replacing the `APIService` switches every HPA
+in the cluster at once, and any HPA whose metric is not yet served by the new
+adapter stops scaling. With source routing, the new adapter is deployed under
+its own API group next to the old one. I move HPAs one at a time by setting
+`source.apiGroup`, verify each, and can roll back a single HPA if needed.
+Once no HPA depends on the old adapter, I remove it.
 
 #### Story 3: Managed Cluster with a Provider-Managed Add-on
 
@@ -293,14 +295,14 @@ spec:
   minReplicas: 2
   maxReplicas: 50
   metrics:
-  # Metric from KEDA (default external.metrics.k8s.io, no source needed)
+  # Metric from the default provider (external.metrics.k8s.io, no source needed)
   - type: External
     external:
       metric:
-        name: s0-rabbitmq-inference-queue
+        name: rabbitmq_queue_messages_ready
         selector:
           matchLabels:
-            scaledobject.keda.sh/name: inference-server
+            queue: inference
       target:
         type: AverageValue
         averageValue: "10"
