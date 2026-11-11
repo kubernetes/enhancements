@@ -567,10 +567,10 @@ non-default API group will be added as part of beta graduation:
 
 - Unit and integration tests passed as designed in the [Test Plan](#test-plan)
 - Feature implemented behind the `HPAMetricSource` feature gate (default off)
+- E2e tests in place
 
 #### Beta
 
-- E2e tests in place
 - Feature gate enabled by default
 
 #### GA
