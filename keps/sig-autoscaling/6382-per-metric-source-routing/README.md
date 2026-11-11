@@ -392,11 +392,12 @@ concern.
 
 The number of entries is bounded by the number of distinct `apiGroup` values
 across all HPAs, which in practice is a handful, but a typo or a hostile
-tenant can add entries. The map is therefore a fixed-size LRU cache.
-When the cache is full and a fetch needs a client for a new
-group, the least recently used client is evicted and the new one takes its
-place; the evicted client is rebuilt on its next use. Eviction is logged and
-counted.
+tenant can add entries. The map is therefore a fixed-size LRU cache holding
+100 clients. it is far above any realistic number of providers in one cluster,
+and a cached client costs little memory. It can be revisited before beta based on the 
+eviction counter users feedback. When the cache is full and a fetch needs 
+a client for a new group, the least recently used client is evicted and the new one takes its place;
+the evicted client is rebuilt on its next use. Eviction is logged and counted.
 
 ### RBAC
 
