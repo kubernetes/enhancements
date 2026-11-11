@@ -238,7 +238,7 @@ type MetricIdentifier struct {
     // the default provider for the metric type.
     // Only supported for External metrics; when unset, the default API group for
     // the metric type is used.
-    // +featureGate=HPAMetricSource
+    // +featureGate=HPAExternalMetricSource
     // +optional
     Source *MetricSourceReference `json:"source,omitempty" protobuf:"bytes,3,opt,name=source"`
 }
@@ -356,7 +356,7 @@ group gets a plain "the server could not find the requested resource". With
 the wrapping, every `FailedGetExternalMetric` condition and event names the
 provider that failed, which the Troubleshooting section relies on.
 
-When the `HPAMetricSource` feature gate is disabled in
+When the `HPAExternalMetricSource` feature gate is disabled in
 `kube-controller-manager`, the controller passes an empty API group regardless
 of what the spec says, so `source` has no effect.
 
@@ -567,7 +567,7 @@ non-default API group will be added as part of beta graduation:
 #### Alpha
 
 - Unit and integration tests passed as designed in the [Test Plan](#test-plan)
-- Feature implemented behind the `HPAMetricSource` feature gate (default off)
+- Feature implemented behind the `HPAExternalMetricSource` feature gate (default off)
 - E2e tests in place
 
 #### Beta
@@ -624,7 +624,7 @@ When the feature gate is disabled:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `HPAMetricSource`
+  - Feature gate name: `HPAExternalMetricSource`
   - Components depending on the feature gate: `kube-apiserver` and `kube-controller-manager`
 
 ###### Does enabling the feature change any default behavior?
