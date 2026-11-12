@@ -15,6 +15,7 @@
   - [Kubelet contract](#kubelet-contract)
   - [Integrator flow](#integrator-flow)
   - [Scheduler interaction](#scheduler-interaction)
+  - [Resizing controllers](#resizing-controllers)
   - [Example sequences](#example-sequences)
     - [Accepted resize](#accepted-resize)
     - [Held, then canceled by the user](#held-then-canceled-by-the-user)
@@ -263,7 +264,7 @@ spec:
         cpu: "4"          # desired, written via /resize
   resizeGates:
   - name: example.com/quota   # added by the integrator's webhook in the same write
-    scope: Growth             # default; readable by any controller, e.g. VPA
+    scope: Growth             # default
 status:
   containerStatuses:
   - name: main
@@ -379,6 +380,13 @@ This cannot oversubscribe a node, since the kubelet's own admission decides fit.
 gate is removed, the kubelet runs node admission; if the room is gone, the resize becomes
 `Deferred` and [KEP-5836] preemption applies as today. Preemption never runs for growth that has
 not been approved.
+
+### Resizing controllers
+
+A controller that issues resizes and reacts to `PodResizePending`, such as VPA, needs to learn
+the `Gated` reason: it is a decision pending with the gate owner, not a node failure, so no
+eviction fallback or timeout should apply. VPA's `InPlaceOrRecreate` mode evicts on a reason it
+does not recognize today.
 
 ### Example sequences
 
@@ -578,7 +586,8 @@ versions.
 - **API servers on different versions during an upgrade.** An update handled by an API server
   without the feature drops `resizeGates`, which releases the held growth. Integrators should
   rely on gates only once every API server has the feature enabled.
-- **Old controllers.** Not affected; they don't read the field.
+- **Old controllers.** Not affected unless they react to `PodResizePending`; see
+  [Resizing controllers](#resizing-controllers).
 
 ## Production Readiness Review Questionnaire
 
