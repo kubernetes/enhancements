@@ -1,4 +1,4 @@
-title: Show Pod extended resource requests in kubectl describe node
+title: Show Pod extended resources and ResourceClaims in kubectl describe node
 kep-number: 6472
 authors:
   - "@panpan0000"
@@ -14,6 +14,7 @@ approvers:
   - TBD
 editor: TBD
 see-also:
+  - /keps/sig-scheduling/5004-dra-extended-resource
   - /keps/sig-node/5677-dra-resource-availability-visibility
 # Provisional stage. No release milestone or feature gate is proposed.
 stage: alpha
