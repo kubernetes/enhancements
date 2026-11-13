@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 746" role="img" aria-labelledby="title description">
+  <title id="title">Users, AddOn Managers, and target clusters</title>
+  <desc id="description">A platform administrator offers add-on functionality through an AddOnClass, a user or client application writes an AddOn request and reads its status, and the selected AddOn Manager reads the request and reports status. AddOnClass and AddOn are resources of the ClusterProfile AddOn API. ClusterProfile is a resource of the Cluster Inventory API. A dashed arrow from AddOnClass to the selected AddOn Manager shows selection through spec.manager.name. Other dashed arrows connect the AddOn to its AddOnClass and ClusterProfile, and the ClusterProfile to the target Kubernetes cluster. Solid arrows show the AddOn Manager reading AddOn spec, writing AddOn status, and installing, updating, observing, and cleaning up the managed installation that provides functionality for that target. Roles, API resources, and the managed installation are shown separately, without prescribing where their components run.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#595959"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: Arial, sans-serif; font-weight: 400; fill: #202020; }
+    .subtitle { font-size: 14px; text-anchor: middle; }
+    .zone { fill: none; stroke: #595959; stroke-dasharray: 5 5; }
+    .zone-label { font-size: 16px; }
+    .role { fill: #cfe2f3; stroke: #595959; }
+    .resource { fill: #fff2cc; stroke: #595959; }
+    .card { stroke: #595959; }
+    .name { font-size: 17px; text-anchor: middle; }
+    .detail { font-size: 14px; text-anchor: middle; }
+    .condition { font-size: 12px; text-anchor: middle; }
+    .example { font-family: monospace; font-size: 12px; text-anchor: middle; }
+    .flow { fill: none; stroke: #595959; stroke-width: 1.5; marker-end: url(#arrow); }
+    .reference { stroke-dasharray: 4 4; }
+    .flow-label { font-size: 13px; text-anchor: middle; }
+  </style>
+  <rect width="1100" height="746" fill="#ffffff"/>
+  <g transform="translate(0 -68)">
+
+  <rect class="role" x="40" y="88" width="280" height="110" rx="24"/>
+  <text class="name" x="180" y="120">Platform administrator</text>
+  <text class="detail" x="180" y="150">Offers functionality through</text>
+  <text class="detail" x="180" y="173">AddOnClasses</text>
+  <rect class="role" x="410" y="88" width="280" height="110" rx="24"/>
+  <text class="name" x="550" y="113">User or</text>
+  <text class="name" x="550" y="135">client application</text>
+  <text class="detail" x="550" y="161">Requests functionality</text>
+  <text class="detail" x="550" y="181">and observes the result</text>
+
+  <path class="flow" d="M 180 200 V 308"/>
+  <rect x="95" y="218" width="170" height="28" fill="#ffffff"/>
+  <text class="flow-label" x="180" y="237">create / update spec</text>
+  <path class="flow" d="M 550 200 V 308"/>
+  <rect x="451" y="218" width="198" height="28" fill="#ffffff"/>
+  <text class="flow-label" x="550" y="237">write spec / read status</text>
+
+  <rect class="zone" x="20" y="260" width="690" height="280" rx="16"/>
+  <text class="zone-label" x="365" y="287" text-anchor="middle">ClusterProfile AddOn API resources</text>
+  <rect class="zone" x="760" y="260" width="320" height="280" rx="16"/>
+  <text class="zone-label" x="920" y="287" text-anchor="middle">Cluster Inventory API resource</text>
+  <rect class="resource" x="40" y="310" width="280" height="205" rx="6"/>
+  <text class="name" x="180" y="344">AddOnClass</text>
+  <text class="example" x="180" y="370">platform-system/otel-collector</text>
+  <text class="detail" x="180" y="406">Selects the AddOn Manager</text>
+  <text class="example" x="180" y="432">spec.manager.name:</text>
+  <text class="example" x="180" y="454">collector.observability.example.io</text>
+  <text class="detail" x="180" y="493">Optional shared parameters</text>
+  <rect class="resource" x="410" y="310" width="280" height="205" rx="6"/>
+  <text class="name" x="550" y="344">AddOn</text>
+  <text class="example" x="550" y="370">fleet-prod/otel-collector-cluster-a</text>
+  <text class="detail" x="550" y="406">spec: requested state</text>
+  <text class="detail" x="550" y="428">Optional per-AddOn parameters</text>
+  <path d="M 425 437 H 675" fill="none" stroke="#595959"/>
+  <text class="detail" x="550" y="456">status: observed result</text>
+  <text class="condition" x="550" y="473">Accepted, ClusterProfileResolved,</text>
+  <text class="condition" x="550" y="488">ParametersResolved, Applied,</text>
+  <text class="condition" x="550" y="503">UpToDate, Available</text>
+  <rect class="resource" x="780" y="310" width="280" height="205" rx="6"/>
+  <text class="name" x="920" y="344">ClusterProfile</text>
+  <text class="example" x="920" y="370">fleet-prod/cluster-a</text>
+  <text class="detail" x="920" y="406">Identifies the target cluster</text>
+  <text class="detail" x="920" y="432">and its access information</text>
+
+  <path class="flow reference" d="M 408 413 H 322"/>
+  <text class="flow-label" x="365" y="394">selects</text>
+  <path class="flow reference" d="M 692 413 H 778"/>
+  <text class="flow-label" x="735" y="394">targets</text>
+  <path class="flow reference" d="M 180 517 V 648"/>
+  <rect x="133" y="557" width="94" height="28" fill="#ffffff"/>
+  <text class="flow-label" x="180" y="576">selects</text>
+  <path class="flow" d="M 300 648 V 590 H 550 V 517"/>
+  <text class="flow-label" x="425" y="576">read spec / write status</text>
+  <path class="flow reference" d="M 920 517 V 648"/>
+  <rect x="860" y="557" width="120" height="28" fill="#ffffff"/>
+  <text class="flow-label" x="920" y="576">represents</text>
+
+  <rect class="role" x="40" y="650" width="280" height="110" rx="24"/>
+  <text class="name" x="180" y="682">AddOn Manager</text>
+  <text class="detail" x="180" y="712">Provides the requested functionality</text>
+  <text class="detail" x="180" y="735">and manages its lifecycle</text>
+  <path class="flow" d="M 322 705 H 408"/>
+  <text class="flow-label" x="365" y="677">manage</text>
+  <text class="flow-label" x="365" y="694">lifecycle</text>
+  <rect class="card" x="410" y="650" width="280" height="110" rx="6" fill="#d9ead3"/>
+  <text class="name" x="550" y="682">Managed installation</text>
+  <text class="detail" x="550" y="712">Resources and services chosen</text>
+  <text class="detail" x="550" y="735">by the AddOn Manager</text>
+  <path class="flow reference" d="M 692 705 H 778"/>
+  <text class="flow-label" x="735" y="677">functionality</text>
+  <text class="flow-label" x="735" y="694">for</text>
+  <rect class="card" x="780" y="650" width="280" height="110" rx="6" fill="#ffffff"/>
+  <text class="name" x="920" y="682">Target cluster</text>
+  <text class="detail" x="920" y="712">cluster-a</text>
+  <text class="subtitle" x="550" y="794">Installation components can run on the target, on a hub, or in an external service.</text>
+  </g>
+</svg>
