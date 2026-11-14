@@ -384,6 +384,12 @@ cgroup's `memory.swap.max`:
   before applying a swap limit decrease, keeping the resize `InProgress`
   (deferred) until `memory.swap.current` drops below the new `limits.swap`.
 
+`status.containerStatuses[*].resources.limits.swap` reports the swap limit the
+kubelet last applied, read from its actuated checkpoint rather than from the
+runtime's `ContainerStatus`, since CRI has no dedicated swap status field.
+`status.resources.limits.swap` reports the pod cgroup's `memory.swap.max`. A
+limit that has not been actuated yet is omitted from status.
+
 ### User Experience Examples
 
 #### Use Case 1: Swap-Disabled Workload
@@ -623,7 +629,7 @@ Operators can inspect `node.status.nodeInfo.swap.behavior` (`WorkloadControlledS
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Events
-  - Event Reason: `SwapNotSupported` (or warning event when a pod with `resources.limits.swap` is scheduled onto a `NoSwap` node where swap limits have no effect)
+  - Event Reason: `SwapLimitNotEnforced` (warning event when a pod with `resources.limits.swap` is scheduled onto a `NoSwap` node where swap limits have no effect)
 - [x] API .status
   - Other field: `node.status.nodeInfo.swap` (`behavior` and `capacity`) and `pod.spec.resources.limits.swap` / `pod.spec.containers[*].resources.limits.swap`
 - [x] Other (treat as last resort)
