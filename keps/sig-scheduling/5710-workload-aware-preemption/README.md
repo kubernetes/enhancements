@@ -35,8 +35,6 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
-    - [Beta (<code>PodGroupPreemptionPolicy</code>)](#beta-podgrouppreemptionpolicy)
-    - [GA (<code>PodGroupPreemptionPolicy</code>)](#ga-podgrouppreemptionpolicy)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -539,14 +537,15 @@ of requestion `PriorityClass` - namely both currently existing modes: `PreemptLo
 and `Never`.
 
 This field was not added as a part of the Alpha release of Workload Aware Preemption,
-thus it lags one release behind the other fields. This means that it cannot be covered
+thus it lagged one release behind the other fields. This means that it could not be covered
 by the `GenericWorkload` feature gate. We introduced an additional feature gate
-`PodGroupPreemptionPolicy` just for this field, which was introduced as Alpha in v1.37 and is
-promoted to Beta in v1.38.
+`PodGroupPreemptionPolicy` just for this field, which was introduced as Alpha in v1.37.
+Since `GenericWorkload` stayed in Beta in v1.38, `PodGroupPreemptionPolicy` is merged into
+`GenericWorkload` in v1.38.
 
-As `preemptionPolicy` is also a field on `Pod`, we apply the same uniform constraints across all
-entity types in the workload hierarchy as for priority (failing scheduling of the group if any
-divergence is detected):
+As `preemptionPolicy` is also a field on `Pod`, in v1.37 we apply the same uniform constraints 
+across all entity types in the workload hierarchy as for priority (failing scheduling of the 
+group if any divergence is detected):
 - When the `PodGroupPreemptionPolicy` feature gate is disabled, `kube-scheduler` enforces that all
   `Pod`s (unscheduled and already scheduled) across the group hierarchy share the same
   `preemptionPolicy` as each other, and uses that policy as the group's preemption policy.
@@ -555,6 +554,15 @@ divergence is detected):
   `preemptionPolicy`, and `kube-scheduler` enforces that all entities across the workload hierarchy
   (`CompositePodGroup`s, `PodGroup`s, and both unscheduled and already-scheduled `Pod`s) have the
   exact same `preemptionPolicy`.
+
+In v1.38, with `PodGroupPreemptionPolicy` merged into `GenericWorkload`, new pod group entities have
+`preemptionPolicy` defaulted and follow the latter behavior. However, if a cluster in v1.37 ran with
+only Beta features enabled (`GenericWorkload` enabled, `PodGroupPreemptionPolicy` disabled), existing
+`PodGroup` (and `CompositePodGroup` / `Workload`) objects persisted in storage will have
+`preemptionPolicy` set to `nil`. To avoid breaking these existing objects during an upgrade to v1.38,
+`kube-scheduler` (and API validation on existing objects) continues to support pod groups with
+`preemptionPolicy: nil` by falling back to the former behavior (enforcing that all member `Pod`s share
+the same `preemptionPolicy` and using it as the group's preemption policy).
 
 Given that components operate on integer priorities, we will introduce a corresponding fields
 that reflect priority of a PodGroup (similarly to how it's done in Pod API).
@@ -1049,15 +1057,17 @@ For GA, we promote these e2e tests to conformance.
 
 ### Graduation Criteria
 
-This KEP tracks two feature gates that graduate on separate schedules:
-- `GenericWorkload` (originally `WorkloadAwarePreemption` in v1.36 Alpha): gates core
-  Workload-Aware Preemption (`DisruptionMode` and pod group priorities), which promoted to Beta in
-  v1.37 and graduates to GA in v1.38.
-- `PodGroupPreemptionPolicy`: gates the `preemptionPolicy` field on pod group entities (`Workload`
-  templates, `CompositePodGroup`, and `PodGroup`). Because this field was not part of the v1.36
-  Alpha release and was introduced as Alpha in v1.37, it lags one release behind `GenericWorkload`
-  (promoting to Beta in v1.38 and targeting GA in v1.39).
+This KEP tracks `GenericWorkload` (originally `WorkloadAwarePreemption` in v1.36 Alpha)
+feature gate which gates core Workload-Aware Preemption (`DisruptionMode` and pod group
+priorities), which promoted to Beta in v1.37 and graduates to GA in v1.39.
 
+This KEP also used to track `PodGroupPreemptionPolicy` feature gate that gated
+`preemptionPolicy` field on pod group entities (`Workload` templates,
+`CompositePodGroup`, and `PodGroup`). This field was not part of the v1.36 Alpha
+release and was introduced as Alpha in v1.37. This feature gate was merged into
+a `GenericWorkload` feature gate in v1.38 and the field gated by it, is now
+gated by `GenericWorkload` feature gate.
+  
 #### Alpha
 
 - The API & feature is implemented behind the feature flag
@@ -1070,6 +1080,7 @@ This KEP tracks two feature gates that graduate on separate schedules:
 - Decision whether we support mutability of Priority for Beta
 - Extended performance benchmarks to ensure satisfying scalability & performance
 - E2E test that can then be promoted to conformance
+- E2E test covering `preemptionPolicy` for pod group entities that can then be promoted to conformance
 - All known issues resolved
 
 #### GA
@@ -1080,16 +1091,9 @@ This KEP tracks two feature gates that graduate on separate schedules:
   objects.
 - Scheduler initialization check logging an error when `PostFilter` plugins do not implement `PodGroupPostFilter`.
 - E2E test promoted to conformance
+- E2E test covering `preemptionPolicy` for pod group entities promoted to conformance
 - Performance benchmarks have well defined thresholds and are run as part of the scheduler-perf of sig-scalability-benchmarks
 - All known issues resolved
-
-#### Beta (`PodGroupPreemptionPolicy`)
-
-- E2E test covering `preemptionPolicy` for pod group entities that can then be promoted to conformance
-
-#### GA (`PodGroupPreemptionPolicy`)
-
-- E2E test covering `preemptionPolicy` for pod group entities promoted to conformance
 
 
 ### Upgrade / Downgrade Strategy
@@ -1122,14 +1126,12 @@ is not relevant for it.
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: GenericWorkload
   - Components depending on the feature gate: kube-apiserver, kube-scheduler
-  - Feature gate name: PodGroupPreemptionPolicy
-  - Components depending on the feature gate: kube-apiserver, kube-scheduler
 
 Note that for Alpha this feature was using the `WorkloadAwarePreemption` feature gate.
-For Beta and GA we merged it together with the `GenericWorkload` feature gate (which graduates to GA in v1.38),
+For Beta and GA we merged it together with the `GenericWorkload` feature gate (which graduates to GA in v1.39),
 with the rationale provided in the rest of the KEP.
-There is also a separate `PodGroupPreemptionPolicy` feature gate (introduced as Alpha in v1.37 and promoted to Beta in v1.38)
-that allows setting the preemption policy at the pod group level.
+There was also a separate `PodGroupPreemptionPolicy` feature gate, introduced as Alpha in v1.37 that allowed setting the preemption policy at the pod group level. It was
+merged into `GenericWorkload` in v1.38.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1149,9 +1151,6 @@ The new API changes and admission can also be disabled by disabling the feature 
 kube-apiserver. However keep in mind that it doesn't result in clearing the new fields
 for objects that already have them set in the storage.
 
-The pod group level preemption policy field can be disabled by disabling `PodGroupPreemptionPolicy` 
-feature gate. When disabled, Workload Aware Preemption will deduct preemption policy from the
-pod spec of the pods belonging to PodGroup.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1178,10 +1177,6 @@ enablement/disablement tests - the logic will be covered by regular feature test
 The API fields related to Workload Aware Preemption are no longer hidden behind a separate
 feature gate and will be promoted with the whole API to beta. There is no need for the
 dedicated enablement/disablement tests at the kube-apiserver registry layer.
-
-The only exception is the pod group level preemption policy field that will be covered
-by the `PodGroupPreemptionPolicy` feature gate. Its enablement/disablement will be covered
-by unit tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1269,6 +1264,9 @@ behavior).
 
 During promotion to Beta, the `WorkloadAwarePreemption` feature gate will be removed and
 Workload Aware Preemption features will be moved behind the `GenericWorkload` feature gate.
+
+In v1.38 the `PodGroupPreemptionPolicy` feature gate will be merged into a Beta
+`GenericWorkload` feature gate.
 
 ### Monitoring Requirements
 
@@ -1502,6 +1500,7 @@ If preemptor workloads are stuck and preemption attempts fail:
 2026-02: KEP-5710 updated to sync with decoupling of PodGroup/Workload API.
 2026-05: KEP updated to promote to beta in v1.37.
 2026-09: KEP updated to promote to GA in v1.38.
+2026-11: KEP updated to stay in beta in v1.38 and promote to GA in v1.39.
 
 ## Drawbacks
 
