@@ -19,13 +19,13 @@ approvers:
 see-also: []
 replaces: []
 
-stage: alpha
+stage: beta
 
 latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.38"
-  beta: "TBD"
+  beta: "v1.38"
   stable: "TBD"
 
 feature-gates:
