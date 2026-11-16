@@ -815,8 +815,9 @@ Rolling the gate back off immediately restores prior behavior.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-To be completed before beta; for alpha the gate on/off tests exercise both
-behaviors within one binary.
+This is purely in-memory feature limited to kube-apiserver,
+without any user visible impact aside of latency,
+thus it doesn't have any impact on upgrade/downgrade path
 
 ###### Is the rollout accompanied by any deprecations and/or removals?
 

@@ -24,10 +24,11 @@ see-also:
   - "/keps/sig-api-machinery/4988-snapshottable-api-server-cache"
 replaces: []
 
-stage: alpha
+stage: beta
 latest-milestone: "v1.38"
 milestone:
   alpha: "v1.38"
+  beta: "v1.38"
 
 feature-gates:
   - name: ConsistentGetFromCache

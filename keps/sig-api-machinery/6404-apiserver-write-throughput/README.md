@@ -233,150 +233,70 @@ ConsistentGetFromCache is purely in-memory feature, so enablement/disablement te
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+ConsistentGetFromCache is purely in-memory feature, without any impact on rollout/upgrade/rollback planning.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+ConsistentGetFromCache makes Get and Mutating operations depend on watch cache delay.
+During rollout the latency of those operations can increase, however this will allow APF to throttle requests reducing the overall load and stabilizing watch cache.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+* `apiserver_request_duration_seconds` - Latency of single object operations persistently increasing above 1s SLO.
+* `apiserver_watch_cache_read_wait_seconds` - Wait related to watch cache delay increasing above 3s.
+* `apiserver_watch_cache_consistent_read_total` - Number of consistent requests that needed to fallback due to watch cache being too behind.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+ConsistentGetFromCache is purely in-memory feature, without any impact on upgrade/downgrade path.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No changes in API.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
+Consistent read paths are already instrumented with the following metrics:
+* `apiserver_watch_cache_read_wait_seconds` - Wait related to watch cache delay.
+* `apiserver_watch_cache_consistent_read_total` - Number of consistent requests that needed to fallback due to watch cache being too behind.
 
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+This feature is enabled for all requests and not dependent on workload.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+This feature is enabled for all requests and not dependent on workload.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+Latency of processing mutating API calls for single objects for every (resource, verb) pair, measured as 99th percentile over last 5 minutes.
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+https://github.com/kubernetes/community/blob/main/sig-scalability/slos/api_call_latency.md
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [x] Metrics
+  - Metric name: `apiserver_watch_cache_read_wait_seconds`.
+  - [Optional] Aggregation method: P99
+  - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No, we are expanding on existing metrics for consistent reads.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No, this feature only depends on etcd that is running as part of control-plane and not within cluster.
 
 ### Scalability
-
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -408,33 +328,17 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+No changes in behavior, if etcd is unavailable the apiserver is not able to serve requests regardless if this feature is enabled or not.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Watch cache being delayed by more than 3 second timeout
+  - Detection: Detected by metrics `apiserver_watch_cache_consistent_read_total`.
+  - Mitigations: In that case watch cache is already overloaded, administrator can reduce the load or disable the feature gate to reduce number of readers waiting on cache.
+  - Diagnostics: Apiserver trace logs available on verbosity 3.
+  - Testing: We fallback directly to etcd, which is covered by existing tests of etcd storage.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -442,6 +346,7 @@ For each of them, fill in the following information by copying the below templat
 
 - 2026-09-18: Initial write-throughput investigation and proposal filed in [kubernetes/kubernetes#142223](https://github.com/kubernetes/kubernetes/issues/142223).
 - 2026-09-21: KEP-6404 drafted to serve all `GET`s from cache (`ConsistentGetFromCache`) and document future serialization/deserialization allocation optimizations.
+- 2026-11-09: Graduated to Beta and enabled by default.
 
 ## Drawbacks
 
