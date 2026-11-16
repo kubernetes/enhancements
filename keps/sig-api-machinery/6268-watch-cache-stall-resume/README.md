@@ -797,8 +797,8 @@ touch workloads directly. A rollout failure would manifest as a delivery
 correctness bug (a missed or duplicated watch event), as unsynced watchers not
 being reclaimed, or as sync passes taking more of the dispatcher's time than
 their bound. A missed or duplicated event could cause controllers to act on
-stale state; this is mitigated by the off-by-default gate, the delivery
-invariants and their tests, the model-based harness, and the `410` fallback.
+stale state; this is mitigated the validation of delivery invariants, their tests,
+the model-based harness, and the `410` fallback.
 Rolling the gate back off immediately restores prior behavior.
 
 ###### What specific metrics should inform a rollback?
@@ -815,8 +815,9 @@ Rolling the gate back off immediately restores prior behavior.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-To be completed before beta; for alpha the gate on/off tests exercise both
-behaviors within one binary.
+This is purely in-memory feature limited to kube-apiserver,
+without any user visible impact aside of latency,
+thus it doesn't have any impact on upgrade/downgrade path
 
 ###### Is the rollout accompanied by any deprecations and/or removals?
 
