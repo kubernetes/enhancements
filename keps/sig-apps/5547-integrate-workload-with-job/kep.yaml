@@ -43,4 +43,3 @@ disable-supported: true
 # The following PRR answers are required at beta release
 metrics:
   - job_scheduling_object_syncs_total
-  - job_scheduling_object_sync_duration_seconds
