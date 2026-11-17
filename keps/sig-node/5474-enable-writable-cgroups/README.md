@@ -320,10 +320,14 @@ changes are required.
 The limits apply separately to each Pod. After a cgroup directory is removed, its
 kernel resources can remain allocated until cleanup completes.
 
-A Pod that requests `ReadWrite` never runs a container without the limits. The
-kubelet writes them when it creates the Pod cgroup. If the write fails, the kubelet
-removes the Pod cgroup, records a `FailedToCreatePodContainer` event on the Pod,
-and retries on the next sync.
+For alpha, the kubelet sets the limits once when creating the Pod cgroup and
+does not reconcile incomplete Pod cgroup configuration
+([kubernetes/kubernetes#144075](https://github.com/kubernetes/kubernetes/issues/144075)).
+If applying the configuration fails, the kubelet logs `cgroup manager.Set failed`
+and starts the Pod's containers. A kubelet restart between creating the Pod
+cgroup and applying its configuration also leaves the cgroup unconfigured. For
+beta, the kubelet will reconcile Pod cgroup configuration before starting
+containers when applying it fails or is interrupted by a restart.
 
 ### Implementation Details
 
@@ -348,7 +352,7 @@ sequenceDiagram
         Note over Kubelet,Container Runtime: Pod Cgroup Setup
 
         Kubelet->>Kubelet: EnsureExists(pod): create Pod-level cgroup
-        Note right of Kubelet: Apply cgroup.max.descendants and cgroup.max.depth<br/>on the Pod cgroup; a write failure fails the Pod sync
+        Note right of Kubelet: Set cgroup.max.descendants and cgroup.max.depth<br/>as part of Pod cgroup configuration
 
         Note over Kubelet,Container Runtime: Container Creation
         
@@ -458,7 +462,8 @@ Coverage for new and existing packages:
 - Feature gate enabled by default
 - E2E tests stable and passing consistently
 - Both containerd and CRI-O support the feature in a released version, per the [CRI API dev policy](https://www.kubernetes.dev/docs/code/cri-api-dev-policies/#same-maturity-level-for-beta-and-ga)
-- Re-evaluate the Pod descendant and depth limits with alpha feedback: the defaults of 250 and 50, and failing Pod startup when they cannot be applied
+- Re-evaluate the Pod descendant and depth limit defaults of 250 and 50 with alpha feedback
+- Reconcile Pod cgroup configuration, including the descendant and depth limits, when applying it fails or is interrupted by a kubelet restart ([kubernetes/kubernetes#144075](https://github.com/kubernetes/kubernetes/issues/144075))
 - Evaluate exposing the limits in `KubeletConfiguration` for per-node tuning
 - Document that the kubelet watches cgroups that containers create unless `PodAndContainerStatsFromCRI` is enabled and the runtime implements `PodSandboxStats`. Recommend enabling the gate on nodes that run Pods with writable cgroups
 
@@ -713,7 +718,7 @@ No different from existing pod creation. If the apiserver is unavailable, no new
 | Host is on cgroup v1 | When the kubelet creates a container requesting `ReadWrite`, the container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require cgroup v2` | Migrate the node to cgroup v2; or remove the field from the pod spec | Pod events; `stat -fc %T /sys/fs/cgroup` reports `cgroup2fs` on cgroup v2 | node support tests |
 | Host's `/sys/fs/cgroup` is not mounted with `nsdelegate` | When the kubelet creates a container requesting `ReadWrite`, the container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require the cgroup filesystem to be mounted with nsdelegate`. The kubelet reads the mount options once, at startup. If `nsdelegate` is removed later, the runtime fails container creation | Mount `/sys/fs/cgroup` with `nsdelegate` and restart kubelet after changing the mount options | Pod events; `findmnt /sys/fs/cgroup`; runtime logs | runtime contract; node support tests |
 | Kubelet does not manage a cgroup per Pod (`--cgroups-per-qos=false`) | When the kubelet creates a container requesting `ReadWrite`, the container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require the kubelet to manage a cgroup per pod (--cgroups-per-qos)` | Enable `cgroupsPerQOS` in the kubelet configuration; or remove the field from the pod spec | Pod events; kubelet `/configz` | node support tests |
-| Kubelet cannot apply the Pod descendant and depth limits | `FailedToCreatePodContainer` event on the Pod; its containers do not start and the kubelet retries each sync | Remove the field from the pod spec; or fix the cgroup write error reported in the event | Pod events; kubelet logs | unit tests |
+| Kubelet cannot apply the Pod descendant and depth limits | For alpha, the kubelet logs `cgroup manager.Set failed` and starts the Pod's containers, or leaves the Pod cgroup unconfigured if restarted before applying its configuration ([kubernetes/kubernetes#144075](https://github.com/kubernetes/kubernetes/issues/144075)) | Fix any cgroup write error reported in the kubelet log, then recreate the Pod | kubelet logs; `cgroup.max.descendants` and `cgroup.max.depth` in the Pod cgroup | none in alpha |
 | Pod reaches its descendant limit | `mkdir` returns `EAGAIN` when `cgroup.max.descendants` is reached | Remove unused cgroups inside the container; the limit is per Pod and bounds node resource use | container logs; Pod cgroup `cgroup.stat` | e2e for descendant bound |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
