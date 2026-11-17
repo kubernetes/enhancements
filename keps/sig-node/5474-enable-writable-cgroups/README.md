@@ -22,6 +22,7 @@
   - [Implementation Details](#implementation-details)
     - [CgroupOptions Implementation Flow](#cgroupoptions-implementation-flow)
     - [Validation](#validation)
+    - [Pod Security Standards](#pod-security-standards)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -411,6 +412,11 @@ The kubelet includes the descendant and depth limits in the cgroup v2 `Unified`
 parameters when creating the Pod cgroup. See
 [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes)
 for the values and failure behavior.
+
+#### Pod Security Standards
+
+The Restricted profile requires `cgroupOptions.mountMode` to be unset or
+`ReadOnly`. The Baseline and Privileged profiles do not restrict the field.
 
 ### Test Plan
 
