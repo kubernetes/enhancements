@@ -156,9 +156,9 @@ Another example is, [KubeVirt](https://github.com/kubevirt/kubevirt) runs a hype
 
 **Mitigation**:
 
-The `nsdelegate` mount option for cgroup v2 provides kernel-level protection. When `/sys/fs/cgroup` is mounted with `nsdelegate`, and the container is in its own cgroup namespace, the kernel prevents the container from modifying its own resource limits. It can only create subdirectories (child cgroups) and manage resources within those sub-cgroups.
+The `nsdelegate` mount option for cgroup v2 provides kernel-level protection. When `/sys/fs/cgroup` is mounted with `nsdelegate` and the container is in its own cgroup namespace, the kernel prevents the container from modifying its own resource limits. It can enable controllers for child cgroups and manage resources within those sub-cgroups.
 
-This feature relies on `nsdelegate` being supported and configured on the host. If the runtime cannot ensure this isolation (e.g., missing `nsdelegate` support), it MUST NOT enable writable cgroups for the container.
+This feature relies on `nsdelegate` being supported and configured on the host. If the host does not mount cgroup v2 with `nsdelegate`, the kubelet and the runtime MUST fail creation of any container that requests `ReadWrite`.
 
 ### Verified Behavior
 
@@ -262,27 +262,34 @@ them, the container fails with `CreateContainerConfigError`.
 
 #### CRI API Changes
 
-**File**: `cri-api/pkg/apis/runtime/v1/api.proto`
+**File**: `staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto`
 ```protobuf
 message LinuxContainerSecurityContext {
     // ... existing fields ...
-    
+
     // cgroup_mount_mode controls how the cgroup filesystem is mounted in the
-    // container. Only effective with cgroup v2.
+    // container.
     CgroupMountMode cgroup_mount_mode = 18;
 }
 
 // CgroupMountMode defines how the cgroup filesystem is mounted in a container.
+// The runtime MUST fail container creation if it cannot honor the requested
+// mode.
 enum CgroupMountMode {
     // CGROUP_MOUNT_MODE_UNSPECIFIED uses the runtime's default mount mode.
     CGROUP_MOUNT_MODE_UNSPECIFIED = 0;
     // CGROUP_MOUNT_MODE_READ_ONLY mounts the cgroup filesystem read-only.
+    // A privileged container's cgroup filesystem is always writable. The
+    // runtime fails creation of a privileged container that requests this
+    // mode.
     CGROUP_MOUNT_MODE_READ_ONLY = 1;
-    // CGROUP_MOUNT_MODE_READ_WRITE allows the container to manage its cgroup subtree.
+    // CGROUP_MOUNT_MODE_READ_WRITE mounts the cgroup filesystem read-write.
+    // This mode requires the host to mount cgroup v2 with nsdelegate.
+    // The runtime MUST fail container creation for CGROUP_MOUNT_MODE_READ_WRITE
+    // with CgroupNamespace.Mode=NODE when the container is not privileged.
     CGROUP_MOUNT_MODE_READ_WRITE = 2;
 }
 
-// RuntimeFeatures (node-level, independent of runtime handlers) feeds node feature discovery.
 message RuntimeFeatures {
     // ... existing fields (e.g. supplemental_groups_policy) ...
 
@@ -299,8 +306,14 @@ mount mode. For example, containerd's `cgroup_writable` configuration field
 can make this default writable. An explicit `ReadOnly` maps to
 `CGROUP_MOUNT_MODE_READ_ONLY` and overrides the runtime's default.
 
-A runtime must fail container creation if it cannot honor
-`CGROUP_MOUNT_MODE_READ_WRITE`, including when `nsdelegate` is absent.
+A runtime must fail container creation if it cannot honor the requested mode,
+including:
+
+- `CGROUP_MOUNT_MODE_READ_ONLY` on a privileged container.
+- `CGROUP_MOUNT_MODE_READ_WRITE` when the host does not mount cgroup v2 with
+  `nsdelegate`.
+- `CGROUP_MOUNT_MODE_READ_WRITE` with `CgroupNamespace.Mode=NODE`
+  ([KEP-5714](../5714-cgroupns/README.md)) on an unprivileged container.
 
 Each `CgroupOptions` option has its own `RuntimeFeatures` capability.
 
