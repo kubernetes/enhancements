@@ -350,7 +350,7 @@ and make progress.
 
 ### User Stories (Optional)
 
-This might be useful for those who do their own kubernetes installation, and put CNI plugins in the pod, which is a very common practice nowadays. A rarer practice is to load BPF also for networking or security tracking (CAP_BPF is available since linux kernel version 5.8), [for example KubeArmor loads BPF for security purpose (<a href="https://github.com/kubearmor/KubeArmor">https://github.com/kubearmor/KubeArmor</a>)]. There are cases where system components are deployed in Pod which even load a kernel modules. CAP_PTRACE could be used for debugging purpose and CAP_AUDIT could be used by intrusion detection systems.
+This is useful for those who do their own kubernetes installation, and put CNI plugins in the pod, which is a very common practice nowadays. A rarer practice is to load BPF also for networking or security tracking (CAP_BPF is available since linux kernel version 5.8), [for example KubeArmor loads BPF for security purpose (<a href="https://github.com/kubearmor/KubeArmor">https://github.com/kubearmor/KubeArmor</a>)]. There are cases where system components are deployed in Pod which even load a kernel modules. CAP_PTRACE could be used for debugging purpose and CAP_AUDIT could be used by intrusion detection systems.
 
 #### Story 1
 As a security conscious user I should be able to run my container as non-root and add the minimum set of capabilities required for it to function even when I do not control how the image is built.
