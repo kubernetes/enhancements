@@ -202,31 +202,43 @@ accounts usage hierarchically.
 
 Add `CgroupOptions` struct field to `SecurityContext` in both internal and external API:
 
-**File**: `pkg/apis/core/types.go`
+**Files**: `staging/src/k8s.io/api/core/v1/types.go`, `pkg/apis/core/types.go`
 ```go
 type SecurityContext struct {
     // ... existing fields ...
-    
-    // CgroupOptions controls cgroup filesystem access and configuration.
-    // This allows unprivileged containers to manage their own cgroup hierarchies on cgroup v2 systems.
-    // Only effective on Linux containers with cgroup v2.
+
+    // cgroupOptions holds the cgroup options for this container.
+    // If mountMode is specified, the scheduler only places the pod on a node
+    // whose status.declaredFeatures includes CgroupOptions.
+    // (Alpha) This field requires the CgroupOptions feature gate to be enabled.
+    // This field cannot be set for ephemeral containers or when spec.os.name is windows.
+    // +featureGate=CgroupOptions
     // +optional
-    CgroupOptions *CgroupOptions
+    // +k8s:optional
+    CgroupOptions *CgroupOptions `json:"cgroupOptions,omitempty" protobuf:"bytes,13,opt,name=cgroupOptions"`
 }
 
 // CgroupOptions defines options for cgroup filesystem access.
 type CgroupOptions struct {
-    // MountMode controls whether the cgroup filesystem is mounted as writable.
-    // If not specified, the container runtime's default mount mode is used.
+    // mountMode controls how the cgroup filesystem is mounted in the container.
+    // Valid values are "ReadOnly" and "ReadWrite". If not specified, the
+    // container runtime's default mount mode is used.
+    // The kubelet refuses to create a container with an unrecognized value.
+    // "ReadOnly" cannot be set when the container's privileged field is true.
+    // "ReadWrite" cannot be set when spec.hostNetwork is true and
+    // spec.hostUsers is false.
     // +optional
-    MountMode *CgroupMountMode
+    // +k8s:optional
+    MountMode *CgroupMountMode `json:"mountMode,omitempty" protobuf:"bytes,1,opt,name=mountMode"`
 }
 
-// CgroupMountMode defines the mount mode for cgroup filesystem.
+// CgroupMountMode defines how the cgroup filesystem is mounted in a container.
+// +enum
+// +k8s:enum
 type CgroupMountMode string
 
 const (
-    // CgroupMountModeReadOnly mounts cgroup filesystem as read-only
+    // CgroupMountModeReadOnly mounts the cgroup filesystem read-only.
     CgroupMountModeReadOnly CgroupMountMode = "ReadOnly"
     // CgroupMountModeReadWrite mounts the cgroup filesystem read-write.
     CgroupMountModeReadWrite CgroupMountMode = "ReadWrite"
@@ -381,13 +393,12 @@ host prerequisites of `ReadWrite` when creating the container.
 
 **System Validation**:
 
-`cgroupOptions.mountMode` accepts `ReadOnly` and `ReadWrite`. The API rejects
-`cgroupOptions` when `spec.os.name` is `windows`, following the other Linux-only
-securityContext fields.
+`cgroupOptions.mountMode` accepts `ReadOnly` and `ReadWrite`:
 
-Ephemeral containers cannot set `cgroupOptions`. Allowing them to request writable
-cgroups would require applying descendant limits to an existing Pod cgroup when
-the Pod did not initially request them.
+- `ReadOnly` is rejected when `privileged` is true because a privileged container's cgroup filesystem is writable outside a host-network user namespace. `ReadWrite` is allowed when `privileged` is true and keeps the same node, host, and Pod limit requirements.
+- `ReadWrite` is rejected when `spec.hostNetwork` is true and `spec.hostUsers` is false ([KEP-5607](../5607-hostnetwork-userns/README.md)) because the runtime bind-mounts the host's `/sys` read-only in that configuration.
+- `cgroupOptions` cannot be set when `spec.os.name` is `windows`, following the other Linux-only `securityContext` fields.
+- `cgroupOptions` cannot be set on ephemeral containers or [dynamic containers](../5972-dynamic-containers/README.md) because the node's declared feature and the Pod cgroup limits are evaluated only at Pod creation.
 
 **File**: `pkg/kubelet/kuberuntime/security_context.go`
 
@@ -464,6 +475,8 @@ Coverage for new and existing packages:
 - Both containerd and CRI-O support the feature in a released version, per the [CRI API dev policy](https://www.kubernetes.dev/docs/code/cri-api-dev-policies/#same-maturity-level-for-beta-and-ga)
 - Re-evaluate the Pod descendant and depth limit defaults of 250 and 50 with alpha feedback
 - Reconcile Pod cgroup configuration, including the descendant and depth limits, when applying it fails or is interrupted by a kubelet restart ([kubernetes/kubernetes#144075](https://github.com/kubernetes/kubernetes/issues/144075))
+- Decide whether dynamic containers can set `cgroupOptions`
+- When `hostCgroupNamespace` ([KEP-5714](../5714-cgroupns/README.md)) lands, reject `ReadWrite` in the Pod API for unprivileged containers because `nsdelegate` requires a private cgroup namespace to confine writes ([kubernetes/kubernetes#143673](https://github.com/kubernetes/kubernetes/pull/143673))
 - Evaluate exposing the limits in `KubeletConfiguration` for per-node tuning
 - Document that the kubelet watches cgroups that containers create unless `PodAndContainerStatsFromCRI` is enabled and the runtime implements `PodSandboxStats`. Recommend enabling the gate on nodes that run Pods with writable cgroups
 
@@ -483,7 +496,7 @@ Enable/disable the feature gate
 - Existing workloads continue to function without modification
 
 **Update Flow**:
-- `CgroupOptions` field is **immutable** after pod creation. Ephemeral containers cannot set it.
+- `CgroupOptions` field is **immutable** after pod creation. Neither ephemeral containers nor dynamic containers can set it.
 - Changes to `CgroupOptions` require pod recreation (delete + create)
 
 **Downgrade**:
