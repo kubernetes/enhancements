@@ -378,7 +378,7 @@ _Blocking for Alpha._
 
 - Add new field to [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
 
-  When a capability is added using this field only then does it get added to the ambient set in addition to inheritable, permitted, bounding and effective sets. The behavior is consistent for root and non-root containers.
+  When a capability is added using this field only then it gets added to the ambient set in addition to inheritable, permitted, bounding and effective sets. The behavior is consistent for root and non-root containers.
 
   ```diff
   type Capabilities struct {
