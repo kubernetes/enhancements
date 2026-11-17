@@ -102,7 +102,7 @@ Related Issues:
 
 ## Proposal
 
-Add a new `CgroupOptions` struct field to the `SecurityContext` in the core v1 API. This struct-based approach provides extensibility for future cgroup-related configurations. When `mountMode` is set to `Writable` on cgroup v2 systems, it instructs the container runtime to mount the cgroup filesystem with write permissions for the container's own cgroup subtree.
+Add a new `CgroupOptions` struct field to the `SecurityContext` in the core v1 API. This struct-based approach provides extensibility for future cgroup-related configurations. When `mountMode` is set to `ReadWrite` on cgroup v2 systems, it instructs the container runtime to mount the cgroup filesystem with write permissions for the container's own cgroup subtree.
 
 ```yaml
 apiVersion: v1
@@ -115,14 +115,14 @@ spec:
     image: myapp:latest
     securityContext:
       cgroupOptions:
-        mountMode: Writable
+        mountMode: ReadWrite
 ```
 
 ### User Stories (Optional)
 
 #### Story 1: Container-in-Container Development
 
-As a developer, I need to run Docker-in-Docker for testing and development purposes. Currently, I need to use privileged containers which exposes unnecessary security risks. With `CgroupOptions.MountMode: Writable`, I can run these nested containers securely while still allowing them to manage their own resource constraints.
+As a developer, I need to run Docker-in-Docker for testing and development purposes. Currently, I need to use privileged containers which exposes unnecessary security risks. With `CgroupOptions.MountMode: ReadWrite`, I can run these nested containers securely while still allowing them to manage their own resource constraints.
 
 #### Story 2: Dynamic Resource Management
 
@@ -136,7 +136,7 @@ Another example is, [KubeVirt](https://github.com/kubevirt/kubevirt) runs a hype
 - **Linux Only**: The field is only valid on Linux containers and will be validated accordingly
 - **Runtime Support**: Requires container runtime support
 - **Node Configuration**: The host's cgroup v2 filesystem must be mounted with `nsdelegate`, and the kubelet must manage a cgroup per Pod (`--cgroups-per-qos`).
-- **Descendant Limits**: When `mountMode: Writable` is enabled, the kubelet applies descendant and depth limits to the Pod cgroup before any container starts; see [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes).
+- **Descendant Limits**: When `mountMode: ReadWrite` is enabled, the kubelet applies descendant and depth limits to the Pod cgroup before any container starts; see [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes).
 - **Security Context Integration**: Must work cohesively with other SecurityContext fields
 
 ### Risks and Mitigations
@@ -164,7 +164,7 @@ This feature relies on `nsdelegate` being supported and configured on the host. 
 
 #### Descendant Cgroup Memory Accounting
 
-A container with `cgroupOptions.mountMode: Writable` and `memory.max: 128Mi` running on a GKE node (COS 125, kernel 6.12.68+, cgroup v2) was able to create approximately 42,000 sibling cgroups before any `mkdir` failed.
+A container with `cgroupOptions.mountMode: ReadWrite` and `memory.max: 128Mi` running on a GKE node (COS 125, kernel 6.12.68+, cgroup v2) was able to create approximately 42,000 sibling cgroups before any `mkdir` failed.
 
 During the test:
 
@@ -228,10 +228,8 @@ type CgroupMountMode string
 const (
     // CgroupMountModeReadOnly mounts cgroup filesystem as read-only
     CgroupMountModeReadOnly CgroupMountMode = "ReadOnly"
-    
-    // CgroupMountModeWritable mounts cgroup filesystem as writable,
-    // allowing containers to manage their own cgroup subtree
-    CgroupMountModeWritable CgroupMountMode = "Writable"
+    // CgroupMountModeReadWrite mounts the cgroup filesystem read-write.
+    CgroupMountModeReadWrite CgroupMountMode = "ReadWrite"
 )
 ```
 
@@ -251,14 +249,14 @@ host prerequisites itself at startup.
 Both explicit mount modes require these prerequisites. An omitted `mountMode`,
 including an empty `cgroupOptions` object, uses the runtime default and does not
 require the node to declare `CgroupOptions`. Descendant and depth limits apply
-only when a container requests `Writable`.
+only when a container requests `ReadWrite`.
 
 The scheduler excludes nodes that do not declare the feature for Pods requesting
-`mountMode: ReadOnly` or `mountMode: Writable`. Kubelet admission rejects such
+`mountMode: ReadOnly` or `mountMode: ReadWrite`. Kubelet admission rejects such
 Pods with `PodFeatureUnsupported` if they reach an unsupported node directly. See
 [KEP-5328](../5328-node-declared-features/README.md).
 
-When the kubelet creates a container that requests `Writable`, it checks that
+When the kubelet creates a container that requests `ReadWrite`, it checks that
 the host has cgroup v2, `nsdelegate`, and a Pod cgroup. If the host lacks any of
 them, the container fails with `CreateContainerConfigError`.
 
@@ -280,8 +278,8 @@ enum CgroupMountMode {
     CGROUP_MOUNT_MODE_UNSPECIFIED = 0;
     // CGROUP_MOUNT_MODE_READ_ONLY mounts the cgroup filesystem read-only.
     CGROUP_MOUNT_MODE_READ_ONLY = 1;
-    // CGROUP_MOUNT_MODE_WRITABLE allows the container to manage its cgroup subtree.
-    CGROUP_MOUNT_MODE_WRITABLE = 2;
+    // CGROUP_MOUNT_MODE_READ_WRITE allows the container to manage its cgroup subtree.
+    CGROUP_MOUNT_MODE_READ_WRITE = 2;
 }
 
 // RuntimeFeatures (node-level, independent of runtime handlers) feeds node feature discovery.
@@ -302,7 +300,7 @@ can make this default writable. An explicit `ReadOnly` maps to
 `CGROUP_MOUNT_MODE_READ_ONLY` and overrides the runtime's default.
 
 A runtime must fail container creation if it cannot honor
-`CGROUP_MOUNT_MODE_WRITABLE`, including when `nsdelegate` is absent.
+`CGROUP_MOUNT_MODE_READ_WRITE`, including when `nsdelegate` is absent.
 
 Each `CgroupOptions` option has its own `RuntimeFeatures` capability.
 
@@ -316,7 +314,7 @@ changes are required.
 The limits apply separately to each Pod. After a cgroup directory is removed, its
 kernel resources can remain allocated until cleanup completes.
 
-A Pod that requests `Writable` never runs a container without the limits. The
+A Pod that requests `ReadWrite` never runs a container without the limits. The
 kubelet writes them when it creates the Pod cgroup. If the write fails, the kubelet
 removes the Pod cgroup, records a `FailedToCreatePodContainer` event on the Pod,
 and retries on the next sync.
@@ -351,7 +349,7 @@ sequenceDiagram
         KubeRuntime->>KubeRuntime: convertToRuntimeSecurityContext()
         Note right of KubeRuntime: Map CgroupOptions.MountMode to CRI
 
-        KubeRuntime->>Container Runtime: CreateContainer(CgroupMountMode=Writable)
+        KubeRuntime->>Container Runtime: CreateContainer(CgroupMountMode=ReadWrite)
         
         Container Runtime->>Container Runtime: Generate OCI Spec with writable cgroups
         Note right of Container Runtime: Mount /sys/fs/cgroup as read-write
@@ -372,7 +370,7 @@ The scheduler and kubelet admission enforce the prerequisites described under
 
 **System Validation**:
 
-`cgroupOptions.mountMode` accepts `ReadOnly` and `Writable`. The API rejects
+`cgroupOptions.mountMode` accepts `ReadOnly` and `ReadWrite`. The API rejects
 `cgroupOptions` when `spec.os.name` is `windows`, following the other Linux-only
 securityContext fields.
 
@@ -529,7 +527,7 @@ The feature can be controlled via:
 
 ###### Does enabling the feature change any default behavior?
 
-**No**. Containers that omit `securityContext.cgroupOptions.mountMode` continue to use the runtime's default mount mode. Explicit `ReadOnly` and `Writable` requests select the corresponding mount mode.
+**No**. Containers that omit `securityContext.cgroupOptions.mountMode` continue to use the runtime's default mount mode. Explicit `ReadOnly` and `ReadWrite` requests select the corresponding mount mode.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -539,7 +537,7 @@ See [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-New Pods with an explicit `ReadOnly` or `Writable` mount mode can be created again. Pods marked `Failed` during rollback must be replaced.
+New Pods with an explicit `ReadOnly` or `ReadWrite` mount mode can be created again. Pods marked `Failed` during rollback must be replaced.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -561,7 +559,7 @@ Possible rollout failure modes:
 
 - **Version skew (apiserver enabled, kubelet not)**: With a scheduler that recognizes the feature, Pods with an explicit cgroup mount mode remain `Pending` if no compatible node is available.
 - **Runtime missing CRI support**: The node does not declare `CgroupOptions`. The scheduler excludes it for Pods with an explicit cgroup mount mode.
-- **Host missing cgroup v2, `nsdelegate`, or per-Pod cgroups**: The node does not declare `CgroupOptions`. The scheduler excludes it, and kubelet admission rejects opted-in Pods that reach it directly. Independently of Node Declared Features, the kubelet checks these prerequisites when it creates a container requesting `Writable`. A failed check leaves the container `Waiting` with reason `CreateContainerConfigError`.
+- **Host missing cgroup v2, `nsdelegate`, or per-Pod cgroups**: The node does not declare `CgroupOptions`. The scheduler excludes it, and kubelet admission rejects opted-in Pods that reach it directly. Independently of Node Declared Features, the kubelet checks these prerequisites when it creates a container requesting `ReadWrite`. A failed check leaves the container `Waiting` with reason `CreateContainerConfigError`.
 
 Rollback (disabling the feature gate):
 
@@ -584,7 +582,7 @@ Whether to add a feature-specific dimension to existing counters is deferred to 
 
 TODO: requires the alpha implementation in kubernetes/kubernetes and a container runtime supporting the new CRI field. Plan: implement in kubernetes and containerd, then exercise the upgrade -> downgrade -> upgrade flow in `kind` (cheap to swap node images and flip feature gates). Cases to cover:
 
-- Enable feature gate, create pod with `cgroupOptions.mountMode: Writable`, confirm container has writable `/sys/fs/cgroup`.
+- Enable feature gate, create pod with `cgroupOptions.mountMode: ReadWrite`, confirm container has writable `/sys/fs/cgroup`.
 - Disable the gate on kube-apiserver, confirm it drops the field from new Pods and preserves it on existing Pods.
 - Disable the gate on kubelet and restart it. Confirm existing Pods with an explicit cgroup mount mode enter `Failed` and their containers are terminated.
 - Re-enable feature gate, confirm new pods can be created again.
@@ -616,7 +614,7 @@ From inside the container:
 - `mount | grep '^cgroup2'` should show `/sys/fs/cgroup` mounted with `rw`.
 - `mkdir /sys/fs/cgroup/test && rmdir /sys/fs/cgroup/test` should succeed.
 
-Check `node.status.declaredFeatures` for `CgroupOptions`. The scheduler excludes nodes that do not declare it for Pods with an explicit cgroup mount mode. Kubelet admission rejects such Pods if they reach an unsupported node directly. The kubelet also checks the host prerequisites when it creates a container requesting `Writable`. A failed check leaves the container `Waiting` with reason `CreateContainerConfigError`. The message names the missing prerequisite. [What are other known failure modes?](#what-are-other-known-failure-modes) lists each message.
+Check `node.status.declaredFeatures` for `CgroupOptions`. The scheduler excludes nodes that do not declare it for Pods with an explicit cgroup mount mode. Kubelet admission rejects such Pods if they reach an unsupported node directly. The kubelet also checks the host prerequisites when it creates a container requesting `ReadWrite`. A failed check leaves the container `Waiting` with reason `CreateContainerConfigError`. The message names the missing prerequisite. [What are other known failure modes?](#what-are-other-known-failure-modes) lists each message.
 
 - [x] Events
   - Event Reason: `PodFeatureUnsupported` when kubelet admission rejects a Pod with an explicit cgroup mount mode on an unsupported node.
@@ -689,9 +687,9 @@ Yes. Descendant cgroups consume kernel memory and inotify watches that `memory.m
 
 Mitigations:
 
-- The kubelet applies `cgroup.max.descendants` and `cgroup.max.depth` on the Pod-level cgroup when `mountMode: Writable` is enabled for the Pod.
+- The kubelet applies `cgroup.max.descendants` and `cgroup.max.depth` on the Pod-level cgroup when `mountMode: ReadWrite` is enabled for the Pod.
 - With `PodAndContainerStatsFromCRI` enabled and a runtime that implements `PodSandboxStats`, the kubelet does not watch cgroups that containers create; see [Kubelet Stats Collection](#kubelet-stats-collection).
-- The feature is opt-in via `cgroupOptions.mountMode: Writable`, so cluster administrators can restrict usage via Pod Security Standards or admission policies.
+- The feature is opt-in via `cgroupOptions.mountMode: ReadWrite`, so cluster administrators can restrict usage via Pod Security Standards or admission policies.
 
 
 ### Troubleshooting
@@ -705,7 +703,7 @@ No different from existing pod creation. If the apiserver is unavailable, no new
 | Failure | Detection | Mitigations | Diagnostics | Testing |
 |---|---|---|---|---|
 | Container runtime does not support the CRI field | The node does not declare `CgroupOptions`. The scheduler leaves opted-in Pods `Pending` with a `FailedScheduling` event. If an opted-in Pod bypasses the scheduler, kubelet admission rejects it: the Pod enters `Failed` with reason `PodFeatureUnsupported` and message `Pod requires node features that are not available: CgroupOptions` | Use a runtime advertising `cgroup_mount_mode`; or remove the field from the pod spec | `node.status.declaredFeatures`; scheduler and Pod events | unit + integration tests |
-| Host is on cgroup v1 | The scheduler and kubelet admission behave as in the first row. Independently of Node Declared Features, the kubelet checks the host when it creates a container requesting `Writable`. The container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require cgroup v2` | Migrate the node to cgroup v2; or remove the field from the pod spec | `node.status.declaredFeatures`; Pod events; `stat -fc %T /sys/fs/cgroup` reports `cgroup2fs` on cgroup v2 | node support tests |
+| Host is on cgroup v1 | The scheduler and kubelet admission behave as in the first row. Independently of Node Declared Features, the kubelet checks the host when it creates a container requesting `ReadWrite`. The container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require cgroup v2` | Migrate the node to cgroup v2; or remove the field from the pod spec | `node.status.declaredFeatures`; Pod events; `stat -fc %T /sys/fs/cgroup` reports `cgroup2fs` on cgroup v2 | node support tests |
 | Host's `/sys/fs/cgroup` is not mounted with `nsdelegate` | The scheduler and kubelet admission behave as in the first row. The kubelet check at container creation (second row) reports the message `writable cgroups require the cgroup filesystem to be mounted with nsdelegate`. The kubelet reads the mount options once, at startup. If `nsdelegate` is removed later, the runtime fails container creation | Mount `/sys/fs/cgroup` with `nsdelegate` and restart kubelet after changing the mount options | `node.status.declaredFeatures`; Pod events; `findmnt /sys/fs/cgroup`; runtime logs | runtime contract; node support tests |
 | Kubelet does not manage a cgroup per Pod (`--cgroups-per-qos=false`) | The scheduler and kubelet admission behave as in the first row. The kubelet check at container creation (second row) reports the message `writable cgroups require the kubelet to manage a cgroup per pod (--cgroups-per-qos)` | Enable `cgroupsPerQOS` in the kubelet configuration; or remove the field from the pod spec | `node.status.declaredFeatures`; Pod events; kubelet `/configz` | node support tests |
 | Kubelet cannot apply the Pod descendant and depth limits | `FailedToCreatePodContainer` event on the Pod; its containers do not start and the kubelet retries each sync | Remove the field from the pod spec; or fix the cgroup write error reported in the event | Pod events; kubelet logs | unit tests |
