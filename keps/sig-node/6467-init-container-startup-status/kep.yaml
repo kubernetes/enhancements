@@ -10,7 +10,7 @@ creation-date: 2026-10-13
 reviewers:
   - TBD
 approvers:
-  - TBD
+  - "@dchen1107"
 editor: TBD
 # Kubernetes v1.39 is a candidate target, subject to SIG agreement.
 stage: alpha
