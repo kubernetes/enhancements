@@ -84,8 +84,8 @@ SIG Architecture for cross-cutting KEPs).
     - [Property Selector](#property-selector)
     - [Validation](#validation)
   - [Cluster Selection Algorithm](#cluster-selection-algorithm)
-    - [Resolving Cluster Selectors](#resolving-cluster-selectors)
-    - [Consuming Cluster Selector Results](#consuming-cluster-selector-results)
+    - [Resolving Cluster Traffic Preferences](#resolving-cluster-traffic-preferences)
+    - [Consuming Cluster Traffic Preference Results](#consuming-cluster-traffic-preference-results)
   - [Interaction with Service Traffic Distribution](#interaction-with-service-traffic-distribution)
   - [Reading ClusterProperties from Constituent Clusters](#reading-clusterproperties-from-constituent-clusters)
   - [Reference Implementation in kubernetes-sigs/mcs-api](#reference-implementation-in-kubernetes-sigsmcs-api)
@@ -158,15 +158,15 @@ Today there is no standard way to express which clusters should be preferred. A
 consumer cannot say "prefer my own cluster, then my region, then anywhere else".
 
 This KEP introduces a **cluster selection** concept for directing traffic. It
-adds an ordered `clusterSelectors` field to `ServiceExport` that lets users
-select subsets of constituent clusters based on
+adds an ordered `clusterTrafficPreferences` field to `ServiceExport`. This lets
+users select subsets of constituent clusters based on
 [`ClusterProperty`][ClusterProperty] values.
 
 Each entry can use a `propertySelector` based on the standard
-`metav1.LabelSelector` type, except that `matchProperties` replaces `matchLabels`
-and it may contain a special `@SameAsImporter@` value. The MCS implementation
-publishes the clusters matched by each selector in
-`ServiceImport.status.clusterSelectorResults` so that consumers can act on them.
+`metav1.LabelSelector` type, except that `matchProperties` replaces
+`matchLabels` and it may contain a special `@SameAsImporter@` value. The MCS
+implementation publishes the clusters matched by each preference in
+`ServiceImport.status.clusterTrafficPreferenceResults` for consumers.
 
 ## Motivation
 
@@ -202,7 +202,7 @@ portable across MCS implementations.
 - Select individual endpoints. This KEP is only about selecting clusters.
 - Introduce complex routing rules, those should be handled by service-mesh
   or Gateway API implementations.
-- Enforce hard traffic boundaries. Cluster selection express preferences that
+- Enforce hard traffic boundaries. Cluster selection expresses preferences that
   `ServiceImport` consumers consider when making routing decisions.
 
 ## Proposal
@@ -216,19 +216,20 @@ This KEP builds on two existing APIs:
     way to attach key/value metadata to clusters. This KEP uses those
     properties as the data source for cluster selection.
 
-This KEP adds a new `clusterSelectors` field to `ServiceExport.spec`. The MCS
-implementation reconciles the field across the clusterset and writes the result
-to `ServiceImport.spec`. Exact-match conflict resolution ensures that all
-constituent clusters receive the same configuration. On a conflict, the oldest
-`ServiceExport` takes precedence.
+This KEP adds a new `clusterTrafficPreferences` field to
+`ServiceExport.spec`. The MCS implementation reconciles the field across the
+clusterset and writes the result to `ServiceImport.spec`. Exact-match conflict
+resolution ensures that all constituent clusters receive the same configuration.
+On a conflict, the oldest `ServiceExport` takes precedence.
 
-`clusterSelectors` is an ordered list whose entries select sets of preferred
-clusters. Currently, each entry supports only a `PropertySelector`. The selector
-is evaluated against `ClusterProperty` key/value pairs. The MCS implementation
-must publish the ordered results in
-`ServiceImport.status.clusterSelectorResults`. Consumers should evaluate the
-results in order and use the first one with available endpoints by default. If
-none has available endpoints, they should use all constituent clusters.
+`clusterTrafficPreferences` is an ordered list whose entries select preferred
+sets of clusters. Currently, each entry supports only a `PropertySelector`. The
+selector is evaluated against `ClusterProperty` key/value pairs. The MCS
+implementation must publish the ordered results in
+`ServiceImport.status.clusterTrafficPreferenceResults`. Consumers should
+evaluate the results in order and use the first one with available endpoints by
+default. If none has available endpoints, they should use all constituent
+clusters.
 
 ### User Stories
 
@@ -244,7 +245,7 @@ kind: ServiceExport
 metadata:
   name: api
 spec:
-  clusterSelectors:
+  clusterTrafficPreferences:
     - propertySelector:
         matchExpressions:
           - key: cluster.clusterset.k8s.io
@@ -268,7 +269,7 @@ metadata:
   name: api
 spec:
   # Other ServiceImport spec fields are omitted for brevity.
-  clusterSelectors:
+  clusterTrafficPreferences:
     - propertySelector:
         matchExpressions:
           - key: cluster.clusterset.k8s.io
@@ -287,7 +288,7 @@ status:
     - cluster: cluster-b
     - cluster: cluster-c
     - cluster: cluster-d
-  clusterSelectorResults:
+  clusterTrafficPreferenceResults:
     - clusters:
         - cluster-a
     - clusters:
@@ -319,7 +320,7 @@ kind: ServiceExport
 metadata:
   name: inference-server
 spec:
-  clusterSelectors:
+  clusterTrafficPreferences:
     # Same continent with high-end GPU
     - propertySelector:
         matchProperties:
@@ -345,8 +346,8 @@ Note that `continent.topology.k8s.io` is not a standard key today.
 
 Cluster selection applies only to `ClusterIP` (non-headless) multi-cluster
 services. Headless `ServiceImport`s return individual pod IPs via DNS and are
-not compatible with cluster selection. If `clusterSelectors` is set on a
-`ServiceExport` for a headless service, the `ServiceExport` must receive a
+not compatible with cluster selection. If `clusterTrafficPreferences` is set on
+a `ServiceExport` for a headless service, the `ServiceExport` must receive a
 `Valid` condition with status `False` and reason `InvalidServiceType`.
 
 A future revision may add selection criteria beyond `propertySelector`, such as
@@ -385,18 +386,18 @@ Consider including folks who also work outside the SIG or subproject.
 
 ### API Overview
 
-The `ServiceExport.spec` gains a `clusterSelectors` field:
+The `ServiceExport.spec` gains a `clusterTrafficPreferences` field:
 
 ```go
 type ServiceExportSpec struct {
     // ... existing fields ...
 
-    // ClusterSelectors is an ordered list of entries. Each entry selects a set
-    // of preferred clusters.
+    // ClusterTrafficPreferences is an ordered list of entries. Each entry
+    // selects a preferred set of clusters.
     // +optional
     // +listType=atomic
     // +kubebuilder:validation:MaxItems=8
-    ClusterSelectors []ClusterSelector `json:"clusterSelectors,omitempty"`
+    ClusterTrafficPreferences []ClusterTrafficPreference `json:"clusterTrafficPreferences,omitempty"`
 }
 ```
 
@@ -407,21 +408,21 @@ implementation after conflict resolution:
 type ServiceImportSpec struct {
     // ... existing fields ...
 
-    // ClusterSelectors is the reconciled ordered list derived from the
+    // ClusterTrafficPreferences is the reconciled ordered list derived from the
     // constituent ServiceExports. Each entry selects a set of preferred
     // clusters.
     // +optional
     // +listType=atomic
     // +kubebuilder:validation:MaxItems=8
-    ClusterSelectors []ClusterSelector `json:"clusterSelectors,omitempty"`
+    ClusterTrafficPreferences []ClusterTrafficPreference `json:"clusterTrafficPreferences,omitempty"`
 }
 ```
 
-The `ClusterSelector` type is defined as follows:
+The `ClusterTrafficPreference` type is defined as follows:
 
 ```go
-// ClusterSelector selects a set of clusters.
-type ClusterSelector struct {
+// ClusterTrafficPreference defines a preferred set of clusters.
+type ClusterTrafficPreference struct {
     // PropertySelector selects clusters by matching ClusterProperty
     // key/value pairs. The special value "@SameAsImporter@" may appear in
     // matchProperties values or matchExpressions values when the operator is
@@ -455,9 +456,9 @@ type PropertySelector struct {
 // here for brevity.
 ```
 
-The `ServiceImport.status` gains a `clusterSelectorResults` field. The MCS
-implementation populates this field for consumers such as its own datapath or
-Gateway API implementations:
+The `ServiceImport.status` gains a `clusterTrafficPreferenceResults` field.
+The MCS implementation populates this field for consumers such as its own
+datapath or Gateway API implementations:
 
 ```go
 type ServiceImportStatus struct {
@@ -469,16 +470,16 @@ type ServiceImportStatus struct {
     // +optional
     ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-    // ClusterSelectorResults is the ordered list of effective cluster selector
-    // results for this Service. Consumers must use this field directly. They
-    // must not correlate results with spec.clusterSelectors entries because
-    // the two can be out of sync.
+    // ClusterTrafficPreferenceResults is the ordered list of effective cluster
+    // traffic preference results for this Service. Consumers must use this
+    // field directly. They must not correlate results with
+    // spec.clusterTrafficPreferences entries because the two can be out of sync.
     // +optional
     // +listType=atomic
-    ClusterSelectorResults []ClusterSelectorResult `json:"clusterSelectorResults,omitempty"`
+    ClusterTrafficPreferenceResults []ClusterTrafficPreferenceResult `json:"clusterTrafficPreferenceResults,omitempty"`
 }
 
-type ClusterSelectorResult struct {
+type ClusterTrafficPreferenceResult struct {
     // Clusters is the list of source clusters whose ClusterProperties matched
     // this selector. Each value is a cluster ID as exposed in
     // ServiceImport.status.clusters and in the
@@ -490,8 +491,8 @@ type ClusterSelectorResult struct {
 ```
 
 Note that `observedGeneration` is intended for debugging status freshness.
-Consumers should treat the current `clusterSelectorResults` value as effective
-even when `observedGeneration` lags `metadata.generation`.
+Consumers should treat the current `clusterTrafficPreferenceResults` as
+effective even when `observedGeneration` lags `metadata.generation`.
 
 #### Property Selector
 
@@ -509,34 +510,35 @@ the same region as me" without hard-coding a specific region. Every
 `ServiceExport` for the service can use the same configuration.
 
 The MCS implementation may resolve `@SameAsImporter@` when populating
-`ServiceImport.spec.clusterSelectors`. Consumers can then use the selectors
-without resolving the placeholder themselves.
+`ServiceImport.spec.clusterTrafficPreferences`. Consumers can then use the
+selectors without resolving the placeholder themselves.
 
 #### Validation
 
 An empty `propertySelector` is invalid. In that case, the `ServiceExport` must
 receive a `Valid` condition with status `False` and reason
-`InvalidClusterSelector`.
+`InvalidClusterTrafficPreference`.
 
 Otherwise, `PropertySelector` follows the validation of `metav1.LabelSelector`
 with two differences: keys must be valid `ClusterProperty` resource names, and
 values are not restricted to Kubernetes label-value syntax. Invalid selectors
 must either be rejected by API validation or reported on the `ServiceExport`
 with a `Valid` condition with status `False` and reason
-`InvalidClusterSelector`.
+`InvalidClusterTrafficPreference`.
 
 If future selection criteria are added, each entry must still specify exactly
 one criterion. Specifying multiple fields in one entry, such as both
 `propertySelector` and a CEL expression, is invalid. The `ServiceExport` must
 receive a `Valid` condition with status `False` and reason
-`InvalidClusterSelector`.
+`InvalidClusterTrafficPreference`.
 
 ### Cluster Selection Algorithm
 
-#### Resolving Cluster Selectors
+#### Resolving Cluster Traffic Preferences
 
-The MCS implementation must evaluate `clusterSelectors` in each importing
-cluster and publish the ordered results in `status.clusterSelectorResults`.
+The MCS implementation must evaluate `clusterTrafficPreferences` in each
+importing cluster and publish the ordered results in
+`status.clusterTrafficPreferenceResults`.
 
 Results follow selector order. An empty `clusters` list means the selector
 matched no clusters. Endpoint conditions must not affect these results.
@@ -544,13 +546,13 @@ matched no clusters. Endpoint conditions must not affect these results.
 If selector evaluation fails, the MCS implementation must preserve the complete
 list of previously computed results rather than publish a partial update.
 
-#### Consuming Cluster Selector Results
+#### Consuming Cluster Traffic Preference Results
 
 Consumers that support cluster selection, such as the datapath of an MCS
 implementation or a Gateway API implementation, must follow this algorithm by
 default:
 
-1. For each result in `status.clusterSelectorResults` (in order):
+1. For each result in `status.clusterTrafficPreferenceResults` (in order):
    1. Collect endpoints from the listed source clusters that are eligible for
       the traffic being handled.
    2. If there is at least one eligible endpoint that is ready or serving, use
@@ -579,9 +581,9 @@ Cluster selection runs before Service-level `trafficDistribution` such as
 selected clusters.
 
 For now, `trafficDistribution` does not influence which result is chosen.
-By default, consumers must evaluate the results in order and use the first result
-that has at least one eligible endpoint that is ready or serving, even when none
-of those endpoints is in the consumer's zone. In other words,
+By default, consumers must evaluate results in order and use the first with an
+eligible endpoint that is ready or serving, even when none of those endpoints
+is in the consumer's zone. In other words,
 `trafficDistribution` never causes the next result to be considered. Separate
 implementation-specific logic may do so when explicitly enabled as described
 above.
@@ -596,7 +598,7 @@ prescribe a mechanism. A future revision may define one.
 ### Reference Implementation in kubernetes-sigs/mcs-api
 
 The [`kubernetes-sigs/mcs-api`][mcs-api-repo] repository will provide the CRD
-types for the new `clusterSelectors` field on `ServiceExport` and
+types for the new `clusterTrafficPreferences` field on `ServiceExport` and
 `ServiceImport`. It will also provide a generic `PreparedSelector` API for
 evaluating selectors:
 
@@ -611,18 +613,18 @@ type Cluster interface {
     GetProperties() map[string]string
 }
 
-// PreparedSelector is a compiled ClusterSelector ready for evaluation.
+// PreparedSelector is a compiled ClusterTrafficPreference ready for evaluation.
 type PreparedSelector[T Cluster] interface {
     // SelectClusters returns the subset of candidates that match.
     SelectClusters(candidates []T) ([]T, error)
 }
 
-// PrepareSelector compiles a ClusterSelector for the given importer.
+// PrepareSelector compiles a ClusterTrafficPreference for the given importer.
 // It resolves any @SameAsImporter@ placeholders using the importer's
 // properties. The returned PreparedSelector is bound to the importer's current
 // properties and can be reused across evaluations. The caller must call
 // PrepareSelector again when those properties change.
-func PrepareSelector[T Cluster](selector ClusterSelector, importer T) (PreparedSelector[T], error)
+func PrepareSelector[T Cluster](preference ClusterTrafficPreference, importer T) (PreparedSelector[T], error)
 ```
 
 This API provides reusable selector preparation and evaluation, not a complete
@@ -630,14 +632,14 @@ cluster-selection implementation.
 
 ### Conflict Resolution
 
-`clusterSelectors` is a global property of the multi-cluster service. It
-follows the standard MCS-API conflict resolution policy:
+`clusterTrafficPreferences` is a global property of the multi-cluster service.
+It follows the standard MCS-API conflict resolution policy:
 
 - All `ServiceExport`s for the same service must have the same ordered
-  `clusterSelectors` list. If they differ, the `ServiceExport` with the oldest
-  `creationTimestamp` takes precedence.
+  `clusterTrafficPreferences` list. If they differ, the `ServiceExport` with
+  the oldest `creationTimestamp` takes precedence.
 - On a conflict, all `ServiceExport`s must receive a `Conflict` condition with
-  status `True` and reason `ClusterSelectorsConflict`.
+  status `True` and reason `ClusterTrafficPreferencesConflict`.
 - The MCS implementation must write the resolved value to the `ServiceImport`.
 
 ### Test Plan
@@ -1000,13 +1002,13 @@ support larger deployments, but these targets help evaluate the design.
 
 | Dimension                                  | Target maximum | Expected update rate | Effect of a change |
 | ------------------------------------------ | -------------: | -------------------- | ------------------ |
-| Clusters in a clusterset                   |          1,000 | Low                  | A new importing cluster receives `ServiceImport`s and evaluates its selector results. |
-| Clusters exporting a Service               |            200 | Low                  | The related `ServiceImport` in all importing clusters will be updated and its selector results may change. |
+| Clusters in a clusterset                   |          1,000 | Low                  | A new importing cluster receives `ServiceImport`s and evaluates its preference results. |
+| Clusters exporting a Service               |            200 | Low                  | The related `ServiceImport` in all importing clusters will be updated and its preference results may change. |
 | `ServiceExport`s in a cluster              |          5,000 | Low                  | Same as above. |
 | Distinct exported Services in a clusterset |          5,000 | Low                  | N/A |
-| `ServiceImport`s in a cluster              |          5,000 | Low                  | Adding an import requires evaluating its selectors in that cluster. |
-| `ClusterProperty` objects per cluster      |            100 | Very low             | A property change may require reevaluating selectors for Services exported by that cluster in every importing cluster. |
-| Selectors per Service                      |              8 | Very low             | A change requires updating the Service's selector results in importing clusters. |
+| `ServiceImport`s in a cluster              |          5,000 | Low                  | Adding an import requires evaluating its preferences in that cluster. |
+| `ClusterProperty` objects per cluster      |            100 | Very low             | A property change may require reevaluating preferences for Services exported by that cluster in every importing cluster. |
+| Preferences per Service                    |              8 | Very low             | A change requires updating the Service's preference results in importing clusters. |
 
 The `ClusterProperty` update rate is likely the most sensitive scalability
 dimension. We recommend that MCS implementations let users allowlist or
@@ -1036,8 +1038,8 @@ Focusing mostly on:
 -->
 
 MCS implementations will need to react to `ClusterProperty` changes to
-maintain `ServiceImport.status.clusterSelectorResults`. This can trigger
-additional `ServiceImport` status updates across importing clusters.
+maintain `ServiceImport.status.clusterTrafficPreferenceResults`. This can
+trigger additional `ServiceImport` status updates across importing clusters.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1065,13 +1067,13 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Each `ServiceImport` may contain up to 8 selector results in status. Assuming
+Each `ServiceImport` may contain up to 8 preference results in status. Assuming
 200 exporting clusters and about 70 bytes per cluster ID (including some
-serialization overhead), the worst case is for every selector to match every
+serialization overhead), the worst case is for every preference to match every
 cluster. Storing those IDs in all 8 results and in `status.clusters` takes about
 `70 * 200 * (8 + 1) = 126,000` bytes. This is well below the default etcd
 value size limit. In practice, the size should be lower because every
-selector matching every exporting cluster is unlikely.
+preference matching every exporting cluster is unlikely.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1179,8 +1181,8 @@ selector's `EndpointSlice`s as active before marking the old selector's
 `EndpointSlice`s as inactive. Otherwise, consumers could temporarily observe no
 active `EndpointSlice`s. This would cause incorrect cluster selection.
 
-This KEP instead exposes the cluster selector results without accounting for
-endpoint conditions. This approach is easier to implement correctly and
+This KEP instead exposes cluster traffic preference results without accounting
+for endpoint conditions. This approach is easier to implement correctly and
 efficiently. Consumers observe the results and the endpoint conditions together
 and choose the preferred clusters themselves.
 
