@@ -132,7 +132,7 @@ Another example is, [KubeVirt](https://github.com/kubevirt/kubevirt) runs a hype
 
 ### Notes/Constraints/Caveats (Optional)
 
-- **cgroup v2 Only**: This feature requires cgroup v2
+- **cgroup v2 Only**: `mountMode: ReadWrite` requires cgroup v2
 - **Linux Only**: The field is only valid on Linux containers and will be validated accordingly
 - **Runtime Support**: Requires container runtime support
 - **Node Configuration**: The host's cgroup v2 filesystem must be mounted with `nsdelegate`, and the kubelet must manage a cgroup per Pod (`--cgroups-per-qos`).
@@ -236,20 +236,13 @@ const (
 **Verify Node Support:**
 
 The kubelet declares `CgroupOptions` in `node.status.declaredFeatures` when the
-feature gate is enabled and the node meets these prerequisites:
+feature gate is enabled and the CRI implementation advertises
+`cgroup_mount_mode` in `RuntimeFeatures`.
 
-- The CRI implementation advertises `cgroup_mount_mode` in `RuntimeFeatures`.
-- The host runs cgroup v2 with `nsdelegate`.
-- The kubelet manages a cgroup per Pod (`--cgroups-per-qos`).
-
-The runtime capability is node-level and independent of runtime handlers. It
-reports only that the runtime accepts `cgroup_mount_mode`. The kubelet checks the
-host prerequisites itself at startup.
-
-Both explicit mount modes require these prerequisites. An omitted `mountMode`,
+Both explicit mount modes require the declared feature. An omitted `mountMode`,
 including an empty `cgroupOptions` object, uses the runtime default and does not
-require the node to declare `CgroupOptions`. Descendant and depth limits apply
-only when a container requests `ReadWrite`.
+require `CgroupOptions`. Descendant and depth limits apply only when a container
+requests `ReadWrite`.
 
 The scheduler excludes nodes that do not declare the feature for Pods requesting
 `mountMode: ReadOnly` or `mountMode: ReadWrite`. Kubelet admission rejects such
@@ -378,8 +371,9 @@ sequenceDiagram
 
 **Node Support Validation**
 
-The scheduler and kubelet admission enforce the prerequisites described under
-[API Changes](#api-changes).
+The scheduler and the kubelet's pod admission handler enforce the declared
+feature described under [API Changes](#api-changes). The kubelet enforces the
+host prerequisites of `ReadWrite` when creating the container.
 
 **System Validation**:
 
@@ -572,7 +566,7 @@ Possible rollout failure modes:
 
 - **Version skew (apiserver enabled, kubelet not)**: With a scheduler that recognizes the feature, Pods with an explicit cgroup mount mode remain `Pending` if no compatible node is available.
 - **Runtime missing CRI support**: The node does not declare `CgroupOptions`. The scheduler excludes it for Pods with an explicit cgroup mount mode.
-- **Host missing cgroup v2, `nsdelegate`, or per-Pod cgroups**: The node does not declare `CgroupOptions`. The scheduler excludes it, and kubelet admission rejects opted-in Pods that reach it directly. Independently of Node Declared Features, the kubelet checks these prerequisites when it creates a container requesting `ReadWrite`. A failed check leaves the container `Waiting` with reason `CreateContainerConfigError`.
+- **Host missing cgroup v2, `nsdelegate`, or per-Pod cgroups**: Because the node still declares `CgroupOptions` when its runtime supports the field, the scheduler can place a `ReadWrite` Pod on it. The kubelet rejects the container at creation, leaving it `Waiting` with reason `CreateContainerConfigError`.
 
 Rollback (disabling the feature gate):
 
@@ -716,9 +710,9 @@ No different from existing pod creation. If the apiserver is unavailable, no new
 | Failure | Detection | Mitigations | Diagnostics | Testing |
 |---|---|---|---|---|
 | Container runtime does not support the CRI field | The node does not declare `CgroupOptions`. The scheduler leaves opted-in Pods `Pending` with a `FailedScheduling` event. If an opted-in Pod bypasses the scheduler, kubelet admission rejects it: the Pod enters `Failed` with reason `PodFeatureUnsupported` and message `Pod requires node features that are not available: CgroupOptions` | Use a runtime advertising `cgroup_mount_mode`; or remove the field from the pod spec | `node.status.declaredFeatures`; scheduler and Pod events | unit + integration tests |
-| Host is on cgroup v1 | The scheduler and kubelet admission behave as in the first row. Independently of Node Declared Features, the kubelet checks the host when it creates a container requesting `ReadWrite`. The container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require cgroup v2` | Migrate the node to cgroup v2; or remove the field from the pod spec | `node.status.declaredFeatures`; Pod events; `stat -fc %T /sys/fs/cgroup` reports `cgroup2fs` on cgroup v2 | node support tests |
-| Host's `/sys/fs/cgroup` is not mounted with `nsdelegate` | The scheduler and kubelet admission behave as in the first row. The kubelet check at container creation (second row) reports the message `writable cgroups require the cgroup filesystem to be mounted with nsdelegate`. The kubelet reads the mount options once, at startup. If `nsdelegate` is removed later, the runtime fails container creation | Mount `/sys/fs/cgroup` with `nsdelegate` and restart kubelet after changing the mount options | `node.status.declaredFeatures`; Pod events; `findmnt /sys/fs/cgroup`; runtime logs | runtime contract; node support tests |
-| Kubelet does not manage a cgroup per Pod (`--cgroups-per-qos=false`) | The scheduler and kubelet admission behave as in the first row. The kubelet check at container creation (second row) reports the message `writable cgroups require the kubelet to manage a cgroup per pod (--cgroups-per-qos)` | Enable `cgroupsPerQOS` in the kubelet configuration; or remove the field from the pod spec | `node.status.declaredFeatures`; Pod events; kubelet `/configz` | node support tests |
+| Host is on cgroup v1 | When the kubelet creates a container requesting `ReadWrite`, the container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require cgroup v2` | Migrate the node to cgroup v2; or remove the field from the pod spec | Pod events; `stat -fc %T /sys/fs/cgroup` reports `cgroup2fs` on cgroup v2 | node support tests |
+| Host's `/sys/fs/cgroup` is not mounted with `nsdelegate` | When the kubelet creates a container requesting `ReadWrite`, the container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require the cgroup filesystem to be mounted with nsdelegate`. The kubelet reads the mount options once, at startup. If `nsdelegate` is removed later, the runtime fails container creation | Mount `/sys/fs/cgroup` with `nsdelegate` and restart kubelet after changing the mount options | Pod events; `findmnt /sys/fs/cgroup`; runtime logs | runtime contract; node support tests |
+| Kubelet does not manage a cgroup per Pod (`--cgroups-per-qos=false`) | When the kubelet creates a container requesting `ReadWrite`, the container stays `Waiting` with reason `CreateContainerConfigError` and message `writable cgroups require the kubelet to manage a cgroup per pod (--cgroups-per-qos)` | Enable `cgroupsPerQOS` in the kubelet configuration; or remove the field from the pod spec | Pod events; kubelet `/configz` | node support tests |
 | Kubelet cannot apply the Pod descendant and depth limits | `FailedToCreatePodContainer` event on the Pod; its containers do not start and the kubelet retries each sync | Remove the field from the pod spec; or fix the cgroup write error reported in the event | Pod events; kubelet logs | unit tests |
 | Pod reaches its descendant limit | `mkdir` returns `EAGAIN` when `cgroup.max.descendants` is reached | Remove unused cgroups inside the container; the limit is per Pod and bounds node resource use | container logs; Pod cgroup `cgroup.stat` | e2e for descendant bound |
 
