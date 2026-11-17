@@ -395,7 +395,7 @@ type ServiceExportSpec struct {
     // of preferred clusters.
     // +optional
     // +listType=atomic
-    // +kubebuilder:validation:MaxItems=16
+    // +kubebuilder:validation:MaxItems=8
     ClusterSelectors []ClusterSelector `json:"clusterSelectors,omitempty"`
 }
 ```
@@ -412,7 +412,7 @@ type ServiceImportSpec struct {
     // clusters.
     // +optional
     // +listType=atomic
-    // +kubebuilder:validation:MaxItems=16
+    // +kubebuilder:validation:MaxItems=8
     ClusterSelectors []ClusterSelector `json:"clusterSelectors,omitempty"`
 }
 ```
@@ -995,6 +995,31 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
+The following matrix shows the scale targets for this KEP. Implementations may
+support larger deployments, but these targets help evaluate the design.
+
+| Dimension                                  | Target maximum | Expected update rate | Effect of a change |
+| ------------------------------------------ | -------------: | -------------------- | ------------------ |
+| Clusters in a clusterset                   |          1,000 | Low                  | A new importing cluster receives `ServiceImport`s and evaluates its selector results. |
+| Clusters exporting a Service               |            200 | Low                  | The related `ServiceImport` in all importing clusters will be updated and its selector results may change. |
+| `ServiceExport`s in a cluster              |          5,000 | Low                  | Same as above. |
+| Distinct exported Services in a clusterset |          5,000 | Low                  | N/A |
+| `ServiceImport`s in a cluster              |          5,000 | Low                  | Adding an import requires evaluating its selectors in that cluster. |
+| `ClusterProperty` objects per cluster      |            100 | Very low             | A property change may require reevaluating selectors for Services exported by that cluster in every importing cluster. |
+| Selectors per Service                      |              8 | Very low             | A change requires updating the Service's selector results in importing clusters. |
+
+The `ClusterProperty` update rate is likely the most sensitive scalability
+dimension. We recommend that MCS implementations let users allowlist or
+blocklist the `ClusterProperty` objects they consume. We plan to extend
+[KEP-2149][ClusterProperty] so producers can indicate how often a property is
+expected to change. Consumers could then exclude frequently updated properties
+without additional user configuration. For selector evaluation, excluded
+properties are treated as absent. Implementations may also rate-limit or batch
+updates to reduce the load.
+
+Considering these optimizations, we marked the `ClusterProperty` update rate as
+very low in the matrix above.
+
 ###### Will enabling / using this feature result in any new API calls?
 
 <!--
@@ -1009,6 +1034,10 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+
+MCS implementations will need to react to `ClusterProperty` changes to
+maintain `ServiceImport.status.clusterSelectorResults`. This can trigger
+additional `ServiceImport` status updates across importing clusters.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1035,6 +1064,14 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Each `ServiceImport` may contain up to 8 selector results in status. Assuming
+200 exporting clusters and about 70 bytes per cluster ID (including some
+serialization overhead), the worst case is for every selector to match every
+cluster. Storing those IDs in all 8 results and in `status.clusters` takes about
+`70 * 200 * (8 + 1) = 126,000` bytes. This is well below the default etcd
+value size limit. In practice, the size should be lower because every
+selector matching every exporting cluster is unlikely.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
