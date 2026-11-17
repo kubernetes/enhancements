@@ -435,9 +435,8 @@ Coverage for new and existing packages:
 
 - `k8s.io/kubernetes/pkg/apis/core/validation`:  Unit tests for CgroupOptions validation logic, Linux-only constraints, and ephemeral-container exclusion
 - `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: Security context conversion tests including CgroupOptions mapping
-- `k8s.io/kubernetes/pkg/kubelet/cm`: Pod cgroup limit configuration and failure behavior when the limits cannot be applied
+- `k8s.io/kubernetes/pkg/kubelet/cm`: Pod cgroup limit configuration
 - `k8s.io/pod-security-admission/policy`: Pod Security Standards policy enforcement tests
-- `k8s.io/kubernetes/pkg/apis/core/v1`:  API defaulting and conversion tests
 - `k8s.io/component-helpers/nodedeclaredfeatures/features/cgroupoptions`: Node feature discovery and Pod requirement inference
 
 ##### Integration tests
@@ -754,7 +753,8 @@ No SLOs at alpha. If pod startup latency degrades after enabling the feature gat
 - **2025-08-25**: KEP written and proposed
 - **2026-02-05**: KEP refined to focus strictly on `nsdelegate` for isolation and justify API opt-in requirements
 - **2026-06-08**: Per SIG-Node discussion, descendant/depth exhaustion is mitigated by the kubelet setting `cgroup.max.descendants`/`cgroup.max.depth` defaults on the Pod-level cgroup rather than via new CRI fields
-- **TBD**: Alpha implementation targeting v1.38
+- **2026-10-22**: CRI API merged for v1.38 ([kubernetes/kubernetes#139824](https://github.com/kubernetes/kubernetes/pull/139824))
+- **2026-11-13**: Alpha implementation merged for v1.38 ([kubernetes/kubernetes#137568](https://github.com/kubernetes/kubernetes/pull/137568))
 - **TBD**: Beta implementation targeting v1.39
 - **TBD**: GA implementation, target release TBD
 
