@@ -1,0 +1,34 @@
+title: Preserve UDP flows while an endpoint drains existing work
+kep-number: 5989
+authors:
+  - "@kairosci"
+owning-sig: sig-network
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: 2026-03-31
+reviewers:
+  - "@danwinship"
+  - "@aojea"
+approvers:
+  - "@danwinship"
+  - "@aojea"
+
+stage: alpha
+
+latest-milestone: ""
+
+milestone:
+  alpha: ""
+
+see-also:
+  - "KEP-1669: Move terminating endpoints to a non-ready state in kube-proxy"
+  - "KEP-1672: Track terminating endpoints in EndpointSlice"
+
+feature-gates:
+  - name: UDPConnectionDrain
+    components:
+      - kube-apiserver
+      - kubelet
+      - kube-controller-manager
+      - kube-proxy
