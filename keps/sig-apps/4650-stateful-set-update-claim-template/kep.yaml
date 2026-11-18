@@ -1,0 +1,37 @@
+title: StatefulSet Support for Updating Volume Claim Template
+kep-number: 4650
+authors:
+  - "@huww98"
+  - "@vie-serendipity"
+  - "@darshansreenivas"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-storage
+status: provisional
+creation-date: 2024-05-22
+reviewers:
+  - "@soltysh"
+  - "@xing-yang"
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-storage/5381-mutable-pv-affinity"
+  - "/keps/sig-apps/1847-autoremove-statefulset-pvcs"
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: StatefulSetUpdateVolumeClaimTemplate
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - statefulset_reconcile_delay
