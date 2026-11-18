@@ -42,8 +42,8 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -68,8 +68,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This proposal introduces new CRI and Kubelet APIs, modeled after the existing exec and port-forward APIs, to allow users to retrieve the image pull progress for a pod.
-Once a progress session is established, the CRI component will push progress updates to the client.
+This proposal introduces new CRI and Kubelet APIs to allow users to retrieve the image pull progress for a pod.
+The kubelet tracks the image pulls of each pod and serves their progress to the client.
+While a client is watching, the kubelet subscribes to the CRI component for the layer progress of the images that are being pulled.
 
 ## Motivation
 
@@ -91,9 +92,10 @@ None.
 
 ## Proposal
 
-I propose introducing a set of interfaces, similar to those used for exec, logs, and port-forward,
-where the client initiates a streaming session and the CRI implementation pushes image pull progress updates to the client.
-This approach ensures that resource consumption only occurs when a client actively requests progress information,
+I propose that the kubelet tracks the image pulls of each pod and serves their progress as a stream, similar to how it serves container logs.
+For the images that are being pulled, the kubelet subscribes to a new streaming CRI API and forwards the layer progress pushed by the CRI implementation.
+The kubelet subscribes only while a client is watching.
+This approach ensures that the CRI implementation only reports progress when a client actively requests it,
 avoiding unnecessary overhead when the feature is not in use.
 
 ### User Stories (Optional)
@@ -122,9 +124,9 @@ This might be a good place to talk about core concepts and how they relate.
 
 The introduction of image pull progress reporting carries minimal risk and does not impact any existing Kubernetes functionality.
 
-If the underlying runtime does not support image pull progress reporting, clients (such as kubelet, kubectl, or crictl) will gracefully fall back to the standard image pull operation without progress updates.
+If the underlying runtime does not support image pull progress reporting, the kubelet will still report the pull states that it tracks itself, only without layer progress. Image pulls are not affected.
 FeatureGates and Kubelet configuration options allow operators to enable or disable the feature as needed, minimizing unintended exposure.
-Performance overhead is limited to cases where progress reporting is actively requested; otherwise, there is no impact.
+The runtime is only asked for progress while a client is watching; otherwise, the only overhead is the pull states that the kubelet keeps in memory for each pod.
 
 Security and UX reviews should be conducted by SIG Node and SIG Architecture, with input from other relevant SIGs as needed.
 
@@ -132,89 +134,79 @@ Documentation will be updated to reflect new FeatureGates, Kubelet configuration
 
 ## Design Details
 
-This feature will adopt the established architectural patterns used by existing Kubernetes streaming features such as exec, port-forward, and logs.
+A container does not exist in the runtime while its image is being pulled,
+and states such as waiting in the image pull queue or in back-off are only known to the kubelet.
+The kubelet therefore tracks the image pulls of each pod and serves their progress itself, in the same way as it serves container logs.
+The CRI implementation is only asked for the layer progress of an image that it is pulling.
+
+1. `kubectl` sends a `GET` request to the `imagepullprogress` subresource of the pod.
+2. The API server proxies the request to the kubelet of the node on which the pod runs.
+3. The kubelet responds with the pull states of the images of the pod, which it tracks itself.
+4. For each image that is being pulled, the kubelet subscribes to the CRI implementation and adds the layer progress to the response.
 
 **Proposed changes to the cri:**
 
-This API will return a URL, similar to the existing exec and port-forward interfaces, provided by the CRI implementation.
+This API will stream the progress of an in-flight image pull.
+It is part of the `ImageService` and is keyed by image; the kubelet maps images to pods and containers.
 
 ``` proto
-// Runtime service defines the public APIs for remote container runtimes
-service RuntimeService {
+// ImageService defines the public APIs for managing images.
+service ImageService {
     ...
 
-    // ImagePullProgress prepares a streaming endpoint to image pull from a PodSandbox.
-    rpc ImagePullProgress(ImagePullProgressRequest) returns (ImagePullProgressResponse) {}
-    
+    // ImagePullProgress streams the progress of an in-flight pull of an image.
+    rpc ImagePullProgress(ImagePullProgressRequest) returns (stream ImagePullProgressResponse) {}
+
     ...
 }
 
 message ImagePullProgressRequest {
-    // ID of the pod to which to progresses of the image pull.
-    // The progress about all containers and image-backed volumes.
-    // At least one of pod_sandbox_id or container_id must be set.
-    string pod_sandbox_id = 1;
-
-    // ID of the container in which to progresses of the image pull.
-    // At least one of pod_sandbox_id or container_id must be set.
-    string container_id = 2;
+    // Spec of the image, the same as in the PullImageRequest of the pull.
+    ImageSpec image = 1;
 }
 
 message ImagePullProgressResponse {
-    // Fully qualified URL of the image pull progresses streaming server.
-    string url = 1;
+    // The first response contains all layers known so far, later responses the layers that changed.
+    repeated ImageLayerProgress layers = 1;
+}
+
+message ImageLayerProgress {
+    // Digest of the layer (e.g., "sha256:abc123...").
+    string digest = 1;
+    // Phase of the layer.
+    ImageLayerPhase phase = 2;
+    // Number of bytes of the layer that have been downloaded.
+    uint64 progress = 3;
+    // Size of the layer in bytes, 0 if it is not known.
+    uint64 total = 4;
+}
+
+enum ImageLayerPhase {
+    // The download of the layer has not started.
+    LAYER_WAITING     = 0;
+    // The layer is being downloaded.
+    LAYER_DOWNLOADING = 1;
+    // The layer is downloaded and is being extracted. Implementations may skip this phase.
+    LAYER_EXTRACTING  = 2;
+    // The layer is available on the node, also if it was already there before the pull.
+    LAYER_DONE        = 3;
 }
 ```
 
-**Data format pushed by the cri-side:**
-
-CRI implementations may report image pull progress at different levels of granularity:
-for the entire pod, for individual images, or for individual layers.
-The preferred approach is layer-level reporting.
-
-``` golang
-type Progress struct {
-	Image    string `json:"image,omitempty"`
-	Layer    string `json:"layer,omitempty"`
-	Progress int64  `json:"progress"`
-	Total    int64  `json:"total"`
-	Error    string `json:"error,omitempty"`
-}
-```
-
-- When reporting progress for the entire pod,
-  the `Image` and the `Layer` field should be set to an empty.
-- When reporting progress per image,
-  the `Image` field should be set to the image reference (e.g., "registry.example.com/app:v1") and the `Layer` field should be empty.
-- When reporting progress per layer,
-  the `Image` field should be set to the image reference and the `Layer` field should be set to the layer's digest (e.g., "sha256:abc123...").
-
-Implementers can choose either approach based on their specific implementation requirements and capabilities.
-The frequency of progress updates is also determined by the implementer, balancing the need for timely information with performance considerations.
-
-**Clients can visualize image pull progress using either approach:**
-
-1. Individual Progress Tracking:
-   - Maintain a progress map keyed by image and/or layer identifiers
-   - On each progress update:
-     - Update the corresponding map entry
-     - Render individual progress indicators for each tracked item
-   - Ideal for detailed monitoring of multiple layers or images
-
-2. Aggregated Progress Tracking:
-   - Maintain a progress map keyed by image and/or layer identifiers
-   - On each progress update:
-     - Update the corresponding map entry
-     - Calculate overall progress: `(sum(Progress) / sum(Total)) * 100`
-     - Display a single aggregated progress indicator
-   - Ideal for simplified overview and high-level monitoring
-
-The approach should be selected based on the client's specific requirements.
+- The request carries the same `ImageSpec` as the `PullImage` request, and the CRI implementation resolves it in the same way.
+- The first response is a snapshot of all layers known at that time, so that a subscriber can join at any time during the pull.
+  Each later response contains the layers that changed. All values are absolute.
+- The stream ends when no pull of the image is in flight any more.
+  If none is in flight when the request arrives, the stream ends without a response.
+  The result of the pull is not part of the stream; `PullImage` returns it as before.
+- A subscriber must not affect the pull: a slow or disconnected subscriber neither delays it nor makes it fail.
+  The CRI implementation may skip intermediate updates for a slow subscriber.
+- The frequency of progress updates is determined by the implementer, balancing the need for timely information with performance considerations.
 
 **Proposed changes to the crictl:**
 
-- Add a new subcommand `crictl image-pull-progress <pod-name>` to allow users to monitor the image pull progress of a pod.
-  - The subcommand will follow the conventions of existing `logs` and `exec` commands, providing a streaming view of progress updates.
+- Add a new subcommand `crictl image-pull-progress <image>` to allow users to monitor the progress of an in-flight pull of an image.
+  - The subcommand will call `ImagePullProgress`, providing a streaming view of progress updates until the pull ends.
 
 <!--
   The proposed `image-pull-progress` subcommand are preliminary and subject to further discussion and refinement.
@@ -225,31 +217,96 @@ The approach should be selected based on the client's specific requirements.
 Add a new `imagepullprogress` subresource for Pod objects.
 
 - The API server will proxy requests to `/api/v1/namespaces/{namespace}/pods/{pod}/imagepullprogress` to the corresponding kubelet.
-- This subresource will provide a streaming endpoint for image pull progress updates, similar to existing subresources like `exec`, `log`, and `portforward`.
+- This subresource will provide a streaming `GET` endpoint for image pull progress updates, in the same way as the existing `log` subresource.
 - No changes to core Pod API types are required; this is implemented as a proxy subresource.
-- RBAC and authorization will follow the same model as other pod streaming subresources.
+- RBAC and authorization will follow the same model as the `log` subresource.
 
 **Proposed changes to the kubelet:**
 
 It is expected to be implemented after the CRI implementation supporting the CRI API is released.
 
-- Add an new routes to the Kubelet server.
+- Track the image pulls of each pod.
+  For each container (init, regular and ephemeral) and each image volume of a pod, the kubelet records the state of its image:
+  - `Waiting`: The pull has not started.
+    The kubelet handles the images of a pod one after another, so it may not have reached this container or image volume yet (e.g., an earlier init container is still running),
+    or the pull is waiting in the image pull queue of the kubelet.
+  - `Pulling`: The runtime is pulling the image.
+  - `Pulled`: The image was pulled.
+  - `AlreadyPresent`: The image was already on the node and no pull was needed.
+  - `Failed`: The pull failed, or the image cannot be used for another reason (e.g., it is not on the node and the pull policy is `Never`).
+  - `BackOff`: The kubelet is waiting before it pulls again after a failed pull.
+
+  The states are kept in memory and are removed together with the pod.
+  After a kubelet restart, the kubelet reports `AlreadyPresent` for the images of the containers that were started before the restart, and for the image volumes of their pods.
+- Subscribe to the CRI implementation on demand.
+  While clients are watching, the kubelet calls `ImagePullProgress` for each watched image that is in the `Pulling` state.
+  A subscription is shared by all clients, and the kubelet keeps the latest progress of each layer so that a client that connects later also gets a snapshot.
+  If the stream ends while the image is still in the `Pulling` state (e.g., the CRI implementation has not registered the pull yet), the kubelet subscribes again after a short delay.
+  When the last client disconnects, the kubelet closes the subscription.
+  If the CRI implementation does not support `ImagePullProgress`, the kubelet reports the states without layer progress.
+- Add new routes to the Kubelet server.
   - `/imagePullProgress/{podNamespace}/{podID}`
-    This endpoint will function similarly to the logs endpoint,
-    providing a server-push stream of image pull progress updates for the specified pod.
+    This endpoint will function similarly to the logs endpoint:
+    it accepts `GET` requests only and the kubelet writes the response itself,
+    providing a server-push stream of image pull progress updates for all containers and image volumes of the specified pod.
   - `/imagePullProgress/{podNamespace}/{podID}/{containerName}`
     Same as the previous one, but for a single container.
 
+  The response starts with the current states and continues with an update for each change.
+  It ends when all images of the request are in the `Pulled` or `AlreadyPresent` state, or when the pod terminates or is deleted.
+
 Unlike PortForward, which is limited to Pod-level operations, and Logs/exec, which are restricted to Container-level operations (with the client typically selecting a default container), this feature supports both Pod-level and Container-level image pull progress reporting.
+
+**Data format served by the kubelet:**
+
+The response is a stream of JSON objects, one per line.
+
+``` golang
+type Progress struct {
+	// Name of the container, empty for an image volume.
+	Container string `json:"container,omitempty"`
+	// Name of the image volume, empty for a container.
+	Volume string `json:"volume,omitempty"`
+	// Image reference from the pod spec (e.g., "registry.example.com/app:v1").
+	Image string `json:"image"`
+	// State of the image: Waiting, Pulling, Pulled, AlreadyPresent, Failed or BackOff.
+	State string `json:"state"`
+	// Error message, only in the Failed and BackOff states.
+	Error string `json:"error,omitempty"`
+
+	// Digest of a layer of the image (e.g., "sha256:abc123...").
+	Layer string `json:"layer,omitempty"`
+	// Phase of the layer: Waiting, Downloading, Extracting or Done.
+	Phase string `json:"phase,omitempty"`
+	// Number of bytes of the layer that have been downloaded.
+	Progress int64 `json:"progress,omitempty"`
+	// Size of the layer in bytes, 0 if it is not known.
+	Total int64 `json:"total,omitempty"`
+}
+```
+
+- An object without `Layer` reports the state of the image of a container or image volume.
+- An object with `Layer` reports the progress of one layer of an image in the `Pulling` state, as received from the CRI implementation.
+- All values are absolute, so the kubelet may skip intermediate updates for a slow client.
+
+For example, while the image of an image volume is being pulled:
+
+``` json
+{"volume":"model","image":"registry.example.com/model:v1","state":"Pulling"}
+{"volume":"model","image":"registry.example.com/model:v1","state":"Pulling","layer":"sha256:abc123...","phase":"Downloading","progress":1048576,"total":52428800}
+{"container":"app","image":"registry.example.com/app:v1","state":"Waiting"}
+```
+
+Clients maintain a progress map keyed by container or image volume and by layer, update the corresponding entry on each object, and render a progress indicator for each entry.
 
 **Proposed changes to the kubectl:**
 
 It is expected to be implemented on Alpha 2
 
-- Add a new subcommand `kubectl image-pull-progress <pod-name>` to allow users to monitor the image pull progress of a pod.
+- Add a new subcommand `kubectl alpha image-pull-progress <pod-name>` to allow users to monitor the image pull progress of a pod.
   - Include a `--container` flag to specify a particular container within the pod.
   - The subcommand will follow the conventions of existing `logs` and `exec` commands, providing a streaming view of progress updates.
-  - By default, the image pull progress for all containers in the pod will be displayed.
+  - By default, the image pull progress for all containers and image volumes in the pod will be displayed.
 
 <!--
   The proposed `image-pull-progress` subcommand are preliminary and subject to further discussion and refinement.
@@ -378,14 +435,16 @@ If e2e tests are not necessary or useful, explain why.
 ### Upgrade / Downgrade Strategy
 
 There are no specific upgrade/downgrade order requirements for this feature. 
-The image pull progress functionality will only work when all components in the call chain support it. 
-If any component in the chain doesn't support the feature, the progress request will fail gracefully with an "unsupported" error, 
+The image pull progress functionality will only work when kubectl, the API server and the kubelet support it.
+If any of them doesn't support the feature, the progress request will fail gracefully with an "unsupported" error,
 but normal image pull operations will continue to work as before without the progress reporting capability.
+If only the container runtime doesn't support the feature, the progress request will still work, but it will report the pull states without layer progress.
 
 ### Version Skew Strategy
 
 - Older apierver: Will respond with "404 Not Found" for progress requests since they don't implement the new subresource
 - Older kubelet: Will respond with "404 Not Found" for progress requests since they don't implement the new API
+- Older runtime: Will respond with "Unimplemented" for `ImagePullProgress` since they don't implement the new CRI API; the kubelet will then report the pull states without layer progress
 - Newer kubectl: Will gracefully handle "404 Not Found"/"405 Method Not Allowed" responses by treating them as feature unsupported on target kubelet
 - Older kubectl: Versions without progress subcommand won't have this functionality available
 - Mixed version clusters: Feature works where supported and gracefully degrades where unsupported
