@@ -17,8 +17,9 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
-  - [Defaulting and <code>hostNetwork</code> mirroring](#defaulting-and-hostnetwork-mirroring)
   - [Validation](#validation)
+  - [Updates from clients that do not know the field](#updates-from-clients-that-do-not-know-the-field)
+  - [Disabled feature gate](#disabled-feature-gate)
   - [CRI Integration](#cri-integration)
   - [Kubelet Behavior](#kubelet-behavior)
   - [Control Plane Behavior](#control-plane-behavior)
@@ -139,44 +140,50 @@ to express.
 
 - Allow users to declare that a Pod must not be attached to the default pod
   network.
-- Absorb the existing `hostNetwork` field into the new API so that existing
-  clients and controllers keep working unchanged.
+- Leave `hostNetwork` and every existing pod unchanged: the new field is
+  optional and never defaulted, and clients and controllers that do not know
+  it keep working.
 - Fully define the semantics of isolated pods and fail predictably: reject
   configurations that cannot work without the pod network (network probes,
   host ports) at admission time instead of failing at runtime, and never
   silently run a pod that requested isolation attached to the pod network
   (e.g., on version-skewed nodes that do not support this feature).
-- Keep isolated pods out of service discovery: Services, Endpoints,
-  EndpointSlices and, by default, service environment variables.
+- Keep isolated pods out of service discovery: Services, Endpoints and
+  EndpointSlices.
 - Define the contract between the kubelet and the container runtimes for
   isolated pods.
 
 ### Non-Goals
 
 - Designing a multi-network or secondary-interface attachment framework.
-  `defaultNetwork: None` is intentionally about the absence of automatic attachment;
+  `podNetwork: Isolated` is intentionally about the absence of automatic attachment;
   it provides a clean surface for delegation (e.g., DRA drivers), but how
   interfaces are attached afterwards and its lifecycle is out of scope.
 - Adding other networks to the API. Today `status.podIPs`, Services,
   Endpoints and EndpointSlices, NetworkPolicy and cluster DNS only work with
   the default pod network, and this KEP does not change that (see
   [Interaction with Core Networking APIs](#interaction-with-core-networking-apis)).
-  New `defaultNetwork` values for other networks, or changes to those APIs
+  New `podNetwork` values for other networks, or changes to those APIs
   to support other networks, need a future KEP.
 - Isolating anything other than networking. Storage, IPC, PID, devices and
   host access are governed by existing fields.
-- Deprecating or removing `hostNetwork`. It is a GA v1 field and remains
-  supported forever; `defaultNetwork: Host` is its enum alias.
+- Deprecating, replacing or mirroring `hostNetwork`. It is a GA v1 field and
+  remains the only way to request the host network; `podNetwork` may not be
+  set together with it.
 - Changing how kube-proxy, NetworkPolicy or DNS work for non-isolated pods.
+- Changing the defaults of `dnsPolicy` or `enableServiceLinks`, or the
+  service environment variables, for isolated pods. They are configured with
+  their own fields, exactly as for any other pod.
 - Skipping service account token mounting for isolated pods. Tokens may still
   be consumed by non-network means.
 
 ## Proposal
 
-Add a new optional enum field `defaultNetwork` to `PodSpec` with the values
-`Pod`, `Host` and `None`. When the field is unset, the API server defaults it
-to `Pod`, or to `Host` when `hostNetwork: true`, so every existing pod gets
-the value that describes its current behavior. `None` is the new behavior:
+Add a new optional enum field `podNetwork` to `PodSpec` with the values
+`Default` and `Isolated`. The field is never defaulted: when it is unset, a
+pod behaves as if it was `Default`, which is what every existing
+non-`hostNetwork` pod does today. The field must be unset when
+`hostNetwork: true`. `Isolated` is the new behavior:
 
 ```yaml
 apiVersion: v1
@@ -184,40 +191,40 @@ kind: Pod
 metadata:
   name: network-isolated-example
 spec:
-  defaultNetwork: None # new field; defaults to Pod (or Host when hostNetwork is true)
+  podNetwork: Isolated # new field; unset behaves as Default
   containers:
   - name: worker
     image: registry.k8s.io/e2e-test-images/agnhost:2.53
     command: ["sleep", "3600"]
 ```
 
-Semantics of `defaultNetwork: None`:
+Semantics of `podNetwork: Isolated`:
 
-1. The API server defaults `dnsPolicy` to `None` (without requiring
-   `dnsConfig.nameservers`) and `enableServiceLinks` to `false`: isolated
-   pods default to a configuration with no network dependencies. Users may
-   override these defaults when an external integration (a DRA driver, VM
-   networking) provides connectivity by other means, in line with the goal
-   of offering a delegation contract to external integrations.
-   Configurations that cannot work without a pod IP (network probes, host
-   ports) are rejected by validation (see [Validation](#validation)).
+1. Configurations that need to reach the pod from the node (`hostPort`, and
+   `httpGet`, `tcpSocket` and `grpc` probes and lifecycle handlers) are
+   rejected by validation (see [Validation](#validation)).
 2. The kubelet uses a new CRI field to tell the runtime to create the sandbox
    network namespace with only the loopback interface and to skip the
    default-pod-network plumbing (e.g., runtimes that normally invoke CNI
    plugins to attach the sandbox to the default pod network would skip that
    step).
 3. The pod runs with empty `status.podIP`/`status.podIPs` and becomes `Ready`
-   without waiting for an IP. `status.hostIP` is still reported.
+   without waiting for an IP. `status.hostIP` is still reported. The API
+   server rejects a status update that reports a pod IP for an isolated
+   pod. The kubelet starts the pod even when the runtime reports that the
+   pod network is not ready, as it does for `hostNetwork` pods.
 4. The endpoints and endpointslice controllers never select the pod into
    Endpoints/EndpointSlices, even if a Service selector matches it.
-5. For isolated pods, `enableServiceLinks` also governs the `KUBERNETES_*`
-   master-service variables, which are injected unconditionally for all
-   other pods: with the defaulted `false` no service environment variables
-   are injected, and an explicit `enableServiceLinks: true` restores the
-   standard injection for pods that obtain connectivity by other means.
+5. DNS configuration and service environment variables are generated as for
+   any other pod: `dnsPolicy` defaults to `ClusterFirst` and
+   `enableServiceLinks` to `true`. They identify resolvers and Service IPs that
+   the pod can only reach when an external integration (a DRA driver, VM
+   networking) provides connectivity by other means. A pod that wants no
+   network dependency sets `dnsPolicy: None` with a `dnsConfig` (for
+   example, a resolver on loopback) and `enableServiceLinks: false`.
 6. The kubelet maps the pod hostname to `127.0.0.1` and `::1` in the
    managed `/etc/hosts`, so `localhost` and `$(hostname)` resolve inside
-   the sandbox.
+   the sandbox. `hostAliases` are written as usual.
 7. If the kubelet or the container runtime does not support isolated
    sandboxes, the kubelet rejects the pod during node-level admission (after
    scheduling, the pod is marked `Failed` with reason `PodFeatureUnsupported`)
@@ -231,9 +238,9 @@ Semantics of `defaultNetwork: None`:
    outside NetworkPolicy scope. The full contract is defined in
    [Interaction with Core Networking APIs](#interaction-with-core-networking-apis).
 
-`defaultNetwork: Pod` and `defaultNetwork: Host` do not change any behavior.
-`Pod` is what pods do today: the pod gets its own network namespace and is
-connected to the default pod network. `Host` is the same as `hostNetwork: true`.
+`podNetwork: Default` and an unset field do not change any behavior: the pod
+gets its own network namespace and is connected to the default pod network.
+`hostNetwork: true` pods are not affected either; they cannot set the field.
 
 ### User Stories
 
@@ -254,10 +261,10 @@ teardown and priority with the CNI configuration on every node.
 As a security engineer, I run jobs that process sensitive data mounted from
 volumes, and I must prove to auditors that the workload has no network path
 in or out. A deny-all NetworkPolicy depends on the network plugin enforcing
-it, and the pod still gets a pod IP. With `defaultNetwork: None` there is
+it, and the pod still gets a pod IP. With `podNetwork: Isolated` there is
 nothing to enforce: the only interface is loopback. The guarantee is about
 provisioning, not a runtime invariant: the sandbox starts with only loopback
-and `defaultNetwork` is immutable, so changing the pod's connectivity afterwards
+and `podNetwork` is immutable on Pods, so changing the pod's connectivity afterwards
 requires a privileged node-level actor (the workload itself cannot attach
 interfaces without host-level privileges). Defending against privileged
 actors is out of scope.
@@ -302,23 +309,21 @@ processing, and setup/teardown time on every sandbox.
   does not provide.
 - "CNI" never appears in the API. CNI is an implementation detail of Linux
   container runtimes; it does not exist in the Kubernetes API vocabulary.
-- `defaultNetwork` instead of `networkMode` or `podNetwork`. Kubernetes has
-  one network that every pod is connected to, the default pod network, and
-  all the core networking APIs (Services, NetworkPolicy, `status.podIPs`,
-  ...) only work with that network. The field describes the pod's default
-  network: the default pod network (`Pod`), the host network (`Host`) or no
-  network at all (`None`), so `defaultNetwork: None` reads as "the pod has no
-  default network".
-- `Pod` instead of `Default` or `Cluster` for the current behavior: the pod
-  gets its own network namespace and is connected to the default pod network.
-  With `Host` the pod uses the host network namespace instead.
-  `defaultNetwork: Default` is confusing, and "cluster network" is often
-  understood to include the nodes.
-- `None` follows existing ecosystem semantics (`docker run --network
-  none`) and the existing `dnsPolicy: None`. It describes the initial
-  provisioning of the sandbox, not a permanent prohibition: interfaces can
-  still be attached afterwards by delegated mechanisms (see
-  [Non-Goals](#non-goals)).
+- `podNetwork` is the name of the field. Kubernetes has one network that
+  every pod is connected to unless it opts out, and all the core networking
+  APIs (Services, NetworkPolicy, `status.podIPs`, ...) only work with that
+  network. The API calls it "the pod network"; this document also calls it
+  "the default pod network". The field says whether the pod is attached to
+  it.
+- `Default` is the current behavior of a non-`hostNetwork` pod: the pod gets
+  its own network namespace and is attached to the pod network.
+- `Isolated` describes the sandbox when it is created: a network namespace
+  with only loopback, not attached to the pod network. It is not a
+  permanent prohibition: interfaces can still be attached afterwards by
+  delegated mechanisms (see [Non-Goals](#non-goals)).
+- The field must be unset for `hostNetwork` pods: it describes the pod's own
+  network namespace, and a `hostNetwork` pod has none (see
+  [Validation](#validation)).
 
 **The pod still has a network namespace.** The pod keeps loopback
 (`127.0.0.1`, `::1`) and the containers in the pod communicate over
@@ -328,7 +333,7 @@ technically inaccurate.
 **Kubernetes API access.** An isolated pod cannot necessarily reach the
 kube-apiserver (or anything else). The documentation in [services-networking concepts] assumes
 that every pod can reach the API and other pods. Those documents must be
-updated to describe `defaultNetwork: None` as an explicit, opt-in exception.
+updated to describe `podNetwork: Isolated` as an explicit, opt-in exception.
 Pods that do not set the field keep all the documented guarantees.
 
 **Downward API.** `status.podIP`/`status.podIPs` resolve to empty values for
@@ -338,11 +343,11 @@ isolated pods. `status.hostIP` remains populated.
 example [Multus], and [KubeVirt] through it) attach additional interfaces by
 intercepting the CNI invocation that the runtime performs for the default pod
 network. That invocation is an implementation detail of the runtime, and it
-does not happen for `defaultNetwork: None` sandboxes, so today those projects
-are not invoked for isolated pods. The semantics of `None` are "not attached
+does not happen for `podNetwork: Isolated` sandboxes, so today those projects
+are not invoked for isolated pods. The semantics of `Isolated` are "not attached
 to the default pod network", not "no secondary interfaces": a runtime that
 knows how to attach secondary interfaces without attaching the default pod
-network is free to do so. Pods that do not set `defaultNetwork: None` are
+network is free to do so. Pods that do not set `podNetwork: Isolated` are
 not affected in any way, and existing integrations keep working unchanged
 for them. For isolated pods, the paths that do not depend on the
 default-pod-network CNI invocation are DRA network drivers ([DRANET]) and
@@ -360,19 +365,37 @@ providing them a compatibility path to isolated pods is a
 
 ### Risks and Mitigations
 
-**Fail-open on version skew (security risk).** The scheduler keeps isolated
-pods away from unsupported nodes using [Node Declared Features (KEP-5328)],
-but pods can bypass the scheduler (`spec.nodeName`, DaemonSets, static pods).
-An old runtime or kubelet that does not understand the field could silently
-attach an isolated pod to the default pod network. The kubelet **fails closed**
-instead: if `defaultNetwork` is `None` and the node does not declare support
-for isolated sandboxes (the gate is off, or the runtime does not report the
-capability via CRI `RuntimeFeatures`), the kubelet rejects the pod at
-admission with reason `PodFeatureUnsupported`. Kubelets that predate the field
-cannot fail closed; for this reason the feature must not graduate to beta
-(enabled by default) before every kubelet version within the supported skew
-window knows the field. See
-[Version Skew Strategy](#version-skew-strategy).
+**Fail-open on version skew (security risk).** An old runtime or kubelet
+that does not understand the field could silently attach an isolated pod to
+the default pod network. The feature uses
+[Node Declared Features (KEP-5328)] to keep isolated pods away from them:
+
+- A node declares `NetworkIsolatedPods` only when its kubelet knows the
+  field, has the gate enabled, and its runtime reports the capability via
+  CRI `RuntimeFeatures`. A kubelet that predates the field never declares
+  it.
+- The scheduler never places an isolated pod on a node that does not
+  declare the feature. This covers every pod that the scheduler binds,
+  including DaemonSet pods.
+- A kubelet that knows the field **fails closed**: if `podNetwork` is
+  `Isolated` and the node does not declare the feature, the kubelet rejects
+  the pod at admission with reason `PodFeatureUnsupported`. If a runtime
+  reports the capability but attaches the sandbox anyway, the kubelet stops
+  the sandbox and starts no container in it (see
+  [Kubelet Behavior](#kubelet-behavior)).
+- A pod that is created with `spec.nodeName` set does not go through the
+  scheduler, and a kubelet that predates the field cannot fail closed. The
+  kube-apiserver must reject placing an isolated pod on a node that does
+  not declare the feature. The alpha implementation (v1.38) does not have
+  this check. This is a gap, not a design choice: the need for the check
+  was identified after the implementation merged, and there is no reason to
+  allow these pods. Adding the check is a [Beta](#beta) requirement.
+- Static pods do not go through the kube-apiserver. A static pod that sets
+  `podNetwork: Isolated` on a kubelet that predates the field runs attached
+  to the pod network. This needs write access to the node's manifests and is
+  a documented residual risk.
+
+See [Version Skew Strategy](#version-skew-strategy).
 
 [Node Declared Features (KEP-5328)]: https://github.com/kubernetes/enhancements/issues/5328
 
@@ -386,7 +409,7 @@ non-`hostNetwork` pod). A pod network implementation with that assumption
 could be crashed by any user allowed to create pods. Mitigations: the
 feature is opt-in behind a feature gate; before beta the e2e tests must
 pass on the 4 most common pod network implementations (Calico,
-OVN-Kubernetes, Kindnet and Cilium) with `defaultNetwork: None` pods in the
+OVN-Kubernetes, Kindnet and Cilium) with `podNetwork: Isolated` pods in the
 cluster; a conformance test checks this new state on every implementation;
 and the new state is documented for integrators. Operators can additionally restrict who may set the field with
 admission policy (e.g., ValidatingAdmissionPolicy). No Pod Security
@@ -394,21 +417,26 @@ Admission change is proposed: the field removes network access rather than
 granting privilege. The endpoints controllers already ignore pods without
 IPs.
 
-**API confusion with `hostNetwork`.** Two fields describing the same thing is
-not great, and the [API change guidelines] warn about representing one
-property with two fields, but `hostNetwork` is v1 and cannot go away.
-`PodSpec` already carries two such pairs that are kept in sync in
-`SetDefaults_PodSpec`: `serviceAccount`/`serviceAccountName` and
-`status.podIP`/`status.podIPs`, where the older field is authoritative on a
-mismatch for compatibility with older clients. `defaultNetwork` follows the
-same rule (see [Defaulting and `hostNetwork` mirroring](#defaulting-and-hostnetwork-mirroring)):
-defaulting keeps both fields in sync, the only rejected combination is one
-that old clients cannot produce, and a reader of either field gets the same
-answer. Because defaulting runs before admission, Pod Security Admission
-(which reads `hostNetwork` for the `baseline` host namespaces check) and
-policy webhooks that inspect `hostNetwork` on Pods or workload templates see
-the mirrored value and keep working without changes; `defaultNetwork: Host`
-cannot be used to bypass them.
+**Interaction with `hostNetwork`.** `podNetwork` and `hostNetwork` are
+separate fields that say different things: `hostNetwork` says that
+the pod uses the node's network namespace, and `podNetwork` says whether the
+pod's own network namespace is attached to the pod network. Validation
+rejects setting both. `hostNetwork` keeps its meaning for every reader, so
+Pod Security Admission (which reads `hostNetwork` for the `baseline` host
+namespaces check) and policy webhooks that inspect `hostNetwork` keep
+working without changes. The cost is one cross-field rule that a client
+that does not know `podNetwork` can hit when it turns `hostNetwork` on for a
+workload template that has the field stored. The API server handles that
+case on update (see
+[Updates from clients that do not know the field](#updates-from-clients-that-do-not-know-the-field)).
+
+**Omitting the field on update does not clear it.** To protect isolated
+workloads from clients that do not know the field, an update that leaves
+`podNetwork` out keeps the stored value. This is also true for clients that
+know the field: removing `podNetwork: Isolated` from a manifest and applying
+it again (client-side or server-side apply) leaves the workload isolated.
+Isolation is turned off by setting `podNetwork: Default`. Integration tests
+cover this behavior, and the user-facing documentation must call it out.
 
 **Scope creep towards multi-network.** An enum makes it easy to propose
 new values (`bridge`-like modes, named networks), and once the API names
@@ -424,30 +452,23 @@ cannot change the guarantees for pods connected to the default pod network.
 New enum type and `PodSpec` field:
 
 ```go
-// PodDefaultNetwork describes the pod's default network.
+// PodNetwork selects whether a pod is attached to the pod network.
 // +enum
-type PodDefaultNetwork string
+// +k8s:enum
+type PodNetwork string
 
 const (
-	// PodDefaultNetworkPod gives the pod its own network namespace and
-	// attaches it to the default pod network (the network that Kubernetes
-	// connects every pod to unless the pod opts out). The container runtime
-	// performs its configured network plumbing and the pod is assigned pod
-	// IPs. This is the default and matches the historical behavior of
-	// Kubernetes.
-	PodDefaultNetworkPod PodDefaultNetwork = "Pod"
+	// PodNetworkDefault attaches the pod to the pod network (the network that
+	// Kubernetes connects every pod to unless the pod opts out). The container
+	// runtime performs its configured network plumbing and the pod is assigned
+	// pod IPs. This is the historical behavior (for non-hostNetwork pods).
+	PodNetworkDefault PodNetwork = "Default"
 
-	// PodDefaultNetworkHost runs the pod in the host's network namespace.
-	// It is equivalent to setting hostNetwork: true; the two fields are
-	// kept in sync by API defaulting.
-	PodDefaultNetworkHost PodDefaultNetwork = "Host"
-
-	// PodDefaultNetworkNone gives the pod its own network namespace
-	// containing only the loopback interface and does not attach it to the
-	// default pod network. The pod's podIPs are left unset. The pod is never
-	// selected into Services and, by default, receives no cluster DNS
-	// configuration or service environment variables.
-	PodDefaultNetworkNone PodDefaultNetwork = "None"
+	// PodNetworkIsolated does not attach the pod to the pod network. The pod gets
+	// an isolated network namespace with only the loopback interface
+	// configured. The pod's podIPs are left unset and the pod is never
+	// selected into Services.
+	PodNetworkIsolated PodNetwork = "Isolated"
 )
 ```
 
@@ -455,276 +476,77 @@ const (
 type PodSpec struct {
 	// ...
 
-	// defaultNetwork selects the pod's default network.
-	// "Pod" gives the pod its own network namespace attached to the default
-	// pod network, "Host" runs the pod in the host network namespace
-	// (equivalent to hostNetwork: true and kept in sync with it), and
-	// "None" gives the pod an isolated network namespace with only a
-	// loopback interface, not attached to the default pod network and with
-	// no automatic network plumbing.
-	// Defaults to "Pod", or to "Host" when hostNetwork is true; setting
-	// "Host" sets hostNetwork to true. "None" may not be combined with
-	// hostNetwork: true.
-	// When "None" is selected, dnsPolicy defaults to "None" and
-	// enableServiceLinks defaults to false (both may be overridden), and
-	// features that require networking (such as hostPorts and network-based
-	// probes and lifecycle handlers) are forbidden.
-	// This field is immutable.
-	// +featureGate=PodDefaultNetwork
+	// hostNetwork indicates that the pod should use the host's network namespace.
+	// ...
+	// When true, podNetwork may not be set: the pod has no network namespace
+	// of its own.
 	// +optional
-	DefaultNetwork *PodDefaultNetwork `json:"defaultNetwork,omitempty" protobuf:"bytes,45,opt,name=defaultNetwork,casttype=PodDefaultNetwork"`
+	HostNetwork bool `json:"hostNetwork,omitempty" protobuf:"varint,11,opt,name=hostNetwork"`
+
+	// ...
+
+	// podNetwork selects whether a non-hostNetwork pod is attached to the pod network.
+	// "Default" attaches the pod to the pod network. "Isolated" gives
+	// the pod an isolated network namespace with only the loopback interface
+	// configured, not attached to the pod network.
+	// This field must be unset if hostNetwork is true. For non-hostNetwork
+	// pods, this behaves as if it was set to "Default" if it is not set.
+	// If a pod is "Isolated", hostPort and network-based probes and lifecycle
+	// handlers are not allowed.
+	// This field is immutable on Pods.
+	// +featureGate=NetworkIsolatedPods
+	// +optional
+	// +k8s:optional
+	PodNetwork *PodNetwork `json:"podNetwork,omitempty" protobuf:"bytes,45,opt,name=podNetwork,casttype=PodNetwork"`
 }
 ```
 
 **Why an enum and not a boolean.** The first proposal was `hermetic *bool`
-(see [Alternatives](#alternatives)). It got a lot of pushback. A pod would
-have two booleans, `hostNetwork` and `hermetic`, that cannot both be true,
-so validation has to reject that combination, and adding a third option
-later would need a third boolean. The [API conventions] warn against this:
-booleans "trend towards a small set of mutually exclusive options" and
-rarely stay binary. With one enum a pod has exactly one value, the invalid
-combination cannot be written, `hostNetwork` becomes the `Host` value, and a
-new option later is just a new value.
+(see [Alternatives](#alternatives)). It got a lot of pushback. The
+[API conventions] warn against booleans: they "trend towards a small set of
+mutually exclusive options" and rarely stay binary. With an enum, a new
+option later is just a new value.
 
-The cost is keeping `hostNetwork` in sync, described in the next section.
-`hostNetwork` is a GA v1 field and cannot be removed, so any design has to
-deal with it. With the enum this happens in one place: old clients write
-`hostNetwork`, new clients write `defaultNetwork`, and defaulting fills in
-the other one.
+`hostNetwork` stays a separate field. It is a GA v1 field and cannot be
+removed, and `podNetwork` only describes pods that have their own network
+namespace, so the two fields do not overlap: validation rejects a
+`hostNetwork: true` pod that sets `podNetwork`, with any value (see
+[Validation](#validation)).
 
 [API conventions]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#primitive-types
 
-### Defaulting and `hostNetwork` mirroring
-
-`hostNetwork` is a GA v1 field and cannot be removed. Mirroring an enum onto
-a legacy boolean is the best we can do without breaking v1 compatibility. Defaulting
-in `pkg/apis/core/v1/defaults.go` keeps both fields in sync, for Pods and
-for every workload `PodTemplateSpec`:
-
-```go
-func SetDefaults_PodSpec(obj *v1.PodSpec) {
-	// DefaultNetwork <-> HostNetwork mirroring.
-	if utilfeature.DefaultFeatureGate.Enabled(features.PodDefaultNetwork) {
-		switch {
-		case obj.DefaultNetwork == nil:
-			// Old clients: derive the mode from the legacy field.
-			if obj.HostNetwork {
-				obj.DefaultNetwork = ptr.To(v1.PodDefaultNetworkHost)
-			} else {
-				obj.DefaultNetwork = ptr.To(v1.PodDefaultNetworkPod)
-			}
-		case *obj.DefaultNetwork == v1.PodDefaultNetworkHost:
-			// New clients: keep the legacy field in sync for older
-			// controllers and clients that read hostNetwork directly.
-			obj.HostNetwork = true
-		case *obj.DefaultNetwork == v1.PodDefaultNetworkPod && obj.HostNetwork:
-			// "Pod" is what every stored object gets when the client did
-			// not set defaultNetwork, so "Pod" plus an explicit
-			// hostNetwork: true can only come from a client that does not
-			// know the new field (typically a PATCH on a workload
-			// template). hostNetwork: true keeps its historical meaning.
-			obj.DefaultNetwork = ptr.To(v1.PodDefaultNetworkHost)
-		}
-	}
-
-	if obj.DNSPolicy == "" {
-		if obj.DefaultNetwork != nil && *obj.DefaultNetwork == v1.PodDefaultNetworkNone {
-			obj.DNSPolicy = v1.DNSNone
-		} else {
-			obj.DNSPolicy = v1.DNSClusterFirst
-		}
-	}
-	if obj.DefaultNetwork != nil && *obj.DefaultNetwork == v1.PodDefaultNetworkNone &&
-		obj.EnableServiceLinks == nil {
-		obj.EnableServiceLinks = ptr.To(false)
-	}
-	// ... existing defaulting ...
-}
-```
-
-Properties of this strategy:
-
-- An old client submitting `hostNetwork: true` observes `defaultNetwork: Host`
-  after defaulting; behavior is unchanged.
-- A new client submitting `defaultNetwork: Host` produces `hostNetwork: true` in
-  the stored object, so an n-1 controller reading only the raw boolean makes
-  the correct decision.
-- A client cannot send the conflict "`defaultNetwork: Host` with
-  `hostNetwork: false`". `hostNetwork` is a plain boolean, so the API server
-  cannot tell an explicit `false` apart from an unset field. In both cases
-  defaulting sets `hostNetwork` to `true` to match `defaultNetwork: Host`.
-- `hostNetwork: true` always means `Host`. Once the gate is on, every stored
-  Pod and workload template carries `defaultNetwork: Pod` unless it asked
-  for something else. An old client that patches `hostNetwork: true` into
-  such a template (`kubectl patch`, client-side `kubectl apply`, or a
-  controller built against an older client library) produces `Pod` plus
-  `hostNetwork: true`; defaulting maps that to `Host`, so the client gets
-  the pod it asked for instead of a validation error about a field it does
-  not know.
-- The only conflict left is `defaultNetwork: None` combined with an explicit
-  `hostNetwork: true`, which validation rejects. `None` can only have been
-  set by a client that knows the field, so an old client hits this error
-  only when it patches `hostNetwork: true` into a template that a newer
-  client already isolated; the error names both fields.
-- Setting one field from another has a known problem on updates: a client
-  that does not know the derived field cannot clear the source field with a
-  PATCH, because defaulting sets it back from the stored derived value. Both
-  `hostNetwork` and `defaultNetwork` are immutable on Pods, so Pods are not
-  affected. Workload templates are mutable, so an old client that patches
-  `hostNetwork: false` into a template that has `defaultNetwork: Host`
-  stored does not see its change. A full update (PUT) from the same client
-  works, because the client drops the unknown field and `defaultNetwork` is
-  set again from `hostNetwork`. The problem goes away once clients are
-  updated. The [API change guidelines] describe a stricter pattern for
-  paired fields (compare old and new objects in the registry strategy and
-  derive whichever field did not change); it would have to be repeated in
-  every registry that embeds a `PodTemplateSpec`, and the defaulting rule
-  above covers the cases that matter for a boolean whose only conflicting
-  value is `None`.
-- `dnsPolicy` and `enableServiceLinks` receive `None`-specific defaults only
-  when unset; explicit user values are preserved.
-- When the `PodDefaultNetwork` feature gate is disabled, the field is stripped
-  from new objects (standard `dropDisabledFields` handling), no mirroring
-  occurs, and behavior is exactly as today. Objects that already carry the
-  field keep it, following the API compatibility rules for disabled gates;
-  the cross-field validation below still runs on them, so a stored object
-  is never left in a state that a later gate flip would reject.
-
-[API change guidelines]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#making-a-singular-field-plural
-
 ### Validation
 
-Implemented in `pkg/apis/core/validation/validation.go` and invoked from
-`ValidatePodSpec` (covering Pods and all workload templates):
+The validation applies to Pods and to all workload templates
+([initial implementation][validation-commit]):
 
-```go
-// validatePodDefaultNetwork validates spec.defaultNetwork and its interactions
-// with network-dependent fields.
-func validatePodDefaultNetwork(spec *core.PodSpec, fldPath *field.Path) field.ErrorList {
-	allErrs := field.ErrorList{}
-	if spec.DefaultNetwork == nil {
-		return allErrs
-	}
-	netPath := fldPath.Child("defaultNetwork")
-
-	switch *spec.DefaultNetwork {
-	case core.PodDefaultNetworkPod:
-		if spec.HostNetwork {
-			// Defaulting maps this combination to "Host"; reaching this
-			// branch means an internal client bypassed defaulting.
-			allErrs = append(allErrs, field.Invalid(netPath, *spec.DefaultNetwork,
-				`must be "Host" when hostNetwork is true`))
-		}
-	case core.PodDefaultNetworkHost:
-		if !spec.HostNetwork {
-			// Defaulting keeps these in sync; reaching this branch means
-			// an internal client bypassed defaulting.
-			allErrs = append(allErrs, field.Invalid(netPath, *spec.DefaultNetwork,
-				"hostNetwork must be true when defaultNetwork is \"Host\""))
-		}
-	case core.PodDefaultNetworkNone:
-		allErrs = append(allErrs, validateIsolatedPodSpec(spec, fldPath)...)
-	default:
-		allErrs = append(allErrs, field.NotSupported(netPath, *spec.DefaultNetwork,
-			[]core.PodDefaultNetwork{core.PodDefaultNetworkPod, core.PodDefaultNetworkHost, core.PodDefaultNetworkNone}))
-	}
-	return allErrs
-}
-
-// validateIsolatedPodSpec enforces that a defaultNetwork "None" pod requests no
-// feature that cannot work without a pod IP. dnsPolicy and enableServiceLinks
-// are intentionally not validated: they are defaulted for "None" pods but
-// remain overridable.
-func validateIsolatedPodSpec(spec *core.PodSpec, fldPath *field.Path) field.ErrorList {
-	allErrs := field.ErrorList{}
-
-	if spec.HostNetwork {
-		allErrs = append(allErrs, field.Invalid(fldPath.Child("defaultNetwork"),
-			core.PodDefaultNetworkNone, "must not be \"None\" when hostNetwork is true"))
-	}
-
-	podshelper.VisitContainersWithPath(spec, fldPath, func(c *core.Container, cFldPath *field.Path) bool {
-		// The kubelet performs httpGet, tcpSocket and grpc probes from the
-		// host against the pod IP; without a pod IP there is nothing to
-		// probe. Only exec probes are permitted.
-		checkProbe := func(probe *core.Probe, probePath *field.Path) {
-			if probe == nil {
-				return
-			}
-			if probe.HTTPGet != nil {
-				allErrs = append(allErrs, field.Forbidden(probePath.Child("httpGet"),
-					`may not be set when defaultNetwork is "None"`))
-			}
-			if probe.TCPSocket != nil {
-				allErrs = append(allErrs, field.Forbidden(probePath.Child("tcpSocket"),
-					`may not be set when defaultNetwork is "None"`))
-			}
-			if probe.GRPC != nil {
-				allErrs = append(allErrs, field.Forbidden(probePath.Child("grpc"),
-					`may not be set when defaultNetwork is "None"`))
-			}
-		}
-		checkProbe(c.LivenessProbe, cFldPath.Child("livenessProbe"))
-		checkProbe(c.ReadinessProbe, cFldPath.Child("readinessProbe"))
-		checkProbe(c.StartupProbe, cFldPath.Child("startupProbe"))
-
-		if c.Lifecycle != nil {
-			checkHandler := func(h *core.LifecycleHandler, hPath *field.Path) {
-				if h == nil {
-					return
-				}
-				if h.HTTPGet != nil {
-					allErrs = append(allErrs, field.Forbidden(hPath.Child("httpGet"),
-						`may not be set when defaultNetwork is "None"`))
-				}
-				if h.TCPSocket != nil {
-					allErrs = append(allErrs, field.Forbidden(hPath.Child("tcpSocket"),
-						`may not be set when defaultNetwork is "None"`))
-				}
-			}
-			checkHandler(c.Lifecycle.PostStart, cFldPath.Child("lifecycle", "postStart"))
-			checkHandler(c.Lifecycle.PreStop, cFldPath.Child("lifecycle", "preStop"))
-		}
-
-		// hostPort mappings require an attached network interface.
-		portsPath := cFldPath.Child("ports")
-		for i, port := range c.Ports {
-			if port.HostPort > 0 {
-				allErrs = append(allErrs, field.Forbidden(portsPath.Index(i).Child("hostPort"),
-					`may not be set when defaultNetwork is "None"`))
-			}
-		}
-		return true
-	})
-
-	return allErrs
-}
-```
-
-Additional validation adjustments:
-
-- `dnsPolicy` and `enableServiceLinks` are **defaulted, not enforced**.
-  Isolated pods default to a configuration with no network dependencies
-  (`None`, `false`), but external integrations that attach connectivity by
-  other means (DRA drivers, VM networking) are part of the contract: users
-  may override the defaults to match the connectivity those integrations
-  provide.
+- Values other than `Default` and `Isolated` are rejected.
+- The field may not be set, with any value, when `hostNetwork` is true. It
+  describes the pod's own network namespace, and a `hostNetwork` pod has
+  none.
+- The field may only be set when the `NetworkIsolatedPods` gate is enabled,
+  or when the existing object already sets it (see
+  [Disabled feature gate](#disabled-feature-gate)).
+- For `Isolated` pods, in every container:
+  - `httpGet`, `tcpSocket` and `grpc` are forbidden in `livenessProbe`,
+    `readinessProbe` and `startupProbe`. The kubelet runs these probes from
+    the node, and nothing in an isolated pod is reachable from there,
+    whatever host the probe points to;
+  - `httpGet` and `tcpSocket` are forbidden in the `postStart` and `preStop`
+    lifecycle handlers, for the same reason;
+  - `ports[*].hostPort` is forbidden: there is no pod IP to forward to.
 - Only `exec` probes and `exec` or `sleep` lifecycle handlers pass
-  validation. `httpGet`, `tcpSocket` and `grpc` are rejected at admission
-  because the kubelet performs them against `status.podIP`, and there is no
-  pod IP. If a future mechanism lets the kubelet probe isolated pods, this
-  validation can be relaxed. A reflection-based unit test walks the probe
-  and handler types so that adding a new network-based probe without
-  updating this validation fails CI.
-- Today, `dnsPolicy: None` requires the user to provide
-  `dnsConfig.nameservers`. Pods with `defaultNetwork: None` are an exception: they can
-  have no nameservers at all. The kubelet then writes an empty
-  `/etc/resolv.conf`, unless the user provides a `dnsConfig` (for example,
-  for a resolver listening on loopback).
-- `defaultNetwork` cannot be changed after the pod is created, like the other
-  fields that define the sandbox.
+  validation for isolated pods. If a future mechanism lets the kubelet probe
+  isolated pods, this validation can be relaxed. A reflection-based unit
+  test (`TestIsolatedPodHandlerCoverage`) walks the probe and handler types,
+  so that adding a new handler without deciding whether it works for
+  isolated pods fails CI.
+- `podNetwork` cannot be changed after the pod is created, like the other
+  fields that define the sandbox; the existing pod update validation
+  enforces it. The field is mutable in workload templates.
 - `ValidatePodStatusUpdate` rejects a non-empty `status.podIP`/`status.podIPs`
-  when `spec.defaultNetwork` is `None`, turning the empty-IP guarantee into an
+  when `spec.podNetwork` is `Isolated`, whatever the state of the feature
+  gate, turning the empty-IP guarantee into an
   API invariant instead of a kubelet behavior. Status writes are normally
   node-owned and guarded only by RBAC and NodeRestriction; this narrow
   spec-consistency check also makes a fail-open node loud: its status
@@ -737,6 +559,78 @@ Additional validation adjustments:
   deleted and the sandbox stopped, the final status update succeeds and the
   pod is removed normally.
 
+[validation-commit]: https://github.com/kubernetes/kubernetes/commit/77704f35e8b72f7495edf137315ee6af17f7d152
+
+### Updates from clients that do not know the field
+
+A client built before the field existed sends a full update (PUT) without
+it, and its patches carry the stored value through without knowing about
+it. Without help from the API server, such a client would:
+
+- fail the immutability check when it updates anything on a Pod that sets
+  the field, for example a label;
+- silently attach an isolated workload to the pod network when it replaces
+  the workload object;
+- get a validation error about a field it does not know when it turns
+  `hostNetwork` on for a template that has the field stored.
+
+The API server adjusts the field on update, before validation, for Pods and
+for every resource that embeds a `PodTemplateSpec` (PodTemplate,
+ReplicationController, ReplicaSet, Deployment, StatefulSet, DaemonSet, Job
+and CronJob) ([initial implementation][update-commit]). The rules, for an
+object that has the field stored, are:
+
+- An update that omits the field keeps the stored value.
+- An update that turns `hostNetwork` on without changing `podNetwork` drops
+  the stored value, and the result is a valid host network template. A
+  PATCH carries the stored value through, so the API server cannot tell
+  this client apart from one that knows the field and sends the same value
+  again while it turns `hostNetwork` on. That client gets a valid host
+  network template too.
+- Every other update goes to validation unchanged. Validation rejects a
+  client that sets the field on an object that has `hostNetwork: true`,
+  that sets both in one request on an object that did not have the field,
+  or that changes the value while it turns `hostNetwork` on.
+
+Consequences for clients that know the field:
+
+- Isolation is turned off by setting `podNetwork: Default`. Omitting the
+  field keeps `Isolated`. This includes server-side apply: a manager that
+  applied `Isolated` and then applies a configuration without the field
+  still gets `Isolated`, because an omitted field on update cannot be told
+  apart from a client that never knew it.
+- Once an object stores the field, the field only becomes unset again when
+  `hostNetwork` is turned on.
+- On Pods the field is immutable, so the first rule only lets clients that
+  do not know the field send full updates of pods that set it.
+
+[update-commit]: https://github.com/kubernetes/kubernetes/commit/a11c33b1923fa89fbf941eff4a562b0762effc4b
+
+### Disabled feature gate
+
+`podNetwork` does not follow the usual rule of dropping a disabled field
+from new objects: dropping `Isolated` silently attaches a pod that asked
+for isolation to the pod network. With the `NetworkIsolatedPods` gate
+disabled on the kube-apiserver:
+
+- `Isolated` on an object that does not already set the field is rejected
+  by validation (`spec.podNetwork: Forbidden: the NetworkIsolatedPods
+  feature gate is disabled`).
+- `Default` means the same as unset. `dropDisabledFields` drops it when the
+  existing object does not already set the field, so creating a Pod or a
+  workload with `Default` succeeds and stores no field.
+- Objects that already set the field keep it on update (also when the
+  client omits it, see the previous section), stay valid, and are still
+  fully validated.
+- A workload template stored with `Isolated` keeps the value, but the pods
+  that its controller creates are new objects, and they are rejected. The
+  workload stops creating pods instead of creating pods that are attached
+  to the pod network. To move the workload back to the pod network, set
+  `podNetwork: Default` in the template: this is accepted because the object
+  already sets the field, and the pods created from it have the field
+  dropped.
+- `hostNetwork` pods and pods that do not set the field are not affected.
+
 ### CRI Integration
 
 A new typed field in `PodSandboxConfig` (`k8s.io/cri-api`) tells the runtime
@@ -747,46 +641,54 @@ get their own network namespace (`NamespaceOption.network = POD`), so it has
 no `HOST` value:
 
 ```proto
-// PodSandboxDefaultNetwork selects whether a sandbox network namespace is
-// attached to the default pod network.
+// PodNetwork selects whether a sandbox network namespace is attached to the
+// pod network.
 // See https://kep.k8s.io/6313 for more details.
-enum PodSandboxDefaultNetwork {
-    // DEFAULT_NETWORK_POD attaches the sandbox network namespace to the
-    // default pod network. The runtime performs its configured network
-    // plumbing (e.g., invokes CNI plugins on Linux). This is the default and
-    // matches historical behavior.
-    DEFAULT_NETWORK_POD = 0;
-    // DEFAULT_NETWORK_NONE creates the sandbox network namespace with only
-    // the loopback interface configured and does not attach it to the
-    // default pod network. The runtime MUST NOT perform its
-    // default-pod-network plumbing and MUST report an empty IP in
-    // PodSandboxStatus.
-    DEFAULT_NETWORK_NONE = 1;
+enum PodNetwork {
+    // POD_NETWORK_DEFAULT attaches the sandbox network namespace to the pod
+    // network. The runtime performs its configured network plumbing (e.g.,
+    // invokes CNI plugins on Linux). This is the default and matches
+    // historical behavior.
+    POD_NETWORK_DEFAULT = 0;
+    // POD_NETWORK_ISOLATED creates the sandbox network namespace with only the
+    // loopback interface configured (up) and does not attach it to the pod
+    // network:
+    // - The runtime MUST NOT perform its pod network plumbing when the
+    //   sandbox is created or torn down (e.g., MUST NOT invoke CNI ADD or
+    //   DEL on Linux).
+    // - PodSandboxStatus.network MUST NOT report any IP: the field MAY be
+    //   omitted, or set with an empty ip and no additional_ips.
+    // - The sandbox resolver configuration (/etc/resolv.conf) MUST be
+    //   generated from PodSandboxConfig.dns_config exactly as given, even
+    //   when it is empty. The runtime MUST NOT fall back to the host's
+    //   configuration.
+    // Sandboxes with this value only run on nodes whose runtime reports
+    // RuntimeFeatures.pod_network_isolated; a runtime that does not support it
+    // never receives it from a kubelet.
+    POD_NETWORK_ISOLATED = 1;
 }
 
 message PodSandboxConfig {
     // ... existing fields ...
 
-    // default_network selects whether the sandbox network namespace is
-    // attached to the default pod network. It only applies when
-    // NamespaceOption.network is POD; for NODE (host network) sandboxes
-    // there is no sandbox network namespace and runtimes MUST ignore this
-    // field. Kubelets that predate the field leave it unset
-    // (DEFAULT_NETWORK_POD).
-    // Feature gate: PodDefaultNetwork
+    // pod_network selects whether the sandbox network namespace is attached
+    // to the pod network. It only applies when NamespaceOption.network is
+    // POD; for NODE (host network) sandboxes there is no sandbox network
+    // namespace and runtimes MUST ignore this field. Kubelets that predate
+    // the field leave it unset (POD_NETWORK_DEFAULT).
+    // Feature gate: NetworkIsolatedPods
     // See https://kep.k8s.io/6313 for more details.
-    PodSandboxDefaultNetwork default_network = 10;
+    PodNetwork pod_network = 10;
 }
 ```
 
 Proto3 cannot distinguish an unset enum from its zero value, so
-`DEFAULT_NETWORK_POD = 0` is what an older kubelet sends for every sandbox,
-including host-network ones; this is why the field is scoped to sandboxes
-with their own network namespace instead of mirroring the three Pod API
-values. The values carry the `DEFAULT_NETWORK_` prefix because proto enum
-values share the package scope and `POD` is already a `NamespaceMode` value
-in `runtime.v1` (existing enums use the same convention: `PROPAGATION_*`,
-`SANDBOX_*`, `CONTAINER_*`).
+`POD_NETWORK_DEFAULT = 0` is what an older kubelet sends for every sandbox,
+including host-network ones; this is why the field only applies to
+sandboxes with their own network namespace. The values carry the
+`POD_NETWORK_` prefix because proto enum values share the package scope
+(existing enums use the same convention: `PROPAGATION_*`, `SANDBOX_*`,
+`CONTAINER_*`).
 
 Capability discovery, so the kubelet can fail closed:
 
@@ -794,77 +696,89 @@ Capability discovery, so the kubelet can fail closed:
 message RuntimeFeatures {
     // ... existing fields ...
 
-    // default_network_none is set to true if the runtime supports creating
-    // sandboxes with PodSandboxDefaultNetwork DEFAULT_NETWORK_NONE.
-    bool default_network_none = 4;
+    // pod_network_isolated is set to true if the runtime supports creating
+    // sandboxes with PodNetwork POD_NETWORK_ISOLATED for every
+    // runtime handler it serves. The capability is runtime-wide because the
+    // default pod network plumbing it skips is done by the runtime, not by
+    // the handler.
+    // See https://kep.k8s.io/6313 for more details.
+    bool pod_network_isolated = 6;
 }
 ```
 
-Runtime obligations for `DEFAULT_NETWORK_NONE` sandboxes:
+Runtime obligations for `POD_NETWORK_ISOLATED` sandboxes:
 
 - create the netns according to `NamespaceOption` as usual;
 - bring up `lo` (`127.0.0.1/8`, `::1/128`), the equivalent of
   `ip link set lo up`;
-- no default-pod-network plumbing on setup or teardown;
-- report no IPs in `PodSandboxStatus.network`.
+- no pod network plumbing on setup or teardown (no CNI `ADD` or `DEL` on
+  Linux);
+- report no IPs in `PodSandboxStatus.network`: omit the field, or set it
+  with an empty `ip` and no `additional_ips`.
 
-A reference containerd implementation exists ([aojea/containerd `cniless`
-branch]). Upstream containerd and CRI-O implementations are a beta graduation
-requirement.
+The kubelet only sends `POD_NETWORK_ISOLATED` to a runtime that reports
+`pod_network_isolated`.
+
+No released container runtime reports the capability yet. The
+[aojea/containerd `cniless` branch] is the reference implementation of the
+original POC and predates the `pod_network` field; it must be updated to
+the merged CRI API. Upstream
+containerd and CRI-O implementations are a beta graduation requirement.
 
 [aojea/containerd `cniless` branch]: https://github.com/aojea/containerd/tree/cniless
 
 ### Kubelet Behavior
 
 - Admission is fail-closed, through [Node Declared Features (KEP-5328)].
-  The kubelet registers a `PodDefaultNetworkNone` declared feature whose
-  `Discover` returns true only when the `PodDefaultNetwork` gate is enabled
-  and the runtime reports `default_network_none` in `RuntimeFeatures`, and
-  whose `InferForScheduling` returns true for pods with `defaultNetwork:
-  None`. This is the same shape as the existing
+  The kubelet registers a `NetworkIsolatedPods` declared feature. Its
+  `Requirements` are the `NetworkIsolatedPods` feature gate and the
+  `pod_network_isolated` runtime capability, its `Discover` returns true
+  only when the gate is enabled and the runtime reports the capability in
+  `RuntimeFeatures`, and its `InferForScheduling` returns true for pods with
+  `podNetwork: Isolated`. This is the same shape as the existing
   `UserNamespacesHostNetworkSupport` feature, which is gated on the
   `user_namespaces_host_network` runtime capability. The framework's
   existing kubelet admit handler rejects a pod that requires a feature the
   node does not declare with reason `PodFeatureUnsupported` (recorded as the
   pod's `status.reason`, a warning event and
   `kubelet_admission_rejections_total{reason="PodFeatureUnsupported"}`), so
-  a `defaultNetwork: None` pod is rejected when the gate is off or the
+  a `podNetwork: Isolated` pod is rejected when the gate is off or the
   runtime lacks the capability, with no kubelet code beyond the feature
   registration. Attaching an intentionally isolated pod to the default pod
   network is worse than not running it.
-- `generatePodSandboxConfig` sets `default_network: DEFAULT_NETWORK_NONE`.
-  `determinePodSandboxIPs` returns no IPs, and `PodSandboxChanged` must not
-  recreate the sandbox because the IP is missing.
+- `generatePodSandboxConfig` sets `pod_network: POD_NETWORK_ISOLATED`, and
+  `PodSandboxChanged` does not recreate the sandbox because the IP is
+  missing.
+- If the runtime reports IPs for the sandbox of an isolated pod, the kubelet
+  stops the sandbox and fails the pod sync before it starts any container:
+  the pod asked for isolation. The failure is reported with a
+  `FailedCreatePodSandBox` warning event and counted in
+  `kubelet_started_pods_errors_total`. This covers a runtime that reports
+  the capability and attaches the sandbox anyway.
+- The kubelet does not wait for the pod network to start an isolated pod.
+  When the runtime reports that the network is not ready
+  (`NetworkNotReady`), the kubelet still starts `hostNetwork` pods and
+  isolated pods.
 - `status.podIP`/`status.podIPs` stay empty. Readiness is computed from
   container state only. `status.hostIP` is reported as usual.
 - The managed `/etc/hosts` is still mounted, with the pod hostname (and
   `hostname.subdomain` if set) mapped to `127.0.0.1` and `::1` to avoid
   breaking applications that depend on that.
-- Service environment variables for isolated pods are governed entirely by
-  `enableServiceLinks`, including the `KUBERNETES_*` master-service
-  variables that are injected unconditionally for other pods. With the
-  defaulted `false` no service environment variables are injected and the
-  kubelet skips the wait for the service informer to sync
-  (`serviceHasSynced`) for these pods: one less control-plane dependency in
-  the startup path. An explicit `enableServiceLinks: true` restores the
-  standard behavior, including the sync wait, for pods that obtain
-  connectivity by other means.
-- `dnsPolicy: None` with no `dnsConfig` produces an empty `resolv.conf`. A
-  user-supplied `dnsConfig` is honored: a resolver on loopback inside the
-  pod, or nameservers reachable over driver-injected interfaces. An
-  overridden `dnsPolicy` (for example `ClusterFirst`) is honored exactly as
-  for any other pod.
+- The `kubelet_first_network_pod_start_sli_duration_seconds` metric ignores
+  isolated pods, as it ignores `hostNetwork` pods: it measures the first pod
+  that needs the pod network.
 
 ### Control Plane Behavior
 
+- The kube-apiserver changes are the validation, the update handling and
+  the disabled-gate handling described in the previous sections.
 - No kube-controller-manager change is needed. `ShouldPodBeInEndpoints`
   (in `k8s.io/endpointslice/util`, shared by the Endpoints and EndpointSlice
   controllers) already returns `false` for pods without `status.podIPs`, and
   isolated pods never have them (an API invariant, see
   [Validation](#validation)), so they are never published even if a Service
-  selector matches. A unit test makes this explicit for `defaultNetwork:
-  None` pods.
-- The `PodDefaultNetworkNone` declared feature (see
+  selector matches. The e2e tests check this for both controllers.
+- The `NetworkIsolatedPods` declared feature (see
   [Kubelet Behavior](#kubelet-behavior)) is published in
   `node.status.declaredFeatures`, so the scheduler keeps isolated pods away
   from nodes without a supporting kubelet and runtime. This KEP only
@@ -873,11 +787,22 @@ requirement.
   gate (GA and locked on since v1.37) is what enables the scheduler plugin
   that matches pod requirements against `node.status.declaredFeatures` and
   the kubelet admit handler. The kubelet admission remains the final
-  guarantee for pods that bypass the scheduler.
+  guarantee for pods that bypass the scheduler, on kubelets that know the
+  field.
+- Missing from the alpha implementation, required for beta: the
+  kube-apiserver rejects placing a `podNetwork: Isolated` pod on a node that
+  does not declare `NetworkIsolatedPods`, when the pod is created with
+  `spec.nodeName` set or is bound through the `pods/binding` subresource.
+  This covers the pods that bypass the scheduler on kubelets that predate
+  the field (see [Version Skew Strategy](#version-skew-strategy)). The need
+  for this check was identified after the alpha implementation merged. The
+  `NodeDeclaredFeatureValidator` admission plugin of KEP-5328 is the place
+  for it; today it only validates pod updates, so extending it
+  needs the agreement of SIG Node.
 
 ### Interaction with Core Networking APIs
 
-With `defaultNetwork: None`, "not connected to the default pod network"
+With `podNetwork: Isolated`, "not connected to the default pod network"
 becomes a supported state, so this section spells out how the core
 networking APIs behave for those pods. All the core networking APIs work
 only with the host network and the default pod network. The rules below
@@ -885,8 +810,8 @@ describe the current behavior; this KEP does not change any of them for
 existing pods:
 
 - **`status.podIPs`** only ever contains the pod's IPs on the pod's default
-  network (pod-network IPs for `defaultNetwork: Pod`, node IPs for
-  `defaultNetwork: Host`). Interfaces attached to isolated pods by
+  network (pod-network IPs for pods attached to the pod network, node IPs
+  for `hostNetwork` pods). Interfaces attached to isolated pods by
   delegated mechanisms are never reported there: publishing those addresses
   is the responsibility of the integration that attaches them (for example
   through the standardized DRA network device data of [KEP-4817]). Isolated
@@ -901,9 +826,11 @@ existing pods:
   reachability by other means (a connect-time eBPF proxier, a
   driver-injected interface with the appropriate routes).
 - **Cluster DNS** follows the same pattern for *access*: not required,
-  allowed. The `dnsPolicy: None` default expresses "not required"; an
-  explicit user override opting into cluster DNS is honored and works
-  wherever the operator provides a path to the resolvers. The *contents* of
+  allowed. With the default `dnsPolicy` (`ClusterFirst`), the resolver
+  configuration of an isolated pod points to the cluster DNS Service. It works
+  wherever something provides a path to the resolvers, and lookups fail
+  otherwise; a pod that does not want that sets `dnsPolicy: None` with its
+  own `dnsConfig`. The *contents* of
   cluster DNS are derived from `status.podIPs` (through Endpoints and
   EndpointSlices), so isolated pods have no DNS records.
 - **Service selection.** Services select backends through `status.podIPs`:
@@ -921,7 +848,7 @@ existing pods:
   is existing behavior and unchanged by this KEP.
 
 Changing any of these APIs to work with other networks, or adding
-`defaultNetwork` values for other networks, is out of scope. It needs its
+`podNetwork` values for other networks, is out of scope. It needs its
 own KEP.
 
 ### Test Plan
@@ -936,26 +863,27 @@ None identified.
 
 ##### Unit tests
 
-Planned coverage:
+Coverage added with the alpha implementation:
 
-- `pkg/apis/core/validation`: `defaultNetwork` cross-field validation (all
-  enum values × `hostNetwork` × probes × lifecycle handlers × `hostPort`),
-  the probe/handler completeness test, feature gate on/off, update
-  immutability.
-- `pkg/apis/core/v1`: defaulting of `defaultNetwork`, `hostNetwork` mirroring in
-  both directions, `dnsPolicy`/`enableServiceLinks` defaulting for `None`,
-  across Pod and all workload template kinds.
-- `pkg/api/pod`: `dropDisabledFields` behavior with the gate disabled.
-- `pkg/kubelet/kuberuntime`: sandbox config generation, IP determination and
-  `PodSandboxChanged` for `DEFAULT_NETWORK_NONE` sandboxes.
-- `staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features`:
-  `Discover` and `InferForScheduling` of the `PodDefaultNetworkNone`
-  declared feature (gate on/off, runtime capability on/off).
-- `pkg/kubelet`: managed hosts file content and environment variable
-  construction for isolated pods.
+- `pkg/apis/core/validation`: `TestValidatePodNetwork` (both values ×
+  `hostNetwork` × probes × lifecycle handlers × `hostPort` × `dnsPolicy`,
+  feature gate on and off), `TestIsolatedPodHandlerCoverage` (the
+  probe/handler completeness test) and `TestAllowPodNetwork`.
+- `pkg/api/pod`: `TestDropPodNetworkDefault` (`dropDisabledFields` with the
+  gate disabled) and `TestSyncPodNetworkOnUpdate` (updates from clients that
+  do not know the field, for Pods and templates).
+- `test/declarative_validation/core/pod`: unsupported enum values.
+- `pkg/kubelet/kuberuntime`: sandbox config generation
+  (`TestGeneratePodSandboxConfigPodNetwork`), `PodSandboxChanged` for a
+  sandbox without an IP, and `TestSyncPodNetworkIsolated` with a runtime
+  that honors `pod_network` and with one that ignores it.
+- `staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features/networkisolatedpods`:
+  `Requirements`, `Discover`, `InferForScheduling` and `InferForUpdate` of
+  the `NetworkIsolatedPods` declared feature (gate on/off, runtime
+  capability on/off).
+- `pkg/kubelet`: managed hosts file content for isolated pods, and pod sync
+  while the pod network is not ready.
 - `pkg/kubelet/status`: readiness generation without pod IPs.
-- `staging/src/k8s.io/endpointslice/util`: `ShouldPodBeInEndpoints`
-  regression test with a `defaultNetwork: None` pod.
 
 - `pkg/apis/core/validation`: `2026-09-02` - `84.9%`
 - `pkg/apis/core/v1`: `2026-09-02` - `81.2%`
@@ -963,70 +891,91 @@ Planned coverage:
 
 ##### Integration tests
 
-- `test/integration/pods` (`TestPodDefaultNetwork*`): create/update of Pods and of Deployment,
-  StatefulSet, DaemonSet, Job and CronJob templates using every enum value;
-  verification of defaulting and mirroring (including an old-client style
-  PATCH of `hostNetwork: true` into a template stored with `defaultNetwork:
-  Pod`, which must succeed and yield `Host`), validation rejections
-  (including the explicit `defaultNetwork: None` + `hostNetwork: true`
-  conflict and the status update with a pod IP) and behavior with the
-  feature gate disabled.
+`test/integration/pods/pod_network_test.go`:
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/master/test/integration/pods/pods_test.go): links to [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=PodDefaultNetwork) and [triage](https://storage.googleapis.com/k8s-triage/index.html?test=PodDefaultNetwork) to be added once merged.
+- `TestPodNetworkCreate`: the field is not defaulted (unset stays unset,
+  with and without `hostNetwork`); `Isolated` keeps the standard
+  `dnsPolicy` and `enableServiceLinks` defaults and explicit values;
+  `hostNetwork` with either value, network probes, `hostPort` and
+  unsupported values are rejected.
+- `TestPodNetworkUpdate`: immutability on Pods; a full update from a client
+  that does not know the field keeps the stored value; a status update with
+  a pod IP is rejected and one with only host IPs is accepted.
+- `TestPodNetworkWorkloadTemplates`: Deployment, ReplicaSet, StatefulSet,
+  DaemonSet, ReplicationController, PodTemplate, Job and CronJob templates;
+  the rules of
+  [Updates from clients that do not know the field](#updates-from-clients-that-do-not-know-the-field),
+  including `hostNetwork` turned on for an `Isolated` template by PATCH and
+  by full update; server-side apply.
+- `TestPodNetworkGateDisabled`: `Isolated` is rejected and `Default` is
+  dropped on create; stored objects keep the field and are still validated;
+  a stored `Isolated` template is moved back to the pod network with
+  `Default`.
+
+- [TestPodNetwork*](https://github.com/kubernetes/kubernetes/blob/master/test/integration/pods/pod_network_test.go): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=TestPodNetwork), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestPodNetwork)
 
 ##### e2e tests
 
-- `test/e2e/network/network_isolated.go` (cluster e2e, `Feature:PodDefaultNetwork`,
-  requires a runtime with support): pod runs and becomes `Ready` with empty
-  `status.podIP`; only `lo` exists in the sandbox; hostname resolves to
-  loopback via `/etc/hosts`; no service environment variables (including
-  `KUBERNETES_SERVICE_HOST`) with the defaulted `enableServiceLinks: false`,
-  injected when overridden to `true`; downward API
-  `status.podIP` is empty; pod is excluded from EndpointSlices of a matching
-  Service.
-- `test/e2e_node/network_isolated_test.go` (node e2e): sandbox creation without
-  network plumbing, fail-closed admission (`PodFeatureUnsupported`) against
-  a runtime without support and with the kubelet gate disabled,
-  kubelet restart idempotency (no sandbox recreation due to missing IP).
-- Until upstream runtime releases exist, CI runs against kind with the
-  patched containerd reference implementation; a periodic job will be added
-  under sig-network.
+- `test/e2e/network/isolated.go` (cluster e2e, `Network Isolated Pods`,
+  labels `Feature:NetworkIsolatedPodsSupport` and
+  `FeatureGate:NetworkIsolatedPods`, requires a runtime with support): the
+  pod runs and becomes `Ready` with empty `status.podIP` and a reported
+  `status.hostIP`; only `lo` exists in the sandbox; the pod accepts
+  connections on loopback; port forwarding works; the hostname and
+  `hostAliases` resolve via `/etc/hosts`; the downward API `status.podIP` is
+  empty; exec probes work; the pod is not selected into the EndpointSlices
+  or the Endpoints of a matching Service, while a regular pod with the same
+  labels is; isolated pods run in Deployments, StatefulSets and Jobs.
+- `test/e2e_node/network_isolated_test.go` (node e2e): with a runtime with
+  support, sandbox creation without a pod IP and with only loopback,
+  `/etc/resolv.conf` generated exactly from `dnsConfig` with
+  `dnsPolicy: None`, exec probes, and kubelet restart idempotency (no
+  sandbox recreation due to the missing IP). With any runtime, fail-closed
+  admission (`PodFeatureUnsupported`) against a runtime without support and
+  with the kubelet gate disabled.
+- No CI job selects `Feature:NetworkIsolatedPodsSupport` yet: the tests that
+  need runtime support do not run until a job uses a container runtime that
+  reports `pod_network_isolated`. A periodic job will be added under
+  sig-network.
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/network/network_isolated.go): links to [SIG Network testgrid](https://testgrid.k8s.io/sig-network-misc?include-filter-by-regex=PodDefaultNetwork) and [triage](https://storage.googleapis.com/k8s-triage/index.html?test=PodDefaultNetwork) to be added once the job exists.
+- [Network Isolated Pods](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/network/isolated.go) and [node e2e](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/network_isolated_test.go): links to [SIG Network testgrid](https://testgrid.k8s.io/sig-network-misc?include-filter-by-regex=Network.Isolated.Pods) and [triage](https://storage.googleapis.com/k8s-triage/index.html?test=Network%20Isolated%20Pods) to be added once the job exists.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind the `PodDefaultNetwork` feature gate (default off)
+- Feature implemented behind the `NetworkIsolatedPods` feature gate (default off)
   in kube-apiserver and kubelet.
-- new Pod field `defaultNetwork` enum, defaulting/mirroring and validation complete.
-- CRI `PodSandboxConfig.default_network` and `RuntimeFeatures.default_network_none`
+- new Pod field `podNetwork` enum, validation and update handling complete.
+- CRI `PodSandboxConfig.pod_network` and `RuntimeFeatures.pod_network_isolated`
   merged in `cri-api`.
-- `PodDefaultNetworkNone` registered in [Node Declared Features (KEP-5328)],
+- `NetworkIsolatedPods` registered in [Node Declared Features (KEP-5328)],
   which gives both the scheduler filter and the kubelet fail-closed
   admission.
-- Unit and integration tests listed above; initial e2e tests running against
-  a reference runtime implementation.
+- Unit and integration tests listed above; e2e tests merged, to run in CI
+  when a runtime implementation is available.
 
 #### Beta
 
-- Promotion no earlier than three releases after the field is introduced, so
-  that every kubelet version within the supported skew window (n-3)
-  recognizes the field and fails closed, as required by the version skew
-  policy.
+- The kube-apiserver rejects placing a `podNetwork: Isolated` pod on a node
+  that does not declare `NetworkIsolatedPods` (pod creation with
+  `spec.nodeName` set, and `pods/binding`), with integration tests. See
+  [Control Plane Behavior](#control-plane-behavior).
 - At least one released upstream runtime (containerd and/or CRI-O) supports
-  `PodSandboxDefaultNetwork DEFAULT_NETWORK_NONE` and reports the capability.
+  `PodNetwork POD_NETWORK_ISOLATED` and reports the capability.
 - The e2e tests pass on clusters with the 4 most common pod network
   implementations: Calico, OVN-Kubernetes, Kindnet and Cilium.
-  `defaultNetwork: None` pods work as described here and other pods are not
+  `podNetwork: Isolated` pods work as described here and other pods are not
   affected: no crashes, no error log spam, NetworkPolicy keeps working.
 - Downstream consumers that attach secondary networks through CNI
   delegation (Multus, and KubeVirt through it) are not broken: pods that do
-  not set `defaultNetwork: None` keep working unchanged with those projects
+  not set `podNetwork: Isolated` keep working unchanged with those projects
   installed, verified by e2e, and there is a documented and tested
   compatibility path (NRI or CDI hooks, or DRA) for them to attach
-  interfaces to `defaultNetwork: None` pods.
+  interfaces to `podNetwork: Isolated` pods.
+- Upgrade, downgrade and feature gate disablement tested, including what
+  happens to running isolated pods when the gate is disabled on the
+  kubelet.
 - Scheduling based on node declared features validated in heterogeneous
   clusters (mixed node versions and runtimes).
 - Feedback gathered from DRA driver authors and early adopters.
@@ -1038,13 +987,13 @@ Planned coverage:
 #### GA
 
 - Container runtime support on containerd and CRI-O.
-- Real-world usage of `defaultNetwork: None` by at least two distinct classes of
+- Real-world usage of `podNetwork: Isolated` by at least two distinct classes of
   adopters (e.g., a DRA networking driver and a batch/security platform).
 - At least two releases after beta to allow user feedback and bug reports.
 - Tests are promoted to conformance, so we guarantee that the default pod
-  network behavior does not change for `defaultNetwork: Pod/Host` pods, and
-  the new `defaultNetwork: None` guarantees the new behavior is implemented
-  across all clusters.
+  network behavior does not change for pods attached to the pod network and
+  for `hostNetwork` pods, and that the new `podNetwork: Isolated` behavior
+  is implemented across all clusters.
 - All issues and gaps identified during beta resolved.
 
 #### Deprecation
@@ -1053,19 +1002,27 @@ Not applicable
 
 ### Upgrade / Downgrade Strategy
 
-- **Upgrade.** Enabling the feature requires enabling the `PodDefaultNetwork`
+- **Upgrade.** Enabling the feature requires enabling the `NetworkIsolatedPods`
   gate on kube-apiserver and kubelets, plus a
   runtime version that reports the capability. Existing workloads require no
-  changes: `defaultNetwork` defaults to values consistent with their current
-  `hostNetwork` setting and behavior is identical.
-- **Downgrade / gate disablement.** New writes drop the field
-  (`dropDisabledFields`); stored objects keep it, per the standard API
-  compatibility rules. Kubelets with the gate disabled (including older
-  kubelets that already know the field) refuse to admit `defaultNetwork: None`
-  pods instead of running them attached to the network. Isolated pods that
-  are already running keep their sandboxes until they are deleted.
-- The mirroring rules guarantee that `hostNetwork` remains a correct source
-  of truth for any component that has not been upgraded.
+  changes: the field is not defaulted, so objects that do not set it are not
+  modified and behavior is identical.
+- **Downgrade / gate disablement on the kube-apiserver.** New uses of
+  `Isolated` are rejected instead of dropped, stored objects keep the field,
+  and workloads with an `Isolated` template stop creating pods until the
+  gate is enabled again or the template is set to `Default` (see
+  [Disabled feature gate](#disabled-feature-gate)).
+- **Downgrade / gate disablement on a kubelet.** A kubelet with the gate
+  disabled (including older kubelets that already know the field) does not
+  declare the node feature and refuses to admit `podNetwork: Isolated` pods
+  instead of running them attached to the network. Disabling the gate needs
+  a kubelet restart, and the kubelet runs admission again for the pods it
+  already has (see [Node Declared Features (KEP-5328)]). Isolated pods that
+  were running on the node are therefore rejected too and transition to
+  `Failed` (`PodFeatureUnsupported`); they are not left running. This KEP
+  has no test for this path yet; adding one is a [Beta](#beta) requirement.
+  Drain isolated pods from a node before the gate is disabled on its
+  kubelet.
 
 ### Version Skew Strategy
 
@@ -1074,37 +1031,60 @@ Not applicable
   or rejects the request when the client asks for strict field validation
   (the `kubectl` default). This is the standard skew behavior for a new
   field; users should not rely on the field until all apiservers are
-  upgraded and the gate is enabled everywhere.
+  upgraded and the gate is enabled everywhere. A v1.38 apiserver knows the
+  field but does not have the check for pods that bypass the scheduler
+  (see the old kubelet case below); with its default configuration (gate
+  off) it rejects new `Isolated` pods.
 - **Old clients.** A client built before the field exists drops it on a full
-  update (PUT), so replacing a `defaultNetwork: None` object with such a
-  client turns it back into `defaultNetwork: Pod`; the pod then runs on the
-  default pod network with the `dnsPolicy: None`/`enableServiceLinks: false`
-  values it kept, which is visible. This is the general behavior of unknown
-  fields with old clients; PATCH and server-side apply preserve the field.
-  Old clients that only touch `hostNetwork` keep working as described in
-  [Defaulting and `hostNetwork` mirroring](#defaulting-and-hostnetwork-mirroring).
+  update (PUT). The API server keeps the stored value, so the update does
+  not fail the immutability check on Pods and does not attach an isolated
+  workload to the pod network. An old client that turns `hostNetwork` on
+  for a template that has the field stored gets a host network template
+  (see
+  [Updates from clients that do not know the field](#updates-from-clients-that-do-not-know-the-field)).
+  A client that deletes an object and creates it again loses the field, as
+  with any field it does not know.
 - **kube-controller-manager (any version).** The controller manager has no
   code for this feature. Isolated pods never have IPs, and pods without IPs
   are already excluded from Endpoints and EndpointSlices by existing
   controller logic.
-- **Old kubelet (n-1..n-3, field unknown).** The most important skew: an old
-  kubelet drops the unknown field and would run the pod attached to the
-  default pod network (fail-open). All the mitigations work from alpha:
-  1. old kubelets do not declare the node feature, so the scheduler never
-     places `defaultNetwork: None` pods on them;
-  2. on upgraded nodes, the kubelet fail-closed admission covers the pods
-     that bypass the scheduler (`spec.nodeName`, DaemonSets, static pods);
-  3. the gate is off by default, and beta promotion (default on) waits
-     until all kubelet versions in the supported skew window know the field
-     (see [Graduation Criteria](#graduation-criteria)). The residual risk is
-     a pod that both bypasses the scheduler and targets a non-upgraded node
-     while the cluster operator enabled the alpha gate; this is documented,
-     and operators can cordon or upgrade those nodes.
+- **kube-scheduler (n-1).** The scheduler infers the requirement from the
+  pod spec with the `NetworkIsolatedPods` feature registered in v1.38, so a
+  v1.38 scheduler already filters nodes for isolated pods.
+- **Old kubelet (field unknown).** The most important skew: a kubelet that
+  predates the field (v1.37 and older) ignores it and would run the pod
+  attached to the default pod network (fail-open). With a v1.39 control
+  plane these are the v1.36 and v1.37 kubelets; a v1.38 kubelet knows the
+  field and fails closed. [Node Declared Features (KEP-5328)], GA
+  since v1.37, exists for this case: a feature that a node does not declare
+  is a feature that the node does not have.
+  1. Old kubelets never declare `NetworkIsolatedPods`, so the scheduler
+     never places `podNetwork: Isolated` pods on them. This includes
+     DaemonSet pods, which the scheduler binds.
+  2. Kubelets that know the field fail closed for the pods that reach them
+     without the scheduler (`spec.nodeName`, static pods).
+  3. The kube-apiserver rejects placing an isolated pod on a
+     node that does not declare the feature, when the pod is created with
+     `spec.nodeName` set or is bound through `pods/binding` (see
+     [Control Plane Behavior](#control-plane-behavior)). This closes the
+     path that reaches an old kubelet without the scheduler. The alpha
+     implementation (v1.38) does not have this check; adding it is a beta
+     requirement. Until then, do not set `spec.nodeName` on isolated pods
+     for nodes that do not declare the feature.
+  4. If an old kubelet runs an isolated pod anyway, the API server rejects
+     its status updates because they carry a pod IP (see
+     [Validation](#validation)), so the problem is visible.
+
+  The residual risk is a static pod that sets `podNetwork: Isolated` in the
+  manifests of a kubelet that predates the field. It never goes through the
+  kube-apiserver, and it needs write access to the node's file system. This
+  is documented.
 - **New kubelet + old runtime.** The runtime does not report
-  `default_network_none`, the node does not declare the feature, and the
+  `pod_network_isolated`, the node does not declare the feature, and the
   kubelet rejects the pod at admission (fail-closed, `PodFeatureUnsupported`).
-- **hostNetwork consumers.** Any component of any version reading
-  `spec.hostNetwork` observes correct values thanks to mirroring.
+- **New kubelet + runtime that reports the capability but ignores the
+  field.** The kubelet finds IPs on the sandbox, stops it and starts no
+  container; the API server also rejects a status with pod IPs.
 
 ## Production Readiness Review Questionnaire
 
@@ -1113,61 +1093,80 @@ Not applicable
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `PodDefaultNetwork`
+  - Feature gate name: `NetworkIsolatedPods`
   - Components depending on the feature gate: kube-apiserver, kubelet
 
 ###### Does enabling the feature change any default behavior?
 
-No. With the gate enabled, pods that do not set `defaultNetwork` receive a
-defaulted value (`Pod`, or `Host` when `hostNetwork: true`) that exactly
-describes their existing behavior. Only pods that explicitly set
-`defaultNetwork: None` behave differently, and that value cannot be set today.
+No. The field is optional and never defaulted, so pods and workloads that do
+not set it are not modified. Only pods that explicitly set
+`podNetwork: Isolated` behave differently, and that value cannot be set
+without the gate.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling the gate on the apiserver causes the field to be dropped from
-new objects; stored objects keep the field and remain valid. Kubelets with
-the gate disabled refuse to admit `defaultNetwork: None` pods (fail closed);
-running isolated pods keep their sandboxes until deleted. No
+Yes, and it fails closed. Disabling the gate on the apiserver rejects new
+uses of `podNetwork: Isolated`; the value is not dropped, because that would
+attach the pod to the pod network. `Default` is dropped from new objects.
+Stored objects keep the field and remain valid. Workloads whose template is
+stored with `Isolated` cannot create new pods while the gate is disabled;
+they are moved back to the pod network by setting `podNetwork: Default` in
+the template. Kubelets with the gate disabled refuse to admit
+`podNetwork: Isolated` pods; this includes isolated pods that were running
+when the kubelet restarted with the gate disabled, which transition to
+`Failed` (see
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)). No
 existing (non-isolated) workload is affected in any way by enabling or
 disabling the gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The field becomes writable and enforceable again. Stored objects that
-retained `defaultNetwork` values resume full semantics. There is no state to
-reconcile beyond the field itself.
+`Isolated` can be set on new objects again. Stored objects that retained
+`podNetwork` values resume full semantics: workloads with an `Isolated`
+template create pods again. There is no state to reconcile beyond the field
+itself.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. Unit tests cover `dropDisabledFields` and defaulting with the gate on
-and off, including objects created with the field and then updated with the
-gate disabled (field retention), and kubelet admission behavior for a
-`defaultNetwork: None` pod with the gate disabled. Integration tests in
-`test/integration/pods` exercise the same transitions against a real
-apiserver.
+Yes. Unit tests cover `dropDisabledFields` and validation with the gate on
+and off, including objects that already set the field. The integration test
+`TestPodNetworkGateDisabled` creates a Pod and a Deployment with the gate
+enabled, disables it, and checks creates, updates and status updates against
+a real apiserver. A node e2e test checks that a kubelet with the gate
+disabled rejects a `podNetwork: Isolated` pod. Running isolated pods on a
+kubelet that restarts with the gate disabled are not tested yet.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 Running workloads are not touched: the feature only affects pods explicitly
-setting `defaultNetwork: None`, and sandboxes are never reconfigured in place.
+setting `podNetwork: Isolated`, and sandboxes are never reconfigured in place.
 Failure modes during rollout are limited to isolated pods themselves:
-scheduling onto a node whose kubelet or runtime lacks support results in a
+an isolated pod that reaches a node whose kubelet or runtime lacks support
+gets a
 `PodFeatureUnsupported` admission rejection (visible, fail-closed) on
-upgraded kubelets, or — on non-upgraded kubelets that drop the field — a pod
-wired to the default pod network (see Version Skew). Mixed-version HA
+kubelets that know the field. A kubelet that predates the field runs the pod
+wired to the default pod network, but only a pod that bypasses the scheduler
+can reach it (see [Version Skew Strategy](#version-skew-strategy)). Mixed-version HA
 control planes may intermittently drop the field on write until all
 apiservers are upgraded.
+
+A rollback (gate disabled) impacts isolated workloads only, and it fails
+closed: their controllers cannot create new pods, and isolated pods on a
+kubelet that restarts with the gate disabled are rejected
+(see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)).
 
 ###### What specific metrics should inform a rollback?
 
 - `kubelet_admission_rejections_total{reason="PodFeatureUnsupported"}`
   (unschedulable/failing isolated pods).
 - apiserver validation rejections of status updates that attempt to set
-  `status.podIP` on `defaultNetwork: None` pods (indicates a fail-open node
+  `status.podIP` on `podNetwork: Isolated` pods (indicates a fail-open node
   that must be upgraded or cordoned).
+- `kubelet_started_pods_errors_total` together with `FailedCreatePodSandBox`
+  events for isolated pods (a runtime that reports the capability and
+  attaches the sandbox anyway).
 - Standard rollout signals: `kubelet_pod_start_duration_seconds`,
   apiserver validation error rates on pod writes.
 
@@ -1183,7 +1182,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Query pods with `spec.defaultNetwork=None` (e.g., via kube-state-metrics or a
+Query pods with `spec.podNetwork=Isolated` (e.g., via kube-state-metrics or a
 field query). On nodes, `PodFeatureUnsupported` admission rejections (events
 and `kubelet_admission_rejections_total`) indicate attempted use on
 unsupported nodes.
@@ -1198,7 +1197,7 @@ unsupported nodes.
 - [x] Events
   - Event Reason: `PodFeatureUnsupported` when the node cannot honor the
     isolation request (fail closed); the message names the missing
-    `PodDefaultNetworkNone` feature.
+    `NetworkIsolatedPods` feature.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1224,7 +1223,7 @@ label and `PodFeatureUnsupported` is already in its allowlist.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-- Container runtime with CRI `PodSandboxDefaultNetwork DEFAULT_NETWORK_NONE`
+- Container runtime with CRI `PodNetwork POD_NETWORK_ISOLATED`
   support (containerd/CRI-O version supporting this KEP).
 
 ### Scalability
@@ -1244,10 +1243,9 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Yes, marginally. `PodSpec`, and every `PodTemplateSpec` embedded in workload
-objects, gains one optional enum field. With the gate enabled the field is
-always populated by defaulting, so every Pod and template grows by a few
-bytes (the field name and a short string value). No new objects are
-created.
+objects, gains one optional enum field. The field is not defaulted, so only
+the objects that set it grow, by a few bytes (the field name and a short
+string value). No new objects are created.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1256,8 +1254,7 @@ No. Isolated pod startup removes the network plumbing step entirely so it will i
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No. Resource usage decreases using isolated pods (no CNI execution,
-no IPAM, no endpoints processing, no service environment variable
-construction by default).
+no IPAM, no endpoints processing).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -1268,10 +1265,8 @@ cluster-networked pods (no veth pairs, no IPs, ...).
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-By default, isolated pods do not depend on the service informer or cluster
-DNS at startup: with `enableServiceLinks: false` no service environment
-variables are constructed, so the kubelet can start them before services
-have been listed. Otherwise standard kubelet behavior applies.
+No change: isolated pods behave like any other pod. They do not need the
+pod network to be ready on the node to start.
 
 ###### What are other known failure modes?
 
@@ -1282,22 +1277,49 @@ have been listed. Otherwise standard kubelet behavior applies.
   - Mitigations: upgrade the node's runtime/kubelet or reschedule the pod to
     a supporting node; this is the intended fail-closed behavior.
   - Diagnostics: the event message lists the unsatisfied feature
-    (`PodDefaultNetworkNone`); `node.status.declaredFeatures` shows what the
+    (`NetworkIsolatedPods`); `node.status.declaredFeatures` shows what the
     node supports; the kubelet log names the runtime and the missing
-    `RuntimeFeatures.default_network_none` capability.
+    `RuntimeFeatures.pod_network_isolated` capability.
   - Testing: covered by node e2e against a runtime without support.
+- Isolated pod not started because the runtime attached its sandbox to the
+  pod network.
+  - Detection: `FailedCreatePodSandBox` warning events with the message
+    `runtime attached the sandbox of a pod with podNetwork "Isolated" to the
+    pod network`; `kubelet_started_pods_errors_total` increases; the pod
+    stays `Pending`.
+  - Mitigations: fix or upgrade the container runtime: it reports
+    `pod_network_isolated` and does not honor `pod_network`.
+  - Diagnostics: the event and the kubelet log list the IPs that the
+    runtime reported.
+  - Testing: unit test with a runtime that ignores the field
+    (`TestSyncPodNetworkIsolated`).
+- Workload with an `Isolated` template does not create pods after the gate
+  was disabled on the kube-apiserver.
+  - Detection: the workload controller reports pod creation failures with
+    `spec.podNetwork: Forbidden: the NetworkIsolatedPods feature gate is
+    disabled`.
+  - Mitigations: enable the gate again, or set `podNetwork: Default` in the
+    template to move the workload back to the pod network.
+  - Diagnostics: events of the workload object; kube-apiserver feature
+    gates.
+  - Testing: `TestPodNetworkGateDisabled` covers the rejected create and the
+    move back with `Default`.
 - Isolated pod attached to the default pod network (fail-open) on a
-  non-upgraded kubelet.
+  kubelet that predates the field. Only a pod that bypasses the scheduler
+  can reach such a kubelet.
   - Detection: the kubelet's status updates are rejected by apiserver
-    validation (non-empty `status.podIP` for a `defaultNetwork: None` pod);
+    validation (non-empty `status.podIP` for a `podNetwork: Isolated` pod);
     the pod stays `Pending` in the API while running on the node, and the
     kubelet logs `Failed to update status for pod`.
-  - Mitigations: cordon/upgrade the node; keep the gate off until all nodes
-    are upgraded.
-  - Diagnostics: comparison of pod spec vs. status; node kubelet version.
+  - Mitigations: delete the pod and upgrade the node; do not set
+    `spec.nodeName` on isolated pods for nodes that do not declare
+    `NetworkIsolatedPods` (the kube-apiserver check required for beta
+    rejects them).
+  - Diagnostics: comparison of pod spec vs. status; node kubelet version;
+    `node.status.declaredFeatures`.
   - Testing: node declared features (from alpha) keep the scheduler away
-    from these nodes; the fail-open path itself is not testable on the old
-    kubelet.
+    from these nodes, and integration tests cover the kube-apiserver check
+    (beta); the fail-open path itself is not testable on the old kubelet.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1326,6 +1348,24 @@ between apiserver, kubelet and runtime.
   check; `hostNetwork: true` takes precedence over the defaulted `Pod` value
   so old clients patching workload templates keep working; CRI enum values
   prefixed to avoid the `NamespaceMode.POD` clash.
+- 2026-11-16: Alpha implementation merged for v1.38
+  ([kubernetes/kubernetes#143280]). The design changed during the API
+  review of the implementation: the field is `podNetwork` with the values
+  `Default` and `Isolated`; it is not defaulted and does not mirror
+  `hostNetwork` (it may not be set on `hostNetwork` pods); `dnsPolicy` and
+  `enableServiceLinks` keep their standard defaults; the feature gate is
+  `NetworkIsolatedPods`; the CRI field and capability are `pod_network` and
+  `pod_network_isolated`; an update that omits the field keeps the stored
+  value; a disabled gate rejects new uses of `Isolated` instead of dropping
+  the field.
+- 2026-11-17: KEP updated to match the alpha implementation. Beta moved
+  from v1.41 to v1.39 and stable from v1.43 to v1.41: kubelets that predate
+  the field are handled with
+  Node Declared Features instead of waiting three releases, as suggested in
+  the discussions at KubeCon. A kube-apiserver check for pods that bypass
+  the scheduler is added as a beta requirement.
+
+[kubernetes/kubernetes#143280]: https://github.com/kubernetes/kubernetes/pull/143280
 
 [mailing list]: https://groups.google.com/a/kubernetes.io/g/sig-network/c/dWqf4h4Dz8s/m/6MNo-2w2EgAJ
 [design doc]: https://docs.google.com/document/d/1vVZ2zazJnDaj3z0Ahi6fknGJo_SIYXoteQZ3Q3BGYBI/
@@ -1342,11 +1382,39 @@ between apiserver, kubelet and runtime.
 ## Alternatives
 
 **A boolean field (`hermetic: *bool`).** The first design, implemented in
-the POC ([kubernetes/kubernetes#141604]). It got a lot of pushback: a second
-boolean that cannot be true at the same time as `hostNetwork` needs
-validation for that combination and cannot grow to more options. The enum
-says the same thing, the invalid combination cannot be written, and
-`hostNetwork` becomes one of its values (see [API Changes](#api-changes)).
+the POC ([kubernetes/kubernetes#141604]). It got a lot of pushback: a
+boolean cannot grow to more options, and "hermetic" promises more than
+network isolation. The enum can get new values later (see
+[API Changes](#api-changes)).
+
+**`defaultNetwork: Pod/Host/None`, mirroring `hostNetwork`.** The version of
+this KEP that was first merged. One enum described the three cases. API
+defaulting set it on every Pod and workload template (`Pod`, or `Host` when
+`hostNetwork: true`) and kept it in sync with `hostNetwork` in both
+directions. It was replaced during the API review of the implementation.
+The trade-offs:
+
+- With the gate enabled, defaulting changes every Pod and every workload
+  template, including the ones that do not use the feature.
+- Two fields say the same thing and must be kept in sync on every write.
+  That version of the KEP already had a case with no good answer: a client
+  that does not know the field and patches `hostNetwork: false` into a
+  template stored with `Host` does not see its change.
+- `podNetwork` is optional and never defaulted. Objects that do not use the
+  feature are not modified, `hostNetwork` remains the only way to request
+  the host network, and the only cross-field rule is that the two fields
+  cannot be set together.
+
+**`None`-specific defaults for `dnsPolicy` and `enableServiceLinks`.** The
+same version defaulted `dnsPolicy` to `None` (allowed without nameservers)
+and `enableServiceLinks` to `false` for isolated pods, and made
+`enableServiceLinks` also govern the `KUBERNETES_*` variables for them. The
+implementation does not do this. `podNetwork` only decides whether the
+sandbox is attached to the pod network; DNS and service links are
+configured with their own fields, with the same defaults and validation as
+for any other pod. A default that depends on the value of another field
+makes the same manifest mean different things, and integrations that
+provide connectivity by other means had to override those defaults again.
 
 **Alternative field names.** Considered and rejected:
 
@@ -1354,18 +1422,18 @@ says the same thing, the invalid combination cannot be written, and
 | --- | --- |
 | `hermetic: true` | Implies isolation beyond networking (storage, host access, compute). Not used in the API, the KEP title or this document; see [Notes/Constraints/Caveats](#notesconstraintscaveats). |
 | `loopbackOnly: true` | Too mechanical; describes the Linux namespace state rather than workload intent, and is unclear about DNS/service links/probes. |
-| `isolated: true` | Overloaded: confused with compute isolation (CPU pinning, NUMA), security sandboxes (gVisor/Kata) and NetworkPolicy namespace isolation. |
+| `isolated: true` | Overloaded as a field name: confused with compute isolation (CPU pinning, NUMA), security sandboxes (gVisor/Kata) and NetworkPolicy namespace isolation. As a value of `podNetwork`, the field name gives the missing context. |
 | `airgapped: true` | Misleading: commonly refers to offline clusters/infrastructure, not individual sandboxes. |
 | `disconnected: true` | Sounds like a transient operational state (edge node offline), not an intentional configuration. |
 | `noNetwork: true` | Technically inaccurate: the pod does have a network namespace and a loopback interface. |
 | `cniDisabled: true` | Leaks a runtime implementation detail; CNI is not Kubernetes API vocabulary and does not apply to Windows or VM runtimes. |
 | `podNetwork: true/false` | A second boolean that cannot be true at the same time as `hostNetwork`; needs validation for that combination and cannot grow to more options. |
-| `podNetwork: Default/None` | Loses the `hostNetwork` absorption that motivates the enum, and `pod.spec.podNetwork` repeats the enclosing object name. |
-| `networkMode: Default/Host/None` | The previous version of this KEP. "mode" does not say what the pod is or is not connected to; `defaultNetwork` names the network, the same one all the core networking APIs work with. |
+| `defaultNetwork: Pod/Host/None` | The version of this KEP that was first merged; see above. |
+| `networkMode: Default/Host/None` | An earlier version of this KEP. "mode" does not say what the pod is or is not connected to; `podNetwork` names the network, the same one all the core networking APIs work with. |
 
-`defaultNetwork: None` avoids all of the above: it says which network the
-pod is not connected to, `None` matches `docker run --network none` and
-`dnsPolicy: None`, and the same field covers `hostNetwork`.
+`podNetwork: Isolated` avoids the problems above: the field says which
+network the pod is or is not attached to, the value describes the state of
+the sandbox, and `hostNetwork` is left alone.
 
 **Pod annotation (e.g., `io.kubernetes.cri.sandbox.hermetic`).** Annotations
 are not versioned, not validated, and fail open: an unaware kubelet or
