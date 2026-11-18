@@ -527,6 +527,9 @@ the existing `NodeSwap` test lanes) that configures `KubeletConfiguration` with
     reviewers.
 -  Investigate mitigations for swap exhaustion and thrashing (such as
     PSI-triggered eviction or dynamic swap limit adjustment).
+-  Decide how to bound the total swap used by pods at the node level under
+    `WorkloadControlledSwap`, so that pods cannot exhaust the swap that system
+    daemons outside kubepods rely on.
 -  API controlled swap functionality is running behind feature flag for at least one release.
 -  No major bugs reported and user feedback is positive.
 
