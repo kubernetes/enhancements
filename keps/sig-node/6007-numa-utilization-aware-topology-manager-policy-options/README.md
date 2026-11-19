@@ -135,9 +135,10 @@ node selection based on allocation state. This KEP addresses that gap.
   prioritize CPU, memory, or specific device types when computing utilization
   scores. Weights are specified as a comma-separated string of `resource=weight`
   pairs (e.g., `"cpu=3,memory=1,nvidia.com/gpu=6"`), where each weight is an
-  integer in the range [0, 100]. Any resource not explicitly listed in the string
-  defaults to a weight of 1, so naming a resource raises its influence rather
-  than silencing the others.
+  integer in the range [0, 100]. Following the NodeResourcesFit opt-in pattern:
+  when unset or empty, defaults to `cpu=1,memory=1` (devices excluded); when
+  explicitly set, only listed resources participate (unlisted resources get
+  weight 0).
 - Maintain existing topology guarantee semantics. The new options only
   influence NUMA node selection among equally valid candidates and do not
   change which hints are considered preferred.
@@ -320,10 +321,10 @@ Each hint provider computes a score per NUMA node set:
 - **Memory manager**: `Score = max(1, assignedBytes * 100 / allocatableBytes)`
 - **Device manager**: `Score = max(1, allocatedDeviceCount * 100 / allocatableDeviceCount)`
 
-The Topology Manager aggregates these into a single score during hint merge.
-By default this is an equal-weight average, `aggregatedScore = sum(scores) /
-count`, which is the unweighted case of the general formula described in
-[Per-Resource Weights](#per-resource-weights).
+The Topology Manager aggregates these into a single score during hint merge using
+weighted averaging as described in [Per-Resource Weights](#per-resource-weights).
+When `numa-score-weights` is unset or empty, the default is `cpu=1,memory=1` (CPU
+and memory equally weighted, devices excluded).
 
 Score is populated by all hint providers but does not influence hint selection
 on its own. It is only used when `numa-allocation-strategy` is set to
@@ -496,36 +497,45 @@ Because the denominator is the sum of the applicable weights, the aggregation
 is self-normalizing and the result stays in the same [1,100] range as the
 individual provider scores.
 
-A provider the weight string does not name is given a weight of 1. Because 1 is
-also the smallest weight an operator can explicitly assign, an unnamed provider
-can never outweigh a named one: naming a resource raises its influence relative
-to everything else and never lowers it. When `numa-score-weights` is unset
-entirely every provider sits at 1, and the formula reduces to the equal-weight
-average `sum(scores) / count` described in
-[Topology Hint Score Plumbing](#topology-hint-score-plumbing).
+**Default and opt-in behavior (following the NodeResourcesFit pattern):**
 
-Since the baseline is 1, the only way to drop a resource from
-scoring altogether is to give it an explicit weight of 0.
+- When `numa-score-weights` is **not specified or empty**: defaults to
+  `cpu=1,memory=1`. All other resources (devices) are excluded (weight 0).
+  The formula becomes the weighted average over CPU and memory only:
+  `(cpu_score * 1 + memory_score * 1) / 2`.
+
+- When `numa-score-weights` is **explicitly set**: only the resources listed
+  participate in scoring. Unlisted resources are excluded (weight 0). For
+  example, `"nvidia.com/gpu=10"` means only the GPU contributes; CPU and
+  memory are excluded.
+
+- To explicitly exclude a resource when setting weights, assign it weight 0.
+  For example, `"nvidia.com/gpu=10,cpu=0,memory=0"` ensures only GPU scores
+  are considered. You can also exclude individual resources from the default
+  set: `"cpu=0,memory=1"` excludes CPU but keeps memory, and `"cpu=1,memory=0"`
+  excludes memory but keeps CPU.
 
 The table below gives the effective weight of each provider for a pod requesting
-CPU, memory, GPU, and an SR-IOV NIC, where `intel.com/sriov-nic` is never named
-in the weight string:
+CPU, memory, GPU, and an SR-IOV NIC:
 
 | Configuration | CPU | Memory | GPU | SR-IOV | Effect |
 |---------------|-----|--------|-----|--------|--------|
-| (unset) | 1 | 1 | 1 | 1 | Equal weighting, the same aggregation used when the option is absent |
-| `"nvidia.com/gpu=10"` | 1 | 1 | 10 | 1 | GPU counts ten times as much as each other provider |
-| `"cpu=3,memory=1,nvidia.com/gpu=6"` | 3 | 1 | 6 | 1 | GPU leads, CPU is intermediate, memory and the NIC sit at the baseline |
-| `"cpu=5,nvidia.com/gpu=5"` | 5 | 1 | 5 | 1 | CPU and GPU rank equally, memory and the NIC still contribute |
-| `"nvidia.com/gpu=10,cpu=0"` | 0 | 1 | 10 | 1 | GPU dominates and CPU is excluded outright |
-| `"cpu=100,memory=100,nvidia.com/gpu=100"` | 100 | 100 | 100 | 1 | The three named providers swamp the NIC without silencing it |
+| (unset or empty) | 1 | 1 | 0 | 0 | Defaults to `cpu=1,memory=1`; devices excluded (opt-in pattern) |
+| `"nvidia.com/gpu=10"` | 0 | 0 | 10 | 0 | Only GPU participates; CPU, memory, and NIC excluded |
+| `"cpu=0,memory=1"` | 0 | 1 | 0 | 0 | Only memory participates; CPU and devices excluded |
+| `"cpu=1,memory=0"` | 1 | 0 | 0 | 0 | Only CPU participates; memory and devices excluded |
+| `"cpu=3,memory=1,nvidia.com/gpu=6"` | 3 | 1 | 6 | 0 | GPU leads, CPU is intermediate, memory contributes; NIC excluded |
+| `"cpu=5,nvidia.com/gpu=5"` | 5 | 0 | 5 | 0 | CPU and GPU rank equally; memory and NIC excluded |
+| `"nvidia.com/gpu=10,cpu=0,memory=0"` | 0 | 0 | 10 | 0 | GPU only; CPU and memory explicitly excluded |
+| `"cpu=1,memory=1,nvidia.com/gpu=1,intel.com/sriov-nic=1"` | 1 | 1 | 1 | 1 | Explicit equal weighting of all four resources |
 
 Only the ratios between weights matter, so
 `"cpu=30,memory=10,nvidia.com/gpu=60"` and `"cpu=3,memory=1,nvidia.com/gpu=6"`
-behave identically; the smaller numbers are easier to read. A device type that
-appears on the node later contributes at weight 1 as soon as a pod requests it,
-which is the behavior we want for NUMA placement: a resource the operator has
-not ranked still affects locality, just less than the ones they have.
+behave identically; the smaller numbers are easier to read.
+
+The opt-in pattern means devices do not participate in scoring unless explicitly
+included in the weight string. This prevents device resources from silently
+influencing placement when the operator only cares about CPU and memory balance.
 
 #### Worked Examples: How Weights Influence Placement
 
@@ -550,23 +560,23 @@ numa0 for a later multi-GPU pod.
 
 | `numa-score-weights` | numa0 aggregate | numa1 aggregate | Selected | Why |
 |----------------------|-----------------|-----------------|----------|-----|
-| (unset) | `(75+50+25)/3` = 50 | `(25+25+75)/3` = 41 | numa0 | CPU and memory pressure outvote the GPU signal, and the free GPU block is broken up |
-| `"nvidia.com/gpu=10"` | `(75+50+250)/12` = 31 | `(25+25+750)/12` = 66 | numa1 | GPU dominates, so the nearly-full GPU node wins |
-| `"cpu=3,memory=1,nvidia.com/gpu=6"` | `(225+50+150)/10` = 42 | `(75+25+450)/10` = 55 | numa1 | GPU still leads, CPU moderates it |
-| `"cpu=5,nvidia.com/gpu=5"` | `(375+50+125)/11` = 50 | `(125+25+375)/11` = 47 | numa0 | CPU ranked equal to GPU hands the decision back to CPU utilization |
-| `"nvidia.com/gpu=10,cpu=0"` | `(0+50+250)/11` = 27 | `(0+25+750)/11` = 70 | numa1 | CPU excluded outright, GPU and memory decide |
-| `"cpu=100,memory=100,nvidia.com/gpu=100"` | 50 | 41 | numa0 | Uniform weights are equivalent to leaving the option unset |
+| (unset or empty) | `(75*1+50*1)/2` = 62 | `(25*1+25*1)/2` = 25 | numa0 | Defaults to `cpu=1,memory=1`; GPU excluded; CPU and memory pressure dominate |
+| `"nvidia.com/gpu=10"` | `(25*10)/10` = 25 | `(75*10)/10` = 75 | numa1 | Only GPU participates; nearly-full GPU node wins |
+| `"cpu=3,memory=1,nvidia.com/gpu=6"` | `(75*3+50*1+25*6)/10` = 42 | `(25*3+25*1+75*6)/10` = 55 | numa1 | GPU leads, CPU moderates it |
+| `"cpu=5,nvidia.com/gpu=5"` | `(75*5+25*5)/10` = 50 | `(25*5+75*5)/10` = 50 | tie→numa0 | CPU and GPU equally weighted; memory excluded; structural tiebreak |
+| `"nvidia.com/gpu=10,cpu=0,memory=0"` | `(25*10)/10` = 25 | `(75*10)/10` = 75 | numa1 | Only GPU; CPU and memory explicitly excluded |
+| `"cpu=1,memory=1,nvidia.com/gpu=1"` | `(75+50+25)/3` = 50 | `(25+25+75)/3` = 41 | numa0 | Explicit equal weighting of all three resources |
 
-Two properties are worth calling out. A weight expresses influence *relative to
-the other providers*, so ranking CPU as highly as GPU (row 4) reverses the
-decision even though the GPU weight did not change. And because the aggregate is
-self-normalizing, scaling every weight by the same factor (row 6) changes
-nothing.
+Two properties are worth calling out. First, the **opt-in pattern** means that
+when weights are unset, devices are excluded from scoring (row 1), and when
+explicitly set, only listed resources participate (row 2). Second, a weight
+expresses influence *relative to the other providers*, so ranking CPU equally
+with GPU (row 4) can change the decision even if both weights are non-zero.
 
 The strategy and the weights answer different questions: the weights decide
 *which resource's utilization matters*, the strategy decides *which direction*
 to move along it. With `"nvidia.com/gpu=10"` and `least-allocated` instead, the
-same state selects numa0 (31 < 66), the node with the most free GPUs.
+same state selects numa0 (25 < 75), the node with the most free GPUs.
 
 **Example 2: excluding a resource from scoring ([Story 5](#story-5-excluding-a-resource-from-scoring)).**
 An NFV node with four NUMA nodes, each with 32 exclusively allocatable CPUs,
@@ -574,19 +584,21 @@ An NFV node with four NUMA nodes, each with 32 exclusively allocatable CPUs,
 only about VF availability, because a NUMA node with no free VF cannot host the
 pod at all while CPU and memory pressure is already handled by the scheduler.
 
-| NUMA node | CPU score | Memory score | VF score | Free VFs | Unweighted aggregate | `"cpu=0,memory=0"` |
-|-----------|-----------|--------------|----------|----------|----------------------|--------------------|
-| numa0 | 25 | 25 | 75 | 2 | 41 | 75 |
-| numa1 | 75 | 75 | 25 | 6 | 58 | 25 |
-| numa2 | 50 | 50 | 50 | 4 | 50 | 50 |
-| numa3 | 50 | 50 | 50 | 4 | 50 | 50 |
+| NUMA node | CPU score | Memory score | VF score | Free VFs | Default (cpu=1,memory=1) | `"intel.com/sriov-nic=1"` |
+|-----------|-----------|--------------|----------|----------|--------------------------|---------------------------|
+| numa0 | 25 | 25 | 75 | 2 | `(25+25)/2` = 25 | 75 |
+| numa1 | 75 | 75 | 25 | 6 | `(75+75)/2` = 75 | 25 |
+| numa2 | 50 | 50 | 50 | 4 | `(50+50)/2` = 50 | 50 |
+| numa3 | 50 | 50 | 50 | 4 | `(50+50)/2` = 50 | 50 |
 
-With weights unset, `least-allocated` selects numa0, the node with the *fewest*
-free VFs, because its low CPU and memory utilization pulls the average down.
-Repeated placements exhaust numa0's VFs while numa1 keeps 6 idle. Zeroing CPU
-and memory leaves `intel.com/sriov-nic` as the only applicable provider at the
-default weight of 1, so the aggregate equals the VF score and `least-allocated`
-selects numa1.
+With weights unset (defaults to `cpu=1,memory=1`), `least-allocated` selects
+numa0 (score 25), the node with the *fewest* free VFs, because VFs are excluded
+from scoring and the decision is based solely on CPU and memory. Repeated
+placements exhaust numa0's VFs while numa1 keeps 6 idle.
+
+Setting `"intel.com/sriov-nic=1"` (opt-in pattern: only VF participates, CPU and
+memory excluded) changes the aggregate to equal the VF score, so `least-allocated`
+selects numa1 (score 25), the node with the most free VFs.
 
 Zeroing is the sharpest instrument the option offers and it has a corresponding
 edge: a pod that requests none of the providers left with a non-zero weight has
@@ -703,17 +715,15 @@ Unit tests will cover:
   out-of-range values
 - Weight normalization: verify `"cpu=30,memory=10,nvidia.com/gpu=60"` yields the
   same result as `"cpu=3,memory=1,nvidia.com/gpu=6"`
-- Default weight resolution: verify all providers are weighted equally when
-  `numa-score-weights` is unset, and that unlisted providers default to weight 1
-  when it is set
+- Default weight resolution (opt-in pattern): verify that when `numa-score-weights`
+  is unset or empty, it defaults to `cpu=1,memory=1` with all other resources
+  excluded (weight 0); verify that when explicitly set, only listed resources
+  participate and unlisted resources are excluded (weight 0)
 - Explicit exclusion: verify weight=0 excludes a resource from scoring
 - Policy comparison with most/least-allocated preferences
 - Edge cases: no scores, equal scores, and a container that requests none of the
   score-reporting providers (no applicable weight, expect fallback to
   Narrowest/Closest logic)
-- Mixed named and unnamed providers: a container requesting a resource the
-  weight string does not name is still scored over that provider at weight 1,
-  and the self-normalizing denominator keeps the aggregate in the [1,100] range
 - Validation of `numa-allocation-strategy` values (`none`, `most-allocated`,
   `least-allocated`)
 - Feature gate on/off behavior
