@@ -97,6 +97,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -343,13 +346,20 @@ The controller abides by the following principals:
 * Library support: The module is **not** intended to be used as a library, and 
   as such, does not export any functions or types, with `pkg/` being an 
   exception (for e.g., managed resource types).
-* Metrics stability: There are **no** metrics stability guarantees, as the
+* Metrics stability: There are **no** [metrics stability] guarantees, as the
   metrics are dynamically generated.
 * No middle-ware: The configuration is `unmarshal`led into a set of stores that
   the codebase directly operates on. Unlike Kube State Metrics, there is **no**
   controller-defined parsing middle-ware that processes the configuration before
-  it is used, in order to cut down on unnecessary complexity as much as
-  possible.
+  it is consumed (by the resolvers), in order to cut down on unnecessary
+  complexity as much as possible.
+* No custom resolver functions: The controller will **not** maintain custom
+  functions for any of the resolvers in its codebase by default, and relies on
+  existing, trusted, and popular libraries in the ecosystem instead. If such a
+  library is missing something, the fix is driven there, instead of in Resource
+  State Metrics itself.
+
+[metrics stability]: https://kubernetes.io/blog/2021/04/23/kubernetes-release-1.21-metrics-stability-ga
 
 ### Risks and Mitigations
 
@@ -365,16 +375,14 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-N/A since the managed resource offered by Resource State Metrics provides the
-ability to define metric configurations that are a super-set of the 
-expressibility that Kube State Metrics' Custom Resource State configurations
-have to offer. However, users will need to familiarize themselves with the 
-supported DSLs to be able to translate their configuration into a format that
-the controller can understand, missing which could result in invalid metrics.
+Mostly N/A since the concept that Resource State Metrics builds on top
+of has already been offered through Kube State Metrics' Custom Resource
+State configurations since the feature-set's inception.
 
-Also, since this aims to deprecate the Custom Resource State API, a timeline 
-will be published for users on the Kube State Metrics' repository and a PSA on 
-the appropriate channel(s), once the controller graduates to stable.
+Also, since this aims to deprecate the Custom Resource State
+feature-set, a timeline will be published for users on the Kube State
+Metrics' repository and a PSA on the appropriate channels, once the
+controller graduates to stable.
 
 ## Design Details
 
@@ -391,8 +399,21 @@ generation.
 
 - At its core, the controller relies on its managed resource,
   `ResourceMetricsMonitor` to fetch the metric generation configuration. Parts
-  of the configuration may be defined using different `resolver`s, such as
-  `unstructured` or `CEL`.
+  of the configuration may be defined using one of three `resolver`s:
+  `unstructured`, `CEL`, or `starlark`. `CEL` is the default resolver, owing to
+  its successful adoption across Kubernetes. Users may tone it down to the
+  `unstructured` resolver if a larger set of their queries are simple, and they
+  do not want to set the resolver on each one of them. Similarly, they may
+  switch to `starlark` if their queries are more demanding. These three
+  resolvers are expected to cover all complexities, and we do not anticipate
+  adding a fourth resolver in the foreseeable future.
+- We expect `CEL` to be the predominant resolver of the three. If any gaps are
+  found in `CEL`, the recommended path is for users to make use of either of the
+  other two resolvers for the time being, while the patch is driven upstream and
+  pulled back down. No custom resolver functions will be maintained in the
+  codebase by default; the controller relies on existing, trusted, and popular
+  libraries in the ecosystem instead. If such a library is missing something,
+  the fix is driven there, instead of in Resource State Metrics itself.
 - Once fetched, the controller `unmarshal`s the configuration YAML directly into
   `stores` which are a set of metric `families`, which in turn are a set of
   `metrics`.
@@ -400,23 +421,27 @@ generation.
   `schema.GroupVersionKind`, `schema.GroupVersionResource` to avoid [plural
   ambiguities]), and reflectors for the specified resource are initialized, and
   populate the stores on its update.
-- All generated metrics are hardcoded to `gauge`s by design, as Prometheus
-  currently does not support some OpenMetrics-specified metrics' types, such as
-  `Info` and `StateSets`, but more importantly, because these metrics can be
-  expressed using `gauge`s.
+- All generated metrics are hardcoded to `gauge`s by design, as metrics
+  backends in the ecosystem do not support some OpenMetrics-specified
+  metrics' types, such as `Info` and `StateSets`, but more importantly,
+  because these metrics can be expressed using `gauge`s. This also helps
+  us discard concerns and complexities around maintaining support for
+  other metric types in the long run, which, as we've also observed in
+  Kube State Metrics' Custom Resource State API, adds significant
+  maintenance overhead.
 - `/metrics` pings on `RSM_MAIN_PORT` trigger the server to write the raw
   metrics defined in the configuration, combined with its appropriate header(s),
   in the response. 
-- `/external` pings on `RSM_MAIN_PORT` trigger the server to write the raw
-  metrics defined in the `./extenal` directory, combined with its appropriate
-  header(s), in the response.
 - `/metrics` pings on `RSM_SELF_PORT` trigger the server to write the raw
   metrics about the process itself, combined with its appropriate header(s), in
   the response.
 
-At the moment, the `spec` houses a single `configuration` field, which defines
-the metric generation configuration as follows (please note that the schema is
-fast-moving at this point and may be subject to change:
+At the moment, the `spec` houses a single `configuration` field, which
+defines the metric generation configuration as follows (please note that
+the schema is fast-moving at this point and may be subject to change,
+preferably towards one that incorporates the YAML-based configuration
+string into the managed resource's schema itself, allowing for tighter
+integration and validation:
 
 ```yaml
 generators: # Set of metrics stores for each CR we want to generate metrics for.
@@ -438,7 +463,7 @@ generators: # Set of metrics stores for each CR we want to generate metrics for.
           - resolver: "cel" # Preferred resolver to parse the value expressions.
                             # MAY BE SPECIFIED AT ANY LEVEL.
                             # INNER RESOLVERS OVERRIDE THE OUTER ONES.
-                            # NO RESOLVER DEFAULTS TO THE "UNSTRUCTURED" ONE.
+                            # NO RESOLVER DEFAULTS TO "CEL".
             # Set of label-sets to generate for the current metric.
             labelKeys: # Set of ordered label-keys, static in nature.
               - "name"
@@ -486,7 +511,9 @@ generators: # Set of metrics stores for each CR we want to generate metrics for.
 
 It's also worth mentioning that unlike Kube State Metrics' Custom Resource
 State, Resource State Metrics supports recursively generating samples from
-nested data structures, all from a single expression. Assuming we have a query,
+nested data structures, all from a single expression.
+
+Similarly, in Resource State Metrics, assuming we have a query,
 ```
 o.spec
 ```
@@ -530,7 +557,8 @@ test_metric{os="linux", tags="",           key_1="value1", key_2="value2", app_i
 Note that the order of samples, as well as their labelsets, guaranteed to be
 stable across runs.
 
-The `status`, on the other hand, is a set of `metav1.Condition`s, like so:
+The `ResourceMetricsMonitor` `status` is a set of `metav1.Condition`s,
+like so:
 
 ```yaml
 status:
@@ -618,7 +646,11 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-N/A.
+`k8s-triage` is not relevant since the controller resides out-of-tree.
+
+However, we do plan on covering as much surface as possible with
+integration tests before graduating to Stable. These tests usually reside
+with the end-to-end tests (see below).
 
 ##### e2e tests
 
@@ -703,6 +735,40 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 -->
+
+#### Alpha
+
+- Implement foundational ideas discussed in the proposal (till Alpha) to
+  establish confidence through the proof-of-work.
+- This also includes adding support for extending the configuration parsing
+  techniques via resolvers.
+
+#### Beta
+
+- Add support for admission web-hooks to validate the configuration on
+  creation/update of the managed resource.
+- Add support for `starlark` resolver to help define more complex logic, in
+  addition to mainstream DSLs seen across the ecosystem for similar use-cases,
+  such as `jq` and `jsonpath` ([`prometheus-community/json_exporter`],
+  [`openmcp-project/metrics-operator`], etc.).
+- Enforce `CEL` as the default resolver, and settle on the three-resolver set
+  (`unstructured`, `CEL`, `starlark`) with no plans for a fourth.
+
+[`openmcp-project/metrics-operator`]: https://github.com/openmcp-project/metrics-operator#metric
+[`prometheus-community/json_exporter`]: https://github.com/prometheus-community/json_exporter 
+
+#### Stable
+
+- Support all relevant metric types that Prometheus' OpenMetrics implementation
+  allows. This would entail `Counter`s currently, and `Info` and `Stateset` in
+  the future. See [expfmt.MetricFamilyToOpenMetrics] for more.
+- Introduce benchmark tests (against the earlier [script-based `bench` target])
+  to ensure Resource State Metrics doesn't perform worse than Kube State
+  Metrics in the future, and to have a baseline in general.
+- Identify leaks and investigate guardrails, for `starlark` especially.
+
+[script-based `bench` target]: https://github.com/kubernetes-sigs/resource-state-metrics/commit/9b6ea2dcb05185431190af91ae90f79d4397251e#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R9-R20
+[expfmt.MetricFamilyToOpenMetrics]: https://pkg.go.dev/github.com/prometheus/common@v0.67.5/expfmt#MetricFamilyToOpenMetrics
 
 ### Upgrade / Downgrade Strategy
 
@@ -929,7 +995,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-TBD (when targeting beta).
+N/A
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
