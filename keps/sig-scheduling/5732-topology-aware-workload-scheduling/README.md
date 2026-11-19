@@ -217,7 +217,7 @@ all pods there at once.
 ### Workload API Changes
 
 The Workload API (KEP-4671) and PodGroup API (KEP-5832) will be extended to allow specifying group-level
-scheduling constraints. An optional `ScheduleConstraints` field is added to the
+scheduling constraints. An optional `SchedulingConstraints` field is added to the
 `PodGroupTemplate` spec and `PodGroupSpec`.
 
 ```go
@@ -226,6 +226,7 @@ type PodGroupTemplate struct {
     // Existing fields go here
 
     // SchedulingConstraints defines optional scheduling constraints (e.g. topology) for this PodGroupTemplate.
+    // This field is immutable.
     // This field is only available when the TopologyAwareWorkloadScheduling feature gate is enabled.
     SchedulingConstraints *PodGroupSchedulingConstraints
 }
@@ -245,6 +246,7 @@ type PodGroupSpec struct {
 type PodGroupSchedulingConstraints struct {
     // Topology defines the topology constraints for the pod group.
     // Currently only a single topology constraint can be specified. This may change in the future.
+    // Validation limits the list to one item.
     Topology []TopologyConstraint
 }
 
@@ -253,6 +255,9 @@ type TopologyConstraint struct {
     // Key specifies the key of the node label representing the topology domain.
     // All pods within the PodGroup must be colocated within the same domain instance.
     // Different PodGroups can land on different domain instances even if they derive from the same PodGroupTemplate.
+    // Nodes where this label is missing or has an empty value do not belong to any domain instance,
+    // so pods within the PodGroup cannot be scheduled onto them.
+    // The key must be a valid label key.
     // Examples: "topology.kubernetes.io/rack"
     Key string
 }
@@ -281,6 +286,8 @@ type Placement struct {
     // Name uniquely identifies the placement.
     // This is used for diagnostics and debugability.
     // The choice of the name is up to the PlacementGeneratePlugin.
+    // Names returned by one plugin must be unique and must not contain "/",
+    // which the framework uses to join names when merging placements.
     Name string
 
     // Nodes specifies the nodes that are valid for this placement.
@@ -309,6 +316,13 @@ type PlacementGeneratePlugin interface {
 
     // GeneratePlacements generates a list of potential Placements for the given PodGroup within the parent placement.
     // Each Placement represents a candidate set of resources, e.g., nodes matching a selector.
+    // The scheduler may shuffle and evaluate only a subset of the returned Placements, so plugins
+    // must not rely on their order.
+    //
+    // A plugin can attach per-placement data by calling state.PlacementState(placement).Write
+    // and returning that same placement pointer. When multiple PlacementGenerate plugins
+    // constrain the input, the framework intersects their placements and combines the attached
+    // state. Returning parentPlacement unchanged as the only placement imposes no constraints.
     GeneratePlacements(ctx context.Context, state PodGroupCycleState, podGroup PodGroupInfo, parentPlacement *Placement) (*GeneratePlacementsResult, *Status)
 }
 ```
@@ -349,6 +363,36 @@ type PlacementScorePlugin interface {
 }
 ```
 
+**PlacementFeasiblePlugin:** Decides, while a placement is being evaluated, whether the
+(composite) pod group can still meet its constraints there. It is called once before the first
+child is evaluated and again after each one, which lets the scheduler stop evaluating a
+placement early.
+
+```go
+// PlacementFeasiblePlugin is an interface for plugins that are called after each pod in a pod group is evaluated.
+type PlacementFeasiblePlugin interface {
+    Plugin
+
+    // Return Wait if the pod group cannot be scheduled in the current partially evaluated placement,
+    // but may become schedulable once more pods are evaluated.
+    // Return Unschedulable if the pod group cannot be scheduled in the current placement. The scheduler
+    // gives up this placement and does not evaluate the remaining pods.
+    // Return Success if the pod group can be scheduled in the current partially evaluated placement.
+    PlacementFeasible(ctx context.Context, placementCycleState PlacementCycleState, podGroupInfo PodGroupInfo, placementProgress PlacementProgress) *Status
+}
+
+// PlacementProgress describes how far the evaluation of the children (pods, or child groups of a
+// composite pod group) has got for the current placement.
+type PlacementProgress struct {
+    // Remaining is the number of children that have not been evaluated yet.
+    Remaining int
+    // Scheduled is the number of children scheduled so far, including already assigned or assumed pods.
+    Scheduled int
+    // Unschedulable is the number of children evaluated as unschedulable so far.
+    Unschedulable int
+}
+```
+
 ### Scheduling Algorithm Phases
 
 The algorithm proceeds in three main phases for a given PodGroup.
@@ -374,6 +418,17 @@ The algorithm proceeds in three main phases for a given PodGroup.
 - Example: If the label is rack, placements are generated for rack-1, rack-2,
   etc.
 
+- Nodes where the topology label is missing or has an empty value belong to no
+  domain and are left out of every Placement.
+
+- If the already scheduled pods of the PodGroup are in more than one domain, or on
+  a node without the label, placement generation fails with an error.
+
+- If a plugin returns no Placements, the PodGroup is unschedulable in this cycle.
+
+- A PodGroup without a topology constraint gets a single Placement equal to the
+  parent placement.
+
 #### Phase 2: Pod-Level Filtering and Feasibility Check
 
 - **Action:** For each generated Placement:
@@ -392,15 +447,20 @@ The algorithm proceeds in three main phases for a given PodGroup.
   future releases; currently, scheduling gates may be used as a partial
   mitigation.
 
-- **Heterogeneous PodGroup Handling**: Sequential processing will be used
-  initially. Pods are processed sequentially; if any fail, the placement is
-  rejected.
+- **Heterogeneous PodGroup Handling**: Pods are processed sequentially. 
+  A pod that does not fit does not by itself reject the Placement.
+  `PlacementFeasible` plugins run before the first pod and after each pod, and the
+  Placement is rejected as soon as one of them reports that the group can no longer
+  meet its policy. For the Gang policy that is when the scheduled and not yet
+  evaluated pods together are fewer than `minCount`.
 
 #### Phase 3: Placement Scoring and Selection
 
 - **Action:** Call `ScorePlacement` for all feasible placements.
 
-- **Selection:** Select the Placement with the highest score.
+- **Selection:** Select the Placement with the highest total score. Ties are
+  broken randomly. If exactly one Placement is feasible, it is selected without
+  running the score plugins.
 
 - **Binding:** Proceed to bind pods to the assigned nodes and resources using
   pod-by-pod scheduling logic with each pod prebound to the selected node
@@ -413,9 +473,21 @@ Placements based on distinct values of the designated node label (TAS).
 
 **NodeResourcesFit (Existing)** Implements `PlacementScorePlugin`. Scores
 Placements to maximize utilization (tightest fit) and minimize fragmentation.
+Placement scoring always uses the `MostAllocated` strategy, with the resource
+weights from the plugin's `scoringStrategy`.
 
 **PodGroupPodsCount (New)** Implements `PlacementScorePlugin`. Scores
-Placements based on the number of pods fitting into each Placement.
+Placements based on the number of pods fitting into each Placement. The count
+includes the pods of the PodGroup that are already scheduled, and scores are
+normalized against the best candidate.
+
+**GangScheduling (Existing)** Implements `PlacementFeasiblePlugin`. Enforces the
+scheduling policy's minCount while a Placement is evaluated.
+
+When the `TopologyAwareWorkloadScheduling` feature gate is enabled,
+`TopologyPlacementGenerator` and `PodGroupPodsCount` (weight 1) are enabled by
+default through `multiPoint`. `NodeResourcesFit` and `GangScheduling` are already
+default plugins.
 
 ### Beta Extensions
 
@@ -429,13 +501,17 @@ Scheduling:
   them independently and merges their results by calculating non-empty intersections 
   of the placements returned by the different plugins, allowing the system to handle 
   composed placement requirements (e.g. topology plus a resource-driven generator).
+  The merged set is the cross product of the per-plugin placements, with each pair
+  intersected by node. Pairs with no common node are dropped, the merged name joins
+  the two names with `/`, and per-placement state attached by the plugins is combined.
+  A plugin that returns the parent placement unchanged imposes no constraint.
 
 2. Early Rejection of Placements
 
   To optimize the scheduling cycle, the scheduler aborts placement evaluation early
   if there are not enough remaining pods to satisfy a PodGroup's minCount. Previously,
   all pods were evaluated, which missed an opportunity for optimization. This capability
-  is implemented via a new "pseudo extension point" called `PlacementFeasiblePlugin`
+  is implemented via the `PlacementFeasiblePlugin` extension point, implemented by `GangScheduling`
   (similar to PodGroupPostFilter) to break out of the pod group scheduling cycle.
 
   More details on this optimization can be found in [KEP-4671](https://kep.k8s.io/4671).
@@ -445,11 +521,17 @@ Scheduling:
   To ensure high pod throughput, especially in large clusters, the beta version
   introduces a limit on the number of scored placements, similar to how the scheduler 
   limits the number of scored nodes in non-TAS scenarios. This limit is controlled via 
-  a new scheduler parameter `PercentageOfPlacementsToScore`.
+  a new `KubeSchedulerConfiguration` field, `percentageOfPlacementsToScore` (0-100), which can
+  be set globally and per profile. The scheduler stops searching once that percentage of the
+  generated placements has been found feasible, and always looks for at least one. The limit
+  applies only when a `PlacementScorePlugin` is configured. Without one, the first feasible
+  placement is used. When only a subset is taken, the candidates are shuffled first so the
+  order returned by the generator is not favored.
 
-  By default, an adaptive limit is applied based on the total number of nodes to
-  evaluate across all generated placements. The limit interpolates from 100% for very
-  small clusters to 10% for clusters with 5000 nodes, with a hard lower bound of 5%.
+  When the field is unset or 0, an adaptive percentage is applied based on the sum of node
+  counts across all generated placements (a node in several overlapping placements is counted
+  once per placement). It decreases linearly from 100% at 0 nodes to 10% at 5000 nodes, with a
+  lower bound of 5%. An explicitly configured value may be lower than 5.
   
   This strategy ensures predictable, robust throughput of topology-aware scheduling.
 
@@ -457,7 +539,10 @@ Scheduling:
 
   To align with standard pod-by-pod scheduling behavior, the TAS algorithm
   supports a pod's NominatedNodeName (NNN). When selecting placements, the scheduler
-  evaluates the placement containing the previously nominated nodes first.
+  evaluates the placement containing the previously nominated nodes first. This applies only
+  when exactly one placement contains all nominated nodes of the group's pending pods. If that
+  placement is feasible and schedules at least one pod, it is used and the remaining placements
+  are not evaluated. Otherwise the regular search runs.
   This ensures that a workload whose pods were nominated to specific nodes does not
   arbitrarily land elsewhere, preventing the scheduler from undoing work performed
   in previous nominating cycles.
@@ -470,6 +555,9 @@ Scheduling:
   is the placement algorithm, so after potential victims are removed new placements are 
   generated, the best one is selected, and WAP reprieves as many victims as possible while
   assuming the preemptor pods are assigned to the selected placement.
+
+  Limitation: the DRA `PodGroupPostFilter` does not support PodGroups with
+  `schedulingConstraints` and reports them as unschedulable.
 
 ### Future Extensions
 
@@ -496,8 +584,9 @@ future separate KEPs improving and extending the proposed functionality:
    as scoring mechanisms without hard requirements.
 
 3. **Multi-level Scheduling Constraints:** Handling nested constraints (e.g.,
-   Block -> Rack). This would involve iterative placement generation and a
-   Parent field in the Placement struct.
+   Block -> Rack). This is delivered by `CompositePodGroup`
+   ([KEP-6012](https://kep.k8s.io/6012)): each level of the group hierarchy
+   generates its placements within the placement assumed by its parent.
 
 4. **Pod Group Replicas Optimization:** Optimizing scheduling for identical
    PodGroups (replicas) by scheduling the maximum feasible number of replicas
@@ -524,8 +613,13 @@ N/A
   
 - PlacementScorePlugin: Test scoring of placements.
 
-- Algorithm Logic: Test the sequential processing of Placements and the
-  selection logic based on scores.
+- PlacementFeasiblePlugin: Test early rejection of placements by the
+  `GangScheduling` plugin.
+
+- Algorithm Logic: Test the sequential processing of Placements, the
+  selection logic based on scores, the `percentageOfPlacementsToScore` limit,
+  nominated placement handling and merging of placements from multiple
+  PlacementGenerate plugins.
 
 #### Integration tests
 
@@ -565,30 +659,42 @@ Nominated Node Handling:
 Composite PodGroups ([KEP-6012](https://kep.k8s.io/6012)) with topology constraints,
 including the interaction with workload-aware preemption.
 
+Multiple PlacementGenerate Plugins:
+
+- Placements returned by several generators are intersected, and the PodGroup
+  is scheduled only into a placement that satisfies all of them.
+
 - Test (tas): https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler/podgroup/topology_aware_scheduling/tas_test.go
+- Test (multi-placement): https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler/podgroup/topology_aware_scheduling/tas_multi_placement_test.go
 - Test (composite-tas): https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler/podgroup/topology_aware_scheduling/cpg_tas_test.go
 
 #### Performance tests
 
 We also added benchmarks to measure the performance impact of topology-aware
 scheduling, in particular the scheduling throughput of the workload scheduling
-with gang policy and a topology constraint:
+with gang policy and a topology constraint. The workloads are
+`GangTopologyAwareScheduling`, `GangTopologyAwareSchedulingScoreAllPlacements`,
+`GangTopologyAwareSchedulingMultiPlacement` and `BasicTopologyAwareScheduling`:
 
 - Test: https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler_perf/podgroup/tas/performance-config.yaml
 
 #### e2e tests
 
-- End-to-End Workload Scheduling: Submit a Workload with TopologyConstraint
-  (e.g., Rack) and verify all pods land on the same rack.
+The topology-aware scheduling behavior is covered by the `TopologyAwareScheduling`
+e2e tests:
+
+- should schedule each PodGroup into a single topology domain
+- should keep a gang pending rather than split it across topology domains
+- should schedule all pods of a basic PodGroup into a single topology domain
+- should preempt lower-priority pods in only one topology domain to keep a gang together
+- should keep a gang pending rather than place it on nodes without the topology label
+
+- Test: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/scheduling/topology_aware_scheduling.go
 
 The API surface of this KEP (the `schedulingConstraints` field) is exercised by
 the `Workload` and `PodGroup` API e2e tests added by [KEP-4671](https://kep.k8s.io/4671):
 
 - Test: https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/e2e/scheduling/workload.go
-
-With promoting to beta we'll add an e2e test for the topology-aware scheduling
-behavior itself, next to the existing gang scheduling and workload-aware
-preemption e2e tests in `test/e2e/scheduling/`.
 
 ### Graduation Criteria
 
@@ -619,8 +725,10 @@ downgrade.
 When a user upgrades the cluster to the version which supports topology-aware
 workload scheduling:
 
-- they can enable scheduling plugins implementing new Scheduling Framework
-  interfaces in kube-scheduler config
+- they enable the `TopologyAwareWorkloadScheduling` feature gate (Beta, disabled
+  by default, requires `GenericWorkload`) on kube-apiserver and kube-scheduler.
+  The `TopologyPlacementGenerator` and `PodGroupPodsCount` plugins are then part
+  of the default scheduler configuration
 - they can start using the new API to create PodGroup objects with
   `schedulingConstraints` field
 - scheduler will use enabled plugins to generate placements for PodGroup and
@@ -675,9 +783,11 @@ kube-scheduler instance being a leader).
 
 ###### Does enabling the feature change any default behavior?
 
-No - even with a feature enabled scheduler by default will use existing scheduling
-algorithm to schedule workloads. Only when workload will have an explicit topology
-constraint set an alternative algorithm will be used.
+No - in terms of scheduling outcomes. With the feature gate enabled, every PodGroup is
+scheduled through the placement algorithm, but a PodGroup without a topology constraint
+gets a single placement containing all nodes, which is equivalent to the existing
+workload scheduling algorithm. Only PodGroups with an explicit topology constraint are
+restricted to a topology domain.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -723,7 +833,7 @@ new pods within the same PodGroup due to the newly enforced topology constraints
   errors or panics within the scheduling loop, possibly caused by the TAS logic.
 - `process_start_time_seconds`: Frequent resets of this metric indicate that the scheduler
   process is crashing and restarting (crash loop).
-- `scheduler_podgroup_scheduling_duration_seconds`: A significant regression in P99 latency for
+- `scheduler_podgroup_scheduling_attempt_duration_seconds`: A significant regression in P99 latency for
   pod groups would indicate that the overhead of the new logic is unacceptable.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -742,7 +852,7 @@ We'll perform manual testing of the upgrade -> downgrade -> upgrade path using t
 6. Create `test-pod-1` and `test-pod-2` Pods with `spec.schedulingGroup` pointing to `tas-test-A`
    and node affinities pointing to two different nodes.
 7. The Pods stay in `Pending` state (no single-node placement fits both). Verify that
-   `scheduler_pending_entities{type="podgroup", queue="gated"}` metric is incremented.
+   `scheduler_queued_entities{entity="podgroup", queue="gated"}` metric is incremented.
 8. Create `test-pod-3` and `test-pod-4` Pods with `spec.schedulingGroup` pointing to `tas-test-B`
    and node affinities pointing to the same node.
 9. Both pods are scheduled successfully (TAS works).
@@ -795,7 +905,7 @@ of the standard scheduling loop.
   (`apiserver_request_total{resource="pods", subresource="binding"}`).
 
 - Scheduling Latency: There should be no significant regression in pod scheduling latency 
-  (`scheduler_pod_scheduling_duration_seconds`) for both TAS and non-TAS pods compared to the baseline
+  (`scheduler_pod_scheduling_sli_duration_seconds`) for both TAS and non-TAS pods compared to the baseline
   (behavior with the feature disabled).
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -849,14 +959,14 @@ fine grained topology constraints.
 
 The complexity of scheduling of a single workload is O(#pods * #nodes), which is comparable 
 to the algorithm not using topology constraints, so the benchmarks are primarily to validate 
-the potential inefficiencies of the implementation. The impact is tracked by the scheduler_perf `TopologyAwareScheduling` benchmark.
+the potential inefficiencies of the implementation. The impact is tracked by the scheduler_perf `GangTopologyAwareScheduling` and `BasicTopologyAwareScheduling` benchmarks.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 For large clusters and fine grained topology constraints we may observe some increase in CPU
 and RAM usage for kube-scheduler, since each candidate placement is evaluated against a
 placement-scoped snapshot. The scale of this increase is tracked by the scheduler_perf
-`TopologyAwareScheduling` benchmark.
+`GangTopologyAwareScheduling` and `BasicTopologyAwareScheduling` benchmarks.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -916,6 +1026,7 @@ retried with standard exponential backoff once connectivity is restored.
 - 2026-02: KEP-5732 updated to sync with decoupling of PodGroup/Workload API.
 - 2026-05: KEP updated to promote to beta in v1.37.
 - 2026-09: KEP updated to promote to beta in v1.38.
+- 2026-11: KEP synced with the v1.38 implementation.
 
 ## Drawbacks
 
