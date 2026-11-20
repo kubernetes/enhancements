@@ -1,0 +1,31 @@
+title: Standard Namespace Role Label
+kep-number: 5708
+authors:
+  - "@maifeeulasad"
+owning-sig: sig-network
+participating-sigs:
+  - sig-architecture
+status: provisional
+creation-date: 2026-03-07
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-network/2091-admin-network-policy"
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: TBD
+  beta: TBD
+  stable: TBD
+
+feature-gates:
+  - name: NamespaceRoleLabel
+    components:
+      - kube-apiserver
+disable-supported: true
