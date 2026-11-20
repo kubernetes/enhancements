@@ -156,10 +156,10 @@ The key design principles:
   which is mutable to support scaling. Setting or unsetting `minCount` is allowed.
   An unset value auto-tracks `replicas`, while an explicit value acts as a fixed floor.
 - Deployments own the `Workload` for its lifecycle, and ReplicaSets own individual `PodGroups`
-  for revision-specific scheduling. Each PodGroup also carries a non-controller ownerReference to
-  the Workload for lifecycle management, matching the Job pattern ([KEP-5547]). Supported by
-  deterministic naming and reconciliation, creation is fully idempotent so that controllers
-  recover missing objects after crashes while garbage collection handles cleanup.
+  for revision-specific scheduling. Each PodGroup references its Workload through
+  `spec.workloadRef`. Supported by deterministic naming and reconciliation, creation is fully
+  idempotent so that controllers recover missing objects after crashes while garbage collection
+  handles cleanup.
 
 ### Deployment Integration - API Usage Examples
 
@@ -237,7 +237,7 @@ spec:
 apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
-  name: inference-server-<podTemplateHash>
+  name: <workload-name>-<podGroup-template-name>-<hash>
   namespace: ml-serving
   ownerReferences:
   - apiVersion: apps/v1
@@ -245,11 +245,10 @@ metadata:
     name: inference-server-<podTemplateHash>
     uid: <rs-uid>
     controller: true
-  - apiVersion: scheduling.k8s.io/v1beta1
-    kind: Workload
-    name: inference-server-<hash>
-    uid: <workload-uid>
 spec:
+  workloadRef:
+    workloadName: inference-server-<hash>
+    templateName: inference-server-pgt-0
   schedulingPolicy:
     gang:
       minCount: 3
@@ -355,15 +354,13 @@ reports unavailable replicas through its standard status conditions.
 - With `Recreate` strategy, the old ReplicaSet scales to zero and its PodGroup and
   ResourceClaims are released before the new ReplicaSet is created. A transient overlap
   of old and new claims is possible due to async cleanup but is unlikely in practice.
-- `revisionHistoryLimit` retains old ReplicaSets for rollback metadata only. PodGroups are
-  explicitly deleted at scale-to-zero, so they are already gone before the ReplicaSet becomes a
-  history entry. A scheduling-enabled ReplicaSet carries a controller-managed cleanup finalizer.
-  When the ReplicaSet is deleted, the ReplicaSet controller requests deletion of the PodGroup
-  controlled by that ReplicaSet with the matching UID if present, then removes the cleanup finalizer.
-  The `podgroup-protection` finalizer keeps PodGroup deletion ordered with referencing Pod cleanup.
-  The ReplicaSet controller continues to process the cleanup finalizer when
-  `WorkloadWithDeployment` is disabled. It does not create or reconcile new scheduling objects
-  while the gate is disabled.
+- `revisionHistoryLimit` retains old ReplicaSets for rollback metadata only. While scheduling
+  reconciliation is enabled, PodGroups are explicitly deleted at scale-to-zero, so they are
+  already gone before the ReplicaSet becomes a history entry. When the ReplicaSet is deleted,
+  standard garbage collection removes its controller-owned PodGroup. The `podgroup-protection`
+  finalizer keeps PodGroup deletion ordered with referencing Pod cleanup. When
+  `WorkloadWithDeployment` is disabled, the controller does not create or reconcile new
+  scheduling objects.
 - Named ResourceClaims pin all revisions to the same node (the node where the device is allocated).
   If the node lacks capacity for the gang's pods and their requested resources, the update may
   remain Pending.
@@ -480,8 +477,8 @@ The `replicaset-controller` ClusterRole grants:
 
 #### OwnerReferences Relationship
 
-The ownerReferences relationship between `Deployment`, `ReplicaSet`, `Workload`,
-`PodGroup`, and `Pod` is as follows:
+The ownerReferences and logical scheduling references between
+`Deployment`, `ReplicaSet`, `Workload`, `PodGroup`, and `Pod` are as follows:
 
 ```mermaid
 flowchart BT
@@ -492,26 +489,25 @@ flowchart BT
     Deployment[Deployment]
 
     Pod -->|ownerRef <br/> controller| ReplicaSet
-    Pod -->|ownerRef <br/> non-controller| PodGroup
+    Pod -.->|spec.schedulingGroup.podGroupName| PodGroup
     ReplicaSet -->|ownerRef <br/> controller| Deployment
     PodGroup -->|ownerRef <br/> controller| ReplicaSet
-    PodGroup -->|ownerRef <br/> non-controller| Workload
+    PodGroup -.->|spec.workloadRef| Workload
     Workload -->|ownerRef <br/> controller| Deployment
 ```
 
-- The `Workload` object has an ownerReference to the `Deployment` with `controller: true`.
-- The `PodGroup` object has a controller ownerReference to the `ReplicaSet` and a
-  non-controller ownerReference to the `Workload` for lifecycle management, matching the
-  Job pattern ([KEP-5547]).
-- The `Pod` object has an ownerReference to the `ReplicaSet` with `controller: true` and a
-  non-controller ownerReference to the `PodGroup` for lifecycle management. Pods also
-  reference their PodGroup through `spec.schedulingGroup.podGroupName`.
+- The `Workload` object has a controller ownerReference to the `Deployment`.
+- The `PodGroup` object has a controller ownerReference to the `ReplicaSet`.
+  Its logical relationship to the Workload is represented by
+  `spec.workloadRef`.
+- The `Pod` object has a controller ownerReference to the `ReplicaSet`.
+  Its logical relationship to the PodGroup is represented by
+  `spec.schedulingGroup.podGroupName`.
 
 By this ownership structure, garbage collection cascades correctly: deleting a Deployment
-removes its ReplicaSets, which in turn remove their Pods and trigger cleanup of their PodGroups
-through the ReplicaSet finalizer. The Workload is also removed through its Deployment
-ownerReference. The `podgroup-protection` finalizer on PodGroups ensures referencing pods drain
-before the PodGroup is deleted.
+removes its Workload and ReplicaSets. Standard garbage collection then removes the Pods and
+PodGroups owned by those ReplicaSets. The `podgroup-protection` finalizer on PodGroups ensures
+referencing pods drain before the PodGroup is deleted.
 
 #### Creation Ordering
 
@@ -519,8 +515,10 @@ For each scheduling-enabled ReplicaSet revision:
 
 1. **Deterministic naming.** The Workload is named `<deployment.Name>-<hash>` where the hash is
    derived from the Deployment UID, avoiding collisions when different controller types share a
-   namespace and name. The PodGroup is named `<deployment.Name>-<podTemplateHash>` (one per
-   ReplicaSet revision). Both naming patterns are stable across controller restarts.
+   namespace and name. Each ReplicaSet revision gets a PodGroup named
+   `<(truncated-if-needed)workload-name>-<(truncated-if-needed)podGroup-template-name>-<hash>`,
+   where the hash is derived from the ReplicaSet UID. Both naming patterns are stable across
+   controller restarts.
 
 2. **Pod-level injection.** The ReplicaSet controller sets
    `pod.spec.schedulingGroup.podGroupName` at pod creation time, not on the persisted ReplicaSet
@@ -547,10 +545,8 @@ For each scheduling-enabled ReplicaSet revision:
    When the ReplicaSet scales positive again, the PodGroup is recreated
    before creating pods.
 
-7. **ReplicaSet deletion cleanup.** A scheduling-enabled ReplicaSet carries a controller-managed
-   cleanup finalizer. When the ReplicaSet is marked for deletion, the ReplicaSet controller requests
-   deletion of the PodGroup controlled by that ReplicaSet with the matching UID if present, then
-   removes the cleanup finalizer.
+7. **ReplicaSet deletion cleanup.** The PodGroup has a controller ownerReference to the
+   ReplicaSet, so standard garbage collection removes it when the ReplicaSet is deleted.
 
 #### workloadbuilder Integration
 
@@ -645,10 +641,9 @@ Tests to add:
   pods are created.
 - Delete the Deployment and verify the Workload and ReplicaSet-owned PodGroup are eventually
   garbage-collected.
-- Delete a scheduling-enabled ReplicaSet directly and verify the controller removes its cleanup
-  finalizer after requesting deletion of the PodGroup controlled by the ReplicaSet with the
-  matching UID. Repeat after disabling `WorkloadWithDeployment` and verify the ReplicaSet does not
-  remain stuck.
+- Delete a scheduling-enabled ReplicaSet directly and verify that its PodGroup is eventually
+  garbage-collected through its ReplicaSet ownerReference. Repeat with
+  `WorkloadWithDeployment` disabled.
 - Verify old PodGroups and template-backed ResourceClaims are released when old ReplicaSets reach
   zero.
 
@@ -713,11 +708,9 @@ Disabling the gate after scheduling-enabled Deployments already exist does not r
 Workload, PodGroup, or pod references. As described in the
 [OwnerReferences Relationship](#ownerreferences-relationship) section, the Workload carries a
 controller ownerReference to the Deployment and each PodGroup carries a controller ownerReference
-to its ReplicaSet and a non-controller ownerReference to its Workload. Standard garbage collection
-therefore removes these objects when all of their owners are deleted. While the gate is disabled,
-the ReplicaSet controller continues to process the cleanup finalizer on existing scheduling-enabled
-ReplicaSets. The controller requests deletion of the owned PodGroup if present before removing the
-ReplicaSet finalizer. Existing pods retain the scheduling-group reference they were created with.
+to its ReplicaSet. Standard garbage collection therefore removes these objects when their owners
+are deleted. While the gate is disabled, the controllers do not actively reconcile existing
+scheduling objects. Existing pods retain the scheduling-group reference they were created with.
 Re-enabling the gate allows the controllers to resume normal scheduling-object reconciliation.
 
 **Mixed-pod caveat.** Toggling the feature gate while a scheduling-enabled Deployment has running
@@ -763,11 +756,11 @@ unaffected. No scheduling objects are created unless the user explicitly sets th
 
 Yes. With the gate disabled on kube-apiserver, new requests that set `spec.scheduling` are
 rejected. With the gate disabled on kube-controller-manager, new scheduling objects are not
-created or reconciled. When an existing scheduling-enabled ReplicaSet is marked for deletion,
-either directly or by cascading garbage collection after its Deployment is deleted, the ReplicaSet
-controller requests deletion of its owned PodGroup if present before removing the cleanup finalizer.
-The Workload remains until the Deployment is deleted. See the **mixed-pod caveat** in the Upgrade
-Strategy section for the impact of disabling the gate while scheduling-enabled pods are running.
+created or reconciled. When an existing scheduling-enabled ReplicaSet is deleted, either directly
+or by cascading garbage collection after its Deployment is deleted, standard garbage collection
+removes its controller-owned PodGroup. The Workload remains until the Deployment is deleted. See
+the **mixed-pod caveat** in the Upgrade Strategy section for the impact of disabling the gate while
+scheduling-enabled pods are running.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
