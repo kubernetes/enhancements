@@ -114,8 +114,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -828,15 +828,16 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ###### Coverage
 
-- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `21/7/2026` - `94.7`
-- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `21/7/2026` - `93.9`
-- `k8s.io/kubernetes/pkg/apis/resource/validation`: `21/7/2026` - `96.9`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `21/7/2026` - `69.2`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `21/7/2026` - `83.2`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `21/7/2026` - `77.4`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `21/7/2026` - `84.7`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `21/7/2026` - `92.6`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `21/7/2026` - `44.2`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `13/11/2026` - `94.8`
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `13/11/2026` - `94.8`
+- `k8s.io/dynamic-resource-allocation/structured/internal/stable`: `13/11/2026` - `94.3`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `13/11/2026` - `97.7`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `13/11/2026` - `68.0`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `13/11/2026` - `84.3`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `13/11/2026` - `87.4`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `13/11/2026` - `86.5`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `13/11/2026` - `90.1`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `13/11/2026` - `42.0`
 
 ##### Integration tests
 
@@ -885,9 +886,10 @@ The following functionalities should be covered in E2E tests:
 #### GA
 
 - Available for general testing via the DRA Example Driver (kubernetes-sigs/dra-example-driver)
-- 2 examples of real-world use cases.
-  - DRA driver for multi-network can use this feature to manage and limit bandwidth quota.
-  - Acelerator DRA driver can use this feature for on-demand virtual memory allocation.
+- 3 examples of real-world use cases.
+  - DRA driver for multi-network (infinitydon/dra-linux-networks) can use this feature for virtual network multiplexer.
+  - Acelerator DRA driver (Project-HAMi/HAMi-dra) can use this feature for on-demand virtual memory allocation.
+  - DRA Driver for CPU (kubernetes-sigs/dra-driver-cpu) can use this feature to manage and limit CPU resources.
 - Allowing time for feedback from developers and users.
 - Concrete evaluation of scheduling performance metrics, addressing: https://github.com/kubernetes/kubernetes/pull/138618
 
@@ -1404,6 +1406,14 @@ Beta 1.37:
 - [Fix 140472 - ResourceSlice validRange.step of 2^64 re-panics with integer divide by zero](https://github.com/kubernetes/kubernetes/pull/140666) has been merged on 2026-07-21
 - [Fix 140441 - consumable-capacity roundUpRange overflows int64 for a large capacity request, allocating a device it cannot satisfy](https://github.com/kubernetes/kubernetes/pull/140442) has been pushed on 2026-07-11
 - [Fix 140650 - validate as fully qualified name in capacity requests](https://github.com/kubernetes/kubernetes/pull/140563) has been pushed on 2026-07-15
+
+Stable 1.38:
+
+- [Fix 140650 - validate as fully qualified name in capacity requests](https://github.com/kubernetes/kubernetes/pull/142202) has been merged on 2026-10-07
+- [Fix 140468 - validate and reject negative capacity across consumable and node-allocatable accounting](https://github.com/kubernetes/kubernetes/pull/143287) has been merged on 2026-10-28
+- [Add allocator performance optimizations](https://github.com/kubernetes/kubernetes/pull/142406) has been merged on 2026-10-29
+- [Promote ConsumableCapacity, DRAFractionalCapacityRange to GA](https://github.com/kubernetes/kubernetes/pull/143309) has been merged on 2026-11-05
+- [Fix admin access consumes capacity during evaluation](https://github.com/kubernetes/kubernetes/pull/144073) has been merged on 2026-11-13
 
 ## Drawbacks
 

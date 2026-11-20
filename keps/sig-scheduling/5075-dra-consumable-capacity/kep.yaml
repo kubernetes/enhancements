@@ -6,7 +6,7 @@ owning-sig: sig-scheduling
 participating-sigs:
   - sig-node
   - sig-network
-status: implementable
+status: implemented
 creation-date: 2025-30-01
 reviewers:
   - "@johnbelamaric"
