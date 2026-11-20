@@ -623,6 +623,20 @@ type DeviceTaintSelector struct {
     //
     // +optional
     Device *string
+
+    // All, if set to true, explicitly selects all devices. It must not be
+    // combined with driver, pool or device, and false is not a valid value.
+    // This is the explicit way of writing an empty selector. An empty
+    // selector is still accepted (and still matches all devices), but
+    // the API server returns a warning recommending all: true. Rejecting
+    // the empty selector may be considered in a later release.
+    //
+    // Validation is declarative only and there is no feature gate:
+    // a client or API server which does not know the field treats the
+    // selector as empty, which has the same meaning.
+    //
+    // +optional
+    All *bool
 }
 
 // DeviceTaintRuleStatus provides information about the effect of the DeviceTaintRule.
@@ -1094,6 +1108,7 @@ There are no SLOs for this feature.
 - 1.35: revised alpha with `effect: None` and DeviceTaintRule status
 - 1.36: graduation to beta
 - 1.37: graduation to stable
+- 1.38: revised API with `all: true` in `DeviceTaintSelector` and warning for empty selectors
 
 ## Drawbacks
 
