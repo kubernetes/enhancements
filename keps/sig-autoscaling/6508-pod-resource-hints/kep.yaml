@@ -1,0 +1,40 @@
+title: Pod Resource Hints for Autoscalers
+kep-number: 6508
+authors:
+  - "@jigisha620"
+owning-sig: sig-autoscaling
+participating-sigs:
+  - sig-node
+  - sig-apps
+status: provisional
+creation-date: 2026-10-16
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-node/1287-in-place-update-pod-resources"
+  - "/keps/sig-node/2837-pod-level-resource-spec"
+  - "/keps/sig-node/5419-pod-level-resources-in-place-resize"
+  - "/keps/sig-node/5972-dynamic-containers"
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5836-scheduler-preemption-for-ippr"
+
+stage: alpha
+
+latest-milestone: "v1.39"
+
+milestone:
+  alpha: "v1.39"
+  beta: "v1.41"
+  stable: "v1.43"
+
+feature-gates:
+  - name: PodResourceHints
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics:
+  - apiserver_request_total{resource="pods",subresource="resourcehints"}
