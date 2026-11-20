@@ -15,7 +15,8 @@
 - [Design Details](#design-details)
   - [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1)
     - [Restricted ambient capabilities.](#restricted-ambient-capabilities)
-  - [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1alpha2)
+  - [Interaction with Pod Security Standards](#interaction-with-pod-security-standards)
+  - [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1)
   - [Changes to containerd/containerd (<a href="https://github.com/containerd/containerd">https://github.com/containerd/containerd</a>)](#changes-to-containerdcontainerd-httpsgithubcomcontainerdcontainerd)
   - [Order of changes](#order-of-changes)
   - [Test Plan](#test-plan)
@@ -343,20 +344,13 @@ and make progress.
 
 ## Proposal
 
-- We propose updating the kubernetes core and CRI API's to allow users to configure adding capabilities to the ambient set. This would allow users to run non-root containers without having to apply file capabilities to the binary during image build time. Details on how and where these changes will be made are explained in the [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1) and [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1alpha2) sections below.
+- We propose updating the kubernetes core and CRI API's to allow users to configure adding capabilities to the ambient set. This would allow users to run non-root containers without having to apply file capabilities to the binary during image build time. Details on how and where these changes will be made are explained in the [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1) and [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1) sections below.
 
 - We also propose that container runtimes like `containerd` and `CRI-O` be updated to account for these changes to the CRI apis and add the requested capabilities to the ambient set when they create the containers. Details on how and where these changes will be made are explained in the [Changes to containerd/containerd (<a href="https://github.com/containerd/containerd">https://github.com/containerd/containerd</a>)](#changes-to-containerdcontainerd-httpsgithubcomcontainerdcontainerd) section below.
 
 ### User Stories (Optional)
 
-<<[UNRESOLVED] How much demand is there for this feature outside of NET_BIND_SERVICE>>
-
-_Blocking for Alpha._
-
-Is there enough demand for this feature today?
-
-<<[/UNRESOLVED]>>
-This might be useful for those who do their own kubernetes installation, and put CNI plugins in the pod, which is a very common practice nowadays. A rarer practice is to load BPF also for networking or security tracking (CAP_BPF is available since linux kernel version 5.8), [for example KubeArmor loads BPF for security purpose (<a href="https://github.com/kubearmor/KubeArmor">https://github.com/kubearmor/KubeArmor</a>)]. There are cases where system components are deployed in Pod which even load a kernel modules. CAP_PTRACE could be used for debugging purpose and CAP_AUDIT could be used by intrusion detection systems.
+This is useful for those who do their own kubernetes installation, and put CNI plugins in the pod, which is a very common practice nowadays. A rarer practice is to load BPF also for networking or security tracking (CAP_BPF is available since linux kernel version 5.8), [for example KubeArmor loads BPF for security purpose (<a href="https://github.com/kubearmor/KubeArmor">https://github.com/kubearmor/KubeArmor</a>)]. There are cases where system components are deployed in Pod which even load a kernel modules. CAP_PTRACE could be used for debugging purpose and CAP_AUDIT could be used by intrusion detection systems.
 
 #### Story 1
 As a security conscious user I should be able to run my container as non-root and add the minimum set of capabilities required for it to function even when I do not control how the image is built.
@@ -380,28 +374,11 @@ One risk of adding this feature is that it could be used to give non-root users 
 
 ### Changes to kubernetes API (https://pkg.go.dev/k8s.io/api/core/v1)
 
-<<[UNRESOLVED pick how we want to update the K8S APIs]>>
-
 _Blocking for Alpha._
 
-There are 2 options here:-
-- **Option 1:** Reuse Add field in [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
+- Add new field to [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
 
-  When a capability gets added explicitly to a non-root container it also gets added to the ambient set in addition to getting added to inheritable, permitted, bounding and effective sets. The default capabilities are not added to the ambient set.
-
-  **Pros and Cons**
-
-  :+1: Simple add and drop API is easy to use from a user perspective.
-
-  :+1: No new field needs to added to the K8S API Capabilities object.
-
-  :-1: How would we tell the difference at API validation time? I assume we'd have to look at mustRunAsNonRoot, because the apiserver has no idea whether a textual runAsUser is root or not. mustRunAsNonRoot it designed to fail at the last minute, in the Kubelet, which is bad UX. This makes this approach very awkward. Different behavior for root vs non-root might be confusing for users.
-
-  :-1: Since we are changing the default behavior for non-root containers we might break existing user containers. Issues with linux capabilities have proven themselves to be very hard to debug in the past.
-
-- **Option 2:** Add new field to [Capabilities](https://pkg.go.dev/k8s.io/api/core/v1#Capabilities)
-
-  When a capability is added using this field only then does it get added to the ambient set in addition to inheritable, permitted, bounding and effective sets. The behavior is consistent for root and non-root containers.
+  When a capability is added using this field only then it gets added to the ambient set in addition to inheritable, permitted, bounding and effective sets. The behavior is consistent for root and non-root containers.
 
   ```diff
   type Capabilities struct {
@@ -427,8 +404,6 @@ There are 2 options here:-
 
   :-1: Requires changes to the K8S API Capabilities object.
 
-<<[/UNRESOLVED]>>
-
 `Ambient` capabilities will adhere to the following rules:
 
 1. Ambient capabilities can only be added.
@@ -446,24 +421,32 @@ Some capabilities like `CAP_SYS_ADMIN` and `CAP_DAC_OVERRIDE` make a non-root us
 
 <<[/UNRESOLVED]>>
 
-### Changes to runtime API (https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2)
+### Interaction with Pod Security Standards
 
-We propose adding a new field to the [Capability](https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2#Capability) struct
+Pod Security Admission will apply the same profile-specific restrictions to `securityContext.capabilities.ambient` as to `securityContext.capabilities.add`:
 
-```diff
-type Capability struct {
-  // List of capabilities to add.
-  AddCapabilities []string `protobuf:"bytes,1,rep,name=add_capabilities,json=addCapabilities,proto3" json:"add_capabilities,omitempty"`
-  // List of capabilities to drop.
-  DropCapabilities     []string `protobuf:"bytes,2,rep,name=drop_capabilities,json=dropCapabilities,proto3" json:"drop_capabilities,omitempty"`
-  XXX_NoUnkeyedLiteral struct{} `json:"-"`
-  XXX_sizecache        int32    `json:"-"`
-+ // List of ambient capabilities to add.
-+ AddAmbientCapabilities []string `protobuf:"bytes,3,rep,name=add_ambient_capabilities,json=addAmbientCapabilities,proto3" json:"add_ambient_capabilities,omitempty"`
-}
-```
+- **Privileged:** no additional restrictions imposed by PSS.
+- **Baseline:** only capabilities from the existing Baseline allowlist are permitted.
+- **Restricted:** only `NET_BIND_SERVICE` is permitted, and containers must still specify `drop: ["ALL"]`.
 
-Adding capabilities to the `ambient` field in the `capabilities` field of the containers `securityContext` will directly update this field, and these changes would live in the [convertToRuntimeCapabilities](https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/pkg/kubelet/kuberuntime/security_context.go#L121:6) function.
+These checks apply to regular, init and ephemeral containers. All other requirements of the selected profile remain unchanged.
+
+### Changes to runtime API (https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1)
+
+Kubelet copies the new `securityContext.capabilities.ambient` field from the container spec into the existing CRI v1 `Capability.add_ambient_capabilities` field.
+
+containerd and CRI-O must use the same precedence as ordinary capability additions and drops. Start with an empty ambient set and apply, in order:
+
+1. If `add_ambient_capabilities` contains `ALL`, select all host kernel capabilities.
+2. If `drop_capabilities` contains `ALL`, clear the selection.
+3. Add individually named ambient capabilities.
+4. Remove individually named drops.
+
+Match unprefixed capability names such as `NET_BIND_SERVICE` case-insensitively. The runtime must use the result as the ambient set and add each member to the bounding, effective, inheritable, and permitted sets. This applies to root and non-root processes, including in privileged containers.
+
+The container entrypoint and processes launched through CRI `Exec` and `ExecSync` must use the ambient set resolved from the container's original configuration, subject to normal Linux `execve` and `no_new_privs` rules.
+
+`CreateContainer` must reject invalid ambient capability names with `InvalidArgument`, even if dropped. A runtime implementing the field must fail the operation before running a process if it cannot grant the resolved set.
 
 
 ### Changes to containerd/containerd (https://github.com/containerd/containerd)
@@ -481,17 +464,19 @@ specOpts = append(specOpts,
 )
 ```
 
-We would need to update code at that link to add the ambient capabilities by calling the [WithAmbientCapabilities](https://github.com/containerd/containerd/blob/ab963e1cc16a845567a0e3e971775c29c701fcf8/oci/spec_opts.go#L858) function instead of the [WithoutAmbientCapabilities](https://github.com/containerd/containerd/blob/04f73e3f8a097d95111f8419fa136d196b3a8725/pkg/cri/opts/spec_linux.go#L354) function.
+containerd and CRI-O must implement the same [CRI v1 behavior](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1).
 
 ### Order of changes
 We propose that the changes be made in the following order:
 
-1. Changes described in the [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1alpha2) section are made first as both containerd and kubernetes rely on these.
-2. Changes described in the [Changes to containerd/containerd (<a href="https://github.com/containerd/containerd">https://github.com/containerd/containerd</a>)](#changes-to-containerdcontainerd-httpsgithubcomcontainerdcontainerd) are made next.
+1. Changes described in the [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1) section are made first as both containerd and kubernetes rely on these.
+2. containerd and CRI-O implement the [CRI v1 behavior](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1) next.
 3. Once a version of `containerd` that supports ambient capabilities is available we make the changes described in the [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1) section.
 
 
 ### Test Plan
+
+Run the same CRI tests on containerd and CRI-O. Verify precedence, the five capability sets at process launch, exec behavior, and request failures.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -525,7 +510,7 @@ required to enable ambient capabilities is in place. It includes the following w
     - [ ] [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1)
 
 2. AmbientCapabilities feature-gate is added in to the default configuration as disabled(feature is opt-in by default)
-3. Changes to CRI API as described in section [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1alpha2</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1alpha2) are implemented.
+3. Changes to CRI API as described in section [Changes to runtime API (<a href="https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1">https://pkg.go.dev/k8s.io/cri-api/pkg/apis/runtime/v1</a>)](#changes-to-runtime-api-httpspkggodevk8siocri-apipkgapisruntimev1) are implemented.
 4. A version of containerd and CRI-O that properly sets the ambient capabilities as described in section [Changes to containerd/containerd (<a href="https://github.com/containerd/containerd">https://github.com/containerd/containerd</a>)](#changes-to-containerdcontainerd-httpsgithubcomcontainerdcontainerd) available.
 5. Changes to k8s API as described in [Changes to kubernetes API (<a href="https://pkg.go.dev/k8s.io/api/core/v1">https://pkg.go.dev/k8s.io/api/core/v1</a>)](#changes-to-kubernetes-api-httpspkggodevk8sioapicorev1) implemented.
 6. Update to kubelet code to sets ambient capabilities and these changes are hidden behind the feature-gate.
@@ -915,7 +900,7 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
-N/A.
+Ambient capabilities can survive execution of an ordinary program. A workload that launches a shell, helper script, or third-party plugin as a subprocess can therefore pass along capabilities that only the main process needs. Workloads should request the minimum ambient capabilities they require and drop unneeded capabilities before launching less-trusted subprocesses.
 
 ## Alternatives
 - Including `NET_BIND_SERVICE` in the ambient set by default.
