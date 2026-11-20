@@ -1,0 +1,14 @@
+title: $HOME/.kube/config.d
+kep-number: 6449
+authors:
+  - "@Mujib-Ahasan"
+owning-sig: sig-cli
+participating-sigs: []
+status: provisional
+creation-date: "2026-10-1"
+reviewers:
+  - "@soltysh"
+  - TBD
+approvers:
+  - "@soltysh"
+  - TBD
