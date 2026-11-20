@@ -514,6 +514,7 @@ For each of them, fill in the following information by copying the below templat
 - 2026-05-18: KEP-6090 created (CRI exec environment variable injection primitive)
 - 2026-05-19: Proposal presented at SIG Node meeting ([recording](https://www.youtube.com/watch?v=bl8OX2nlEfM&t=900s), discussion starts at 15:00)
 - 2026-06-15: KEP-6035 and KEP-6090 merged into this KEP per reviewer feedback; CRI primitive and audit ID propagation are presented as a single coherent proposal
+- 2026-06-18: Submitted for API review
 
 ## Drawbacks
 
