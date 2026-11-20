@@ -1,0 +1,13 @@
+title: Kubelet support for HugeTLB memory accounting on cgroup v2
+kep-number: 6523
+authors:
+  - "@AutuSnow"
+owning-sig: sig-node
+status: provisional
+creation-date: "2026-11-19"
+reviewers:
+  - TBD
+approvers:
+  - TBD
+stage: alpha
+# Release, enablement mechanism, and review assignments are still under discussion.
