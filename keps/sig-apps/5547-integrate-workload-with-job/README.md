@@ -112,13 +112,13 @@ The Job controller acts as a translator, compiling `spec.scheduling` into the un
 `Workload`/`PodGroup` objects. When `spec.scheduling` is omitted, it defaults to `Basic` 
 scheduling, so the scheduling outcome of existing Jobs is preserved.
 
-For v1.38 the integration is promoted to Beta and the `WorkloadWithJob` feature gate is enabled 
-by default. Because the `spec.scheduling` field is embedded in the GA `batch/v1` API, its building 
-blocks graduate straight into `scheduling.k8s.io/v1` (with Go type aliases left in `v1alpha3`) as 
-described in [KEP-6089]. The Beta revision also resolves the design questions the v1alpha2 left
-open and the controller exposes metrics for the `Workload`/`PodGroup` lifecycle. Default enablement
-is conditional on the `GenericWorkload` gate ([KEP-4671]) being enabled by default in the same
-release, since `WorkloadWithJob` depends on it.
+For v1.38 the integration is promoted to Beta. The `WorkloadWithJob` feature gate stays disabled 
+by default. 
+Because the `spec.scheduling` field is embedded in the GA `batch/v1` API, its building blocks graduate straight into `scheduling.k8s.io/v1` (with Go type aliases left in `v1alpha3`) as described in 
+[KEP-6089]. The Beta revision also resolves the design questions the v1alpha2 left open and the 
+controller exposes metrics for the `Workload`/`PodGroup` lifecycle. Default enablement follows in 
+the release where the `GenericWorkload` gate ([KEP-4671]) is enabled by default, since 
+`WorkloadWithJob` depends on it.
 
 ## Motivation
 
@@ -258,7 +258,7 @@ spec:
       gang: {}              # minCount omitted -> defaults to parallelism (4)
     schedulingConstraints:
       topology:
-        - level: "topology.kubernetes.io/zone"
+        - key: "topology.kubernetes.io/zone"
     disruptionMode:
       all: {}               # entire group must be disrupted together
   template:
@@ -287,17 +287,17 @@ metadata:
     controller: true
 spec:
   controllerRef:
-    apiVersion: batch/v1
+    apiGroup: batch
     kind: Job
     name: <job-name>
   podGroupTemplates:
-  - name: <podGroupTemplateName>
+  - name: <podGroup-template-name>
     schedulingPolicy:
       gang:
         minCount: 4         # defaulted from Job.spec.parallelism
     schedulingConstraints:
       topology:
-        - level: "topology.kubernetes.io/zone"
+        - key: "topology.kubernetes.io/zone"
     disruptionMode:
       all: {}
 ---
@@ -317,10 +317,9 @@ metadata:
     name: <workload-name>
     uid: <workload-uid>
 spec:
-  podGroupTemplateRef:
-    workload:
-      workloadName: <workload-name>
-      podGroupTemplateName: <podGroup-template-name>
+  workloadRef:
+    workloadName: <workload-name>
+    templateName: <podGroup-template-name>
   schedulingPolicy:
     gang:
       minCount: 4
@@ -366,7 +365,7 @@ metadata:
     controller: true
 spec:
   controllerRef:
-    apiVersion: batch/v1
+    apiGroup: batch
     kind: Job
     name: <job-name>
   podGroupTemplates:
@@ -390,10 +389,9 @@ metadata:
     name: <workload-name>
     uid: <workload-uid>
 spec:
-  podGroupTemplateRef:
-    workload:
-      workloadName: <workload-name>
-      podGroupTemplateName: <podGroup-template-name>
+  workloadRef:
+    workloadName: <workload-name>
+    templateName: <podGroup-template-name>
   schedulingPolicy:
     basic: {}
 ```
@@ -451,10 +449,6 @@ metadata:
     name: <job-name>
     uid: <job-uid>
     controller: true
-  - apiVersion: scheduling.k8s.io/v1beta1
-    kind: PodGroup
-    name: <podGroup-name>
-    uid: <podGroup-uid>
 spec:
   schedulingGroup:
     podGroupName: <workload-name>-<podGroup-template-name>-<hash>
@@ -516,7 +510,7 @@ outcome matches a standard Job, while a `Basic` `Workload`/`PodGroup` is still m
 
 - **Increased object count.** Because the controller now materializes a `Workload`/`PodGroup` for
   every eligible Job, the number of scheduling objects grows relative to the v1.36 alpha, which 
-  only created objects for inferred gang Jobs. With the gate enabled by default from v1.38, this 
+  only created objects for inferred gang Jobs. Once the gate is enabled by default, this 
   applies to every cluster, not only to those that opted in.
   * *Mitigation:* objects are small and garbage-collected with the Job. The Scalability section 
   quantifies the impact, the feature can still be disabled with the `WorkloadWithJob` gate, and performance tests
@@ -534,7 +528,7 @@ outcome matches a standard Job, while a `Basic` `Workload`/`PodGroup` is still m
   [Suspend and Resume](#suspend-and-resume).
 
 - **Job blocked on unsupported scheduling objects.** The controller cannot safely determine which
-  scheduling constraints to apply when a root Job finds more than one `Workload` referencing it,
+  scheduling constraints to apply when the `Workload` at a root Job's name does not reference the Job,
   when a `Workload` has an unsupported shape, or when the object at the Job's `PodGroup` name does
   not reference the selected template. This can result
   from a change to controller-owned objects, a name collision, or a bug in a higher-level
@@ -587,8 +581,7 @@ type JobSpec struct {
     // ... existing fields ...
 
     // Scheduling defines the Workload-aware Scheduling configuration for this Job.
-    // This field is beta-gated by the WorkloadWithJob feature gate (enabled by
-    // default since v1.38).
+    // This field is gated by the WorkloadWithJob feature gate.
     // +optional
     Scheduling *JobSchedulingConfiguration `json:"scheduling,omitempty"`
 }
@@ -621,9 +614,9 @@ type JobSchedulingConfiguration struct {
 }
 
 // SchedulingBlocked indicates that the controller cannot safely create pods
-// because the scheduling objects for the Job are missing, ambiguous, or have
-// an unsupported structure. This is a non-terminal condition and is cleared
-// after the scheduling objects are repaired.
+// because the scheduling objects for the Job are missing or have an unsupported 
+// structure. This is a non-terminal condition and is cleared after the 
+// scheduling objects are repaired.
 const JobSchedulingBlocked JobConditionType = "SchedulingBlocked"
 ```
 
@@ -638,7 +631,8 @@ field-gating semantics apply: when the gate is disabled, the API server clears `
 create and ignores it on update (preserving an already-set value on the stored object), and the
 field's validation and the controller's compilation (including its compile-time resolution of unset
 fields; the api-server does not default `spec.scheduling`) only run when the gate is enabled. From
-v1.38 the gate is enabled by default, so this path is only taken by clusters that opt out.
+v1.38 the gate is Beta but still disabled by default, so this is the default path until a cluster
+opts in.
 
 This typed, user-facing field replaces the v1.36 alpha's implicit mechanisms: the type-based
 automatic policy inference and the `spec.template.spec.schedulingGroup`-based opt-out are no longer
@@ -668,12 +662,15 @@ library lives separately in `k8s.io/component-helpers/scheduling/schedulingv1/wo
 be vendored by both in-tree and out-of-tree controllers. The Job controller consumes these entrypoints:
 
 - `NewBuilder(root *WorkloadItem, opts BuildOptions)` and `(*Builder).BuildWorkload()` to compile
-  the `Workload` from `spec.scheduling`
-- `NewBuilderFromExistingWorkload(workload, opts)` to recompile against a persisted `Workload`
-  (elastic resize, delegated `PodGroup`, resume after suspend)
+  the `Workload` from `spec.scheduling` on creation and to resolve the desired `minCount` on an
+  elastic resize
+- `NewBuilderFromExistingWorkload(workload, opts)` to instantiate a `PodGroup` from a persisted
+  `Workload` (root Job, delegated `PodGroup`, resume after suspend)
 - `(*Builder).NewPodGroup(podGroupName, templateName)` to instantiate the runtime `PodGroup` from
   a template
 - `(*Builder).Validate(ctx, ValidationInput)` from API validation
+- `GenerateWorkloadName(ownerName, ownerUID)` and
+  `GeneratePodGroupName(workloadName, templateName, ownerUID)` for the deterministic names
 
 If the library API shifts, the Job integration tracks those changes through the shared dependency
 rather than maintaining its own copy.
@@ -681,19 +678,18 @@ rather than maintaining its own copy.
 #### Building the Logical Tree and Compiling the `Workload`
 
 The controller assembles the logical tree and compiles it in these steps: 
-  1. Build a `workloadbuilder.WorkloadInput` from `spec.scheduling` via `jobutil.WorkloadInput`,
-    mapping `schedulingPolicy`/`schedulingConstraints`/`disruptionMode`/`resourceClaims` onto the
-    library's per-block inputs (with their field paths for error reporting).
+  1. Build a `workloadbuilder.WorkloadInput` from `spec.scheduling`, mapping `schedulingPolicy`/`schedulingConstraints`/`disruptionMode`/`resourceClaims` 
+  onto the library's per-block inputs (with their field paths for error reporting).
   2. Assemble a single-node `WorkloadItem` via `jobutil.WorkloadItemForJob`, whose `DefaultConfig`
     resolves an absent policy to `Basic` and whose callback defaults an unset gang `minCount` to
     `spec.parallelism` (clamped to `>= 1`).
-  3. Invoke `NewBuilder(item, BuildOptions{Owner: <controllerRef to Job>, AllowedPolicies: ...,
-    AllowedDisruptionModes: ...}).BuildWorkload()`. The controller-owner `OwnerReference` makes
-    the emitted `Workload` GC with the Job.
+  3. Invoke `NewBuilder(item, BuildOptions{Name: ..., Namespace: ..., Owner: <controllerRef to Job>}).BuildWorkload()`. 
+  The controller-owner `OwnerReference` makes the emitted `Workload` GC with the Job. The 
+  `AllowedPolicies`/`AllowedDisruptionModes` allow-lists are passed by API validation, not by the controller.
 
-For a `PodGroup` created from an external `Workload`, an update against a controller-owned `Workload`, or a
+For every runtime `PodGroup`, including one created from an external `Workload` or a
 `PodGroup` recreated on resume, the controller uses `NewBuilderFromExistingWorkload(workload, BuildOptions{...})` 
-so it recompiles against the already-persisted template instead of re-deriving it from scratch.
+so it is instantiated from the already-persisted template instead of being re-derived from the Job.
 
 #### API Validation via the `workloadbuilder` Library
 
@@ -717,14 +713,20 @@ so it recompiles against the already-persisted template instead of re-deriving i
    * `spec.scheduling` is rejected when the Job carries `scheduling.k8s.io/workload-name` or
      `scheduling.k8s.io/group-template-name`, because the external `Workload` is authoritative and
      `spec.scheduling` would have no effect. This applies on create, on update (unless the old
-     object already had the combination, since annotations are mutable), and to a `CronJob`
+     object already had the combination), and to a `CronJob`
      `jobTemplate`, whose annotations are copied onto each Job.
+   * `scheduling.k8s.io/workload-name` and `scheduling.k8s.io/group-template-name` must both be
+     set to non-empty values once either is present, on a Job and on a `CronJob` `jobTemplate`.
+     On update, an unchanged pair is accepted so existing objects stay updatable.
+   * Those two annotations and `scheduling.k8s.io/parent-compositepodgroup` are immutable on a
+     Job after creation, so the management mode and the selected template cannot change.
 3. **`workloadbuilder` semantic validation** owns the consistency rules that must stay identical to
    what the controller compiles. Validation builds the same `WorkloadItem` tree the controller does 
    and calls `NewBuilder(...).Validate()`. This runs the builder's allow-list checks. In-tree 
    it is constructed with `BuildOptions{DisableDeclarativeValidation: true}` because the api-server already ran DV on the
    versioned building blocks, so `Validate` here neither re-runs DV, compiles the `Workload`, nor
-   needs an owner.
+   needs an owner. An update that leaves the Job spec unchanged skips these checks, so tightening
+   them later never invalidates persisted objects.
 
 #### Instantiating the runtime `PodGroup`
 
@@ -743,7 +745,9 @@ keys on for gang/topology behavior.
 #### Reconcile Integration and Error Handling
 
 The scheduling reconcile path is invoked from the Job reconcile loop, gated on the
-`WorkloadWithJob` feature gate, before pod management runs. Creation eligibility depends on the
+`WorkloadWithJob` feature gate, before pod management runs. It is skipped while the Job's pod
+expectations are unsatisfied, while the Job is being deleted, and once an earlier sync has decided
+the Job's outcome (`SuccessCriteriaMet` or `FailureTarget`). Creation eligibility depends on the
 management mode and lifecycle phase, as described in [Controller Workflow](#controller-workflow).
 The integration is designed to be idempotent and crash-safe:
 
@@ -753,26 +757,27 @@ The integration is designed to be idempotent and crash-safe:
   retried against the now-visible object.
 - **Ordering:** `Workload` is created (or found) before the `PodGroup`, and both before pods, so
   references always resolve.
-- **Invalid `spec.scheduling`:** a compilation error from `BuildWorkload` is terminal for that spec.
-  Because `spec.scheduling` is immutable, the controller fails the Job without creating pods. The user 
-  recreates the Job with a valid `spec.scheduling`. API validation runs the same `workloadbuilder` 
-  checks, so this is not expected after admission.
+- **Invalid `spec.scheduling`:** a compilation error from `BuildWorkload` is returned as a sync error.
+  The Job is requeued with backoff and no pods are created, but the Job is not failed. Because
+  `spec.scheduling` is immutable, the user recreates the Job with a valid `spec.scheduling`. API 
+  validation runs the same `workloadbuilder` checks, so this is not expected after admission.
 - **API errors are retryable:** an API error creating the `Workload`/`PodGroup` emits
-  `FailedWorkloadCreate` and requeues the Job with backoff, blocking pod creation until the write
+  `FailedWorkloadCreate` or `FailedPodGroupCreate` and requeues the Job with backoff, blocking pod creation until the write
   succeeds.
 - **Blocking:** two situations stop pod creation without failing the Job. In both, the controller
-  sets the non-terminal `SchedulingBlocked=True` condition through a dedicated status update (so
-  `status.startTime` and other lifecycle fields are untouched), emits a Warning event, increments
-  `job_scheduling_object_syncs_total{result="error"}`, and returns an error so the Job is requeued
-  with backoff. No new pods are created until the next successful reconciliation clears the condition.
-  - *Missing external dependency* (`managePodGroupOnly` only): event `SchedulingDependencyNotFound`,
-    reason `WorkloadNotFound` or `PodGroupTemplateNotFound`. The creation window stays open so the
-    `PodGroup` is created once the dependency appears.
-  - *Unsupported or ambiguous objects*: event and reason `UnsupportedWorkloadStructure`. An
-    operator must remove the duplicate or repair the object.
+  sets the non-terminal `SchedulingBlocked=True` condition in the Job's regular status update,
+  leaves `status.startTime` unset while blocked, emits a Warning event when the condition changes,
+  and returns an error so the Job is requeued with backoff. A suspended Job still has its active
+  pods deleted while blocked. No new pods are created until a successful reconciliation sets the
+  condition to `False` with reason `SchedulingObjectsValid`. The Warning event and the condition
+  use the same reason:
+  - *Missing external dependency* (`managePodGroupOnly` only): `SchedulingDependencyNotFound`.
+    The creation window stays open so the `PodGroup` is created once the dependency appears.
+  - *Invalid objects or annotations*: `InvalidSchedulingObjects`. An operator must remove the
+    colliding object or repair it.
 - **Updates:** on a `gang.minCount` (or `parallelism`-driven) change the controller recompiles the
-  desired `Workload` (`NewBuilderFromExistingWorkload(...).BuildWorkload`) and patches the delta to
-  the existing object, then patches the size onto the runtime `PodGroup`.
+  desired `Workload` from the Job (`NewBuilder(...).BuildWorkload`), patches only `minCount` on
+  the `Workload` it controls, then patches the size onto the runtime `PodGroup`.
 - **Suspend/resume:** the runtime `PodGroup` is the only object the controller deletes explicitly.
 
 ### Job Controller Changes
@@ -841,32 +846,40 @@ A `PodGroup` is considered the `PodGroup` for this Job if:
 - it is in the Job's namespace
 - its name is `GeneratePodGroupName(workloadName, templateName, job.UID)`, see
   [Naming Conventions](#naming-conventions). Sibling Jobs selecting the same template (e.g.
-  JobSet `ReplicatedJob` replicas) have identical `spec.podGroupTemplateRef`s, so only the name
+  JobSet `ReplicatedJob` replicas) have identical `spec.workloadRef`s, so only the name
   tells them apart.
 
-The Job is blocked with `UnsupportedWorkloadStructure` if:
+The Job is blocked with `InvalidSchedulingObjects` if:
 - a root Job's `Workload` does not have exactly one template
 - a root Job's `Workload` has a `spec.controllerRef` that does not point at this Job
-- the Job's `PodGroup` name does not reference the selected `Workload` and template
+- the object at the Job's `PodGroup` name does not reference the selected `Workload` and template
+- in `managePodGroupOnly`, the `scheduling.k8s.io/workload-name` or
+  `scheduling.k8s.io/group-template-name` annotation is missing or empty. API validation rejects
+  this on create, so it only affects Jobs persisted before that validation.
 
-In `managePodGroupOnly`, the Job is blocked and retried while any of these is true:
-- `WorkloadNotFound`: the   `scheduling.k8s.io/workload-name` annotation is missing, or no
-  `Workload` with that name exists in the Job's namespace yet.
-- `PodGroupTemplateNotFound`: the `Workload` has no template named by
-  `scheduling.k8s.io/group-template-name`.
+In `managePodGroupOnly`, the Job is blocked with `SchedulingDependencyNotFound` and retried while
+either of these is true:
+- no `Workload` named by `scheduling.k8s.io/workload-name` exists in the Job's namespace yet
+- that `Workload` has no template named by `scheduling.k8s.io/group-template-name`
 
 When `spec.template.spec.schedulingGroup.podGroupName` is set (`manageNone`), the controller uses
 that name as-is and performs no discovery.
 
 #### Controller Workflow
 
-The Job controller attempts to create the `Workload` and `PodGroup` only when the Job has no pods
-associated with it (no active or terminal pods owned by the Job). If the Job already has one or
-more pods, the controller only discovers and uses the existing `Workload`/`PodGroup`, if any, and
-does not create new ones. This rule is important for correctness when the controller restarts or
-is upgraded in the middle of the workflow (i.e., after creating the `Workload` but before creating
-the `PodGroup` or pods). On the next sync, the controller finds the existing objects via the
-listers and continues.
+The two objects have different creation windows:
+
+- The `Workload` is created only for a Job that has never run. It owns no pods (active or
+  terminal), `status.startTime` is unset, and `status.succeeded` and `status.failed` are 0.
+- The `PodGroup` is created only while the Job is not suspended and has no active pods. Terminal
+  pods do not close this window, which is what lets resume recreate the `PodGroup` deleted on
+  suspend.
+
+Outside these windows the controller only discovers and uses the existing `Workload`/`PodGroup`,
+if any, and does not create new ones, so grouped and ungrouped pods are not mixed. This rule is
+important for correctness when the controller restarts or is upgraded in the middle of the
+workflow (i.e., after creating the `Workload` but before creating the `PodGroup` or pods). On the
+next sync, the controller finds the existing objects via the listers and continues.
 
 A suspended Job follows the same workflow and gets its `Workload` created. Its `PodGroup` is
 created only on resume.
@@ -878,15 +891,15 @@ The controller discovers or creates `Workload` and `PodGroup` as follows:
    template carries.
    - In `managePodGroupOnly` (skip step 4), the `Workload` is external and is never created, adopted,
    recompiled, mutated, or deleted.
-2. If the Job already has pods (active or terminal pods owned by this Job), skip creation and only
+2. Outside the creation windows above, skip creation and only
    discover existing objects.
 3. Get the `Workload` by name:
    - If none found in `manageBoth` compile a `Workload` from the Job's `spec.scheduling` and
    create it, with a controller `ownerReference` and `spec.controllerRef` pointing to this Job.
    - In `managePodGroupOnly`, get the `Workload` named by `scheduling.k8s.io/workload-name` and
    select the template named by `scheduling.k8s.io/group-template-name`. If either is missing, set
-   `SchedulingBlocked=True` (reason `WorkloadNotFound` or `PodGroupTemplateNotFound`) and retry.
-   - If one of the `UnsupportedWorkloadStructure` cases above applies, block.
+   `SchedulingBlocked=True` (reason `SchedulingDependencyNotFound`) and retry.
+   - If one of the `InvalidSchedulingObjects` cases above applies, block.
    - Otherwise, that is the `Workload` for this Job. Its `ownerReferences` are not changed.
 4. When creating a new `Workload`, the controller derives the scheduling policy from the Job's
    `spec.scheduling` rather than from the Job's type. It maps `spec.scheduling` into the
@@ -900,7 +913,7 @@ The controller discovers or creates `Workload` and `PodGroup` as follows:
    `CompositePodGroup` instance. An `AlreadyExists` error (informer lag) requeues the Job and the
    next sync finds the object.
    - If the object at that name does not reference the selected `Workload` and template, block
-   (`UnsupportedWorkloadStructure`).
+   (`InvalidSchedulingObjects`).
    - Otherwise, that is the `PodGroup` for this Job. Its `ownerReferences` are not changed.
    `gang.minCount` is reconciled only when the Job is the controller owner, which is the case for
    every `PodGroup` the Job controller created.
@@ -910,7 +923,8 @@ The controller discovers or creates `Workload` and `PodGroup` as follows:
    gate was off), new pods are created without it too and a `MixedSchedulingGroup` Warning event
    is emitted once, so a gang is never half-grouped.
 
-The controller requires informers, listers and indexers for `Workload` and `PodGroup` objects.
+The controller requires informers and listers for `Workload` and `PodGroup` objects. Discovery is
+by name, so no indexers are needed.
 Both `Workload` and `PodGroup` are automatically garbage collected when they were created by the Job
 controller and the corresponding Job is deleted.
 
@@ -929,12 +943,11 @@ flowchart BT
     Job[Job]
 
     Pod -->|"controller ownerRef"| Job
-    Pod -->|"ownerRef"| PodGroup
     PodGroup -->|"controller ownerRef"| Job
     PodGroup -->|"ownerRef"| Workload
     Workload -->|"controller ownerRef"| Job
     Workload -.->|"spec.controllerRef"| Job
-    PodGroup -.->|"spec.podGroupTemplateRef"| Workload
+    PodGroup -.->|"spec.workloadRef"| Workload
     Pod -.->|"spec.schedulingGroup.podGroupName"| PodGroup
 ```
 
@@ -949,26 +962,28 @@ flowchart BT
     Parent[Parent workload controller]
 
     Pod -->|"controller ownerRef"| Job
-    Pod -->|"ownerRef"| PodGroup
     Job -->|"controller ownerRef"| Parent
     PodGroup -->|"controller ownerRef"| Job
     Workload -->|"controller ownerRef"| Parent
     Workload -.->|"spec.controllerRef"| Parent
-    PodGroup -.->|"spec.podGroupTemplateRef"| Workload
+    PodGroup -.->|"spec.workloadRef"| Workload
     Pod -.->|"spec.schedulingGroup.podGroupName"| PodGroup
 ```
 
 - The `Workload` has a controller ownerReference to the `Job` only when the Job controller created it.
-- The `PodGroup` links to its `Workload` via `spec.podGroupTemplateRef`. When the Job controller
+- The `PodGroup` links to its `Workload` via `spec.workloadRef`. When the Job controller
   creates it, the controller ownerReference points to the Job in both modes, so a delegated
   `PodGroup` is garbage collected with its Job. A parent-owned `Workload` is never given an
   ownerReference from the `PodGroup`.
-- The `Pod` has a controller ownerReference to the `Job` and a non-controller one to the `PodGroup`.
+- The `Pod` has a controller ownerReference to the `Job` only. It refers to its `PodGroup` through
+  `spec.schedulingGroup.podGroupName`, not through an ownerReference. With one, background deletion
+  of the Job would deadlock: the garbage collector would keep the pods alive for the terminating
+  `PodGroup` while the `PodGroup` protection finalizer waits for the pods.
 
 A user pre-created `Workload` follows the delegated diagram without the parent.
 
 The Job controller never adds ownerReferences to objects it did not create. Garbage collection
-follows the solid edges, so no Pod is left with a stale `PodGroup` reference.
+follows the solid edges, so the pods and the controller-created `PodGroup` are deleted with the Job.
 
 #### Defaulting Rules
 
@@ -1032,13 +1047,13 @@ A user can change the target gang size in one of two ways:
 
 In either case, the Job controller reconciles the change as follows:
 
-1. **Detection:** the Job controller's reconcile loop detects the change and fetches the existing
-   `Workload` resource from the API server.
-2. **Workload Compilation:** it recompiles the desired `Workload` from the updated
-   `spec.parallelism`/`minCount` via `NewBuilderFromExistingWorkload(...).BuildWorkload`, reusing the
-   persisted template so only the gang size changes.
-3. **Workload Update:** the controller applies the delta to the existing resource with a
-   strategic-merge `Patch` rather than a full replace.
+1. **Detection:** the Job controller's reconcile loop gets the existing `Workload` from its lister.
+2. **Workload Compilation:** when `spec.scheduling.schedulingPolicy.gang` is set, it recompiles the
+   desired `Workload` from the updated Job via `NewBuilder(...).BuildWorkload` and reads the
+   resolved `minCount` from it.
+3. **Workload Update:** if the Job is the controller owner of the `Workload` and the persisted
+   gang `minCount` differs, the controller sets only `minCount` with a strategic-merge `Patch`
+   rather than a full replace.
 4. **PodGroup Sync:** the controller patches the updated size onto the runtime `PodGroup` so the
    scheduler targets the newly scaled size. In `managePodGroupOnly` the external `Workload` is
    never recompiled, and the controller syncs the `PodGroup` it owns with the selected external
@@ -1117,8 +1132,8 @@ metadata:
   name: training
   namespace: training
   annotations:
-    scheduling.k8s.io/workload-name: training<hash>
-    scheduling.k8s.io/group-template-name: <workload-name>-<podGroup-template-name>-<hash>
+    scheduling.k8s.io/workload-name: training-template
+    scheduling.k8s.io/group-template-name: workers
 spec:
   parallelism: 4
   # ... pod template omitted
@@ -1175,6 +1190,13 @@ Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blo
   - This replaces the alpha `GeneratePodGroupName(workloadName, templateName)`, which had no Job
     identity.
 
+**3. PodGroupTemplate (root Job only)**
+  - Pattern: `<(truncated-if-needed)job-name>-pgt-0`
+  - Dots in the Job name are replaced with `-`, and the Job name is truncated so the result fits
+    the DNS label limit while keeping the suffix.
+  - The controller uses the template name carried by the persisted `Workload`, so the `PodGroup`
+    name follows that `Workload` even if its single template is named differently.
+
 ### Deletion and Garbage Collection
 
 Deletion of the scheduling objects happens on two paths:
@@ -1182,7 +1204,7 @@ Deletion of the scheduling objects happens on two paths:
 - **Job deletion** relies on garbage collection:
   - The controller-created `Workload` and `PodGroup` objects carry a controller `ownerReference` to the Job, so they are deleted when the Job is deleted. 
   - A `PodGroup` `DELETE` executes immediately, but the object stays in terminating state until the finalizer
-  observes all referencing pods terminal. The `blockOwnerDeletion` is unset on the Pod ownerRef so the
+  observes all referencing pods terminal. Pods carry no ownerReference to the `PodGroup`, so the
   garbage collector adds no further dependency.
 - **Job suspension** is the one case where the controller deletes explicitly, and only a runtime
   `PodGroup` whose controller `ownerReference` is the Job. The `Workload` is never deleted by the
@@ -1227,7 +1249,7 @@ to implement this enhancement.
   - `workloadbuilder` compilation: `Basic` vs `Gang` policy, and that topology constraints,
     disruption mode (single/all), and resourceClaims are mapped into the generated `Workload`/
     `PodGroup`; that a `Job` builds a flat single-node tree via the shared
-    `WorkloadInput`/`WorkloadItemForJob` helpers. A compilation error fails the Job.
+    `WorkloadInput`/`WorkloadItemForJob` helpers.  
   - A `Basic` `Workload`/`PodGroup` is created for a Job with `spec.scheduling` omitted.
   - pod creation includes the correct `schedulingGroup`.
   - Mutability/validation: updates to `spec.scheduling.schedulingPolicy.gang.minCount` are allowed; updates to
@@ -1253,12 +1275,12 @@ to implement this enhancement.
     each create and own their own `PodGroup`. Deleting one sibling deletes only its `PodGroup`, and
     a `gang.minCount` change on the template is synced onto both.
   - `PodGroup` name collision: an unrelated `PodGroup` at the Job's `PodGroup` name blocks with
-    `UnsupportedWorkloadStructure` until it is removed, for both root and delegated Jobs.
+    `InvalidSchedulingObjects` until it is removed, for both root and delegated Jobs.
   - Root `Workload` name collision: a `Workload` at the root Job's `<job-name>-<hash>` name whose
-    `spec.controllerRef` is not the Job blocks with `UnsupportedWorkloadStructure`.
+    `spec.controllerRef` is not the Job blocks with `InvalidSchedulingObjects`.
   - Missing delegated dependency: a delegated Job with no `scheduling.k8s.io/workload-name`
     annotation, or whose named `Workload` or `PodGroupTemplate` does not exist yet, gets
-    `SchedulingBlocked=True` (reason `WorkloadNotFound` or `PodGroupTemplateNotFound`) and no pods,
+    `SchedulingBlocked=True` (reason `SchedulingDependencyNotFound`) and no pods,
     also while suspended.
   - BYO `Workload`: a standalone Job with both annotations uses the `Workload` named by
     `scheduling.k8s.io/workload-name`.
@@ -1285,7 +1307,7 @@ to implement this enhancement.
 Existing tests in `test/integration/job/job_test.go` (v1.37):
 - `TestJobGangScheduling`: lifecycle for `Basic` and `Gang` Jobs (create, discover, delete; `Workload`
   and `PodGroup` are materialized, pods carry `schedulingGroup`, deletion cascades), passthrough of
-  topology constraints, disruption mode and resourceClaims, and blocking on multiple objects.
+  topology constraints, disruption mode and resourceClaims, and blocking on a colliding scheduling object.
 - `TestJobGangSchedulingElasticScaling`: updating `spec.scheduling.schedulingPolicy.gang.minCount`
   (or `spec.parallelism` when `minCount` is unset) updates the `Workload` and the runtime `PodGroup`.
 - `TestJobGangSchedulingSuspendResume`: suspend/resume behavior (updated for Beta, see above).
@@ -1308,11 +1330,11 @@ and a missing or unsupported template blocks.
   before the named template exists) is blocked, then recovers without being recreated once the
   dependency is added. Repeated with the Job created suspended: the condition is set while
   suspended, clears once the `Workload` exists, and the `PodGroup` appears on resume.
-- Ambiguous and drifted scheduling objects: blocked, then recovers after the objects are
+- Colliding and drifted scheduling objects: blocked, then recovers after the objects are
   repaired.
 - Sibling delegated Jobs: two Jobs with the same parent and template each get their own
   `PodGroup`, and deleting one Job leaves the other's `PodGroup` in place.
-- Gate enable -> disable -> re-enable: a gang Job created with the gate on keeps its `Workload`/
+- Gate enable -> disable -> re-enable (`TestJobGangSchedulingFeatureGateReEnable`): a gang Job created with the gate on keeps its `Workload`/
   `PodGroup` while the gate is off and creates ungrouped pods. After re-enable, new pods stay
   ungrouped with a `MixedSchedulingGroup` event until the ungrouped pods finish, then carry
   `schedulingGroup` again.
@@ -1322,18 +1344,21 @@ and a missing or unsupported template blocks.
 Existing tests (`test/e2e/apps/job.go`):
 - `should compile a Workload and PodGroup for a gang-scheduled Job and wire its pods to the PodGroup`
 - `should propagate an elastic gang minCount change to the Workload and PodGroup`
-- `should create Workload and PodGroup for gang-eligible Job` (also gated on `GenericWorkload`;
-  verifies `PodGroup` owner references and pod `schedulingGroup` wiring)
-
 Tests added for Beta:
-- Gang scheduling behavior: with insufficient capacity for `minCount` pods, no pod of the gang is
+- Gang scheduling behavior (`should bind no pod of a gang Job until there is capacity for minCount pods`):
+  with insufficient capacity for `minCount` pods, no pod of the gang is
   bound; once capacity is available all are bound.
-- `Basic` scheduling policy: pods of a Job without `spec.scheduling` are scheduled pod-by-pod and
+- `Basic` scheduling policy (`should create a Basic Workload and PodGroup for a Job without spec.scheduling and run it to completion`):
+  pods of a Job without `spec.scheduling` are scheduled pod-by-pod and
   the Job completes, with a `Basic` `Workload`/`PodGroup` present.
-- Suspend/resume: a suspended gang Job gets a replacement `PodGroup` after resume and completes
+- Suspend/resume (`should recreate the PodGroup of a gang Job resumed after suspension and run it to completion`):
+  a suspended gang Job gets a replacement `PodGroup` after resume and completes
   under the `Gang` policy. A `Basic` Job resumes with pod-by-pod placement under its own policy.
-- CronJob with gang scheduling: each Job created by the CronJob gets its own `Workload`/`PodGroup`,
+- CronJob with gang scheduling (`test/e2e/apps/cronjob.go`, `should give each gang Job its own Workload and PodGroup and remove them with the Job`):
+  each Job created by the CronJob gets its own `Workload`/`PodGroup`,
   and completed Jobs clean up their scheduling objects via GC.
+- Sibling delegated Jobs (`should keep the PodGroup of a delegated Job when a sibling Job selecting the same template is deleted`):
+  deleting one Job leaves the other's `PodGroup` in place.
 
 Performance: a scale test in `kubernetes/perf-tests` compares Job creation throughput and
 `job_sync_duration_seconds` with the gate on and off, and records time-to-first-bind for gang Jobs.
@@ -1370,14 +1395,14 @@ The second alpha replaced the automatic model with the user-facing API:
 
 #### Beta
 
-- `WorkloadWithJob` enabled by default, together with `GenericWorkload` ([KEP-4671]). If
-  `GenericWorkload` does not ship default-on in v1.38, `WorkloadWithJob` graduates to Beta as
-  default-disabled.
+- `WorkloadWithJob` graduates to Beta as default-disabled, because `GenericWorkload` ([KEP-4671])
+  is not enabled by default in v1.38. The default flips to enabled in the release where
+  `GenericWorkload` is enabled by default.
 - `batch/v1.JobSpec.Scheduling` repointed to the `scheduling.k8s.io/v1` building blocks
   ([KEP-6089]).
 - A suspended Job deletes its controller-owned runtime `PodGroup` together with its pods, and
   resume recreates it once the old object is gone.
-- Unsupported or ambiguous scheduling objects emit an `UnsupportedWorkloadStructure` Warning
+- Invalid scheduling objects emit an `InvalidSchedulingObjects` Warning
   event, set the non-terminal `SchedulingBlocked` condition, and block new pod creation until
   repaired.
 - Missing delegated `Workload` and `PodGroupTemplate` dependencies are retried without closing
@@ -1400,7 +1425,7 @@ The second alpha replaced the automatic model with the user-facing API:
 - `GenericWorkload` ([KEP-4671]) is GA.
 - Two releases of Beta with no changes to the `spec.scheduling` shape or defaulting.
 - Address all issues reported by users during beta, including feedback on the blocking and
-  recovery behavior for ambiguous or drifted objects.
+  recovery behavior for invalid or drifted objects.
 - Multiple `PodGroup`s per Job from a single `PodGroupTemplate` in a follow-up KEP, see [Future Extensions](#future-extensions).
 - e2e tests for `spec.scheduling` promoted to conformance.
 - `WorkloadWithJob` locked to enabled; the gate is removed after the deprecation window.
@@ -1416,10 +1441,10 @@ This KEP is additive and falls back to the original behavior on downgrade.
 
 #### Upgrade
 
-kube-apiserver is upgraded first, then kube-controller-manager. From that point every eligible Job
+kube-apiserver is upgraded first, then kube-controller-manager. Once `WorkloadWithJob` is enabled on both, every eligible Job
 that has not started gets a `Workload`/`PodGroup` compiled from its `spec.scheduling` (defaulting
 to `Basic`). Jobs that already have pods before the upgrade only reuse existing scheduling objects. Operators who do not want
-the scheduling objects can set `WorkloadWithJob=false` on kube-apiserver and kube-controller-manager;
+the scheduling objects leave `WorkloadWithJob` disabled on kube-apiserver and kube-controller-manager;
 disabling `GenericWorkload` requires disabling `WorkloadWithJob` as well.
 
 The v1.37 `PodGroup` name has no Job identity (`<workload>-<template>`), so a Job that already has
@@ -1551,7 +1576,7 @@ sequence:
 1. Start a v1.37 cluster with `WorkloadWithJob` and `GenericWorkload` disabled (default). Create a
    Job with `spec.scheduling.schedulingPolicy.gang`; verify the field is dropped and the Job runs
    pod-by-pod with no `Workload`/`PodGroup`.
-2. Upgrade to v1.38 (gates enabled by default). Create a gang Job; verify a `Workload` and
+2. Upgrade to v1.38 and enable both gates. Create a gang Job; verify a `Workload` and
    `PodGroup` are created, pods carry `schedulingGroup`, and pods are bound together. Suspend the
    Job; verify the `PodGroup` is deleted and the `Workload` retained. Resume; verify a new
    `PodGroup` is created and the Job completes.
@@ -1576,19 +1601,19 @@ in use. For a specific Job, `kubectl get workloads,podgroups -n <ns>` lists the 
 
 - [x] Events
   - Event Reason: `WorkloadCreated`, `PodGroupCreated`, `PodGroupDeleted` (Normal);
-    `FailedWorkloadCreate`, `SchedulingDependencyNotFound`,
-    `UnsupportedWorkloadStructure` (Warning)
+    `FailedWorkloadCreate`, `FailedPodGroupCreate`, `SchedulingDependencyNotFound`,
+    `InvalidSchedulingObjects`, `MixedSchedulingGroup` (Warning)
 - [x] API .spec
   - Other field:
     - `.spec.schedulingGroup.podGroupName` on the Job's pods
     - a `Workload` and a `PodGroup` with a controller `ownerReference` to the Job
 - [x] API .status
   - Condition:
-    - `SchedulingBlocked=True` with reason `UnsupportedWorkloadStructure` when the controller
+    - `SchedulingBlocked=True` with reason `InvalidSchedulingObjects` when the controller
       cannot safely select or use the scheduling objects.
-    - `SchedulingBlocked=True` with reason `WorkloadNotFound` or `PodGroupTemplateNotFound` while a
-      delegated scheduling dependency is unavailable. The condition clears after recovery.
-    - `Failed=True` when `spec.scheduling` cannot be compiled into a `Workload`.
+    - `SchedulingBlocked=True` with reason `SchedulingDependencyNotFound` while a
+      delegated scheduling dependency is unavailable.
+    - `SchedulingBlocked=False` with reason `SchedulingObjectsValid` after recovery.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1623,7 +1648,7 @@ and kube-scheduler.
 ###### Will enabling / using this feature result in any new API calls?
 
 Yes. The Job controller adds two informers (`Workload`, `PodGroup`), i.e. two LIST+WATCH streams
-against kube-apiserver. Per Job, with the gate on (the default from v1.38), for every root Job
+against kube-apiserver. Per Job, with the gate on, for every root Job
 including `Basic` Jobs:
 - `CREATE Workload`: 1 per Job creation.
 - `CREATE PodGroup`: 1 per Job creation, plus 1 per suspension cycle in which the `PodGroup` was
@@ -1651,14 +1676,14 @@ No.
 
 Yes. Because of Universal Representation, every root Job (both `Gang` and `Basic`) creates 1 
 `Workload` (~500 bytes) and 1 `PodGroup` (~500 bytes), and each Pod gains a `schedulingGroup` 
-field (~100 bytes) plus one `ownerReference` (~150 bytes). A delegated Job adds one `PodGroup`,
+field (~100 bytes). A delegated Job adds one `PodGroup`,
 and a fully-delegated Job adds none. `Job` objects themselves grow only when the user sets 
 `spec.scheduling` (a few hundred bytes at most).
 
 For a cluster with 10,000 live root Jobs, this adds approximately:
 - 10,000 `Workload` objects
 - 10,000 `PodGroup` objects
-- ~10MB additional etcd storage for the objects, plus ~250 bytes per Job pod
+- ~10MB additional etcd storage for the objects, plus ~100 bytes per Job pod
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1694,7 +1719,7 @@ recovers, the same as for pod creation. Running pods are unaffected.
 
 - `Workload`/`PodGroup` create rejected by the API server (RBAC, admission webhook,
   `GenericWorkload` disabled).
-  - Detection: `FailedWorkloadCreate` Warning event on the Job;
+  - Detection: `FailedWorkloadCreate` or `FailedPodGroupCreate` Warning event on the Job;
     `job_scheduling_object_syncs_total{action="create",result="error"}` increasing.
   - Mitigations: fix the rejecting component; the controller retries with backoff. If the resources
     are intentionally unavailable, disable `WorkloadWithJob` on kube-controller-manager.
@@ -1702,7 +1727,7 @@ recovers, the same as for pod creation. Running pods are unaffected.
   - Testing: unit tests with a fake-client reactor.
 - External `Workload` or selected `PodGroupTemplate` for `managePodGroupOnly` is not available.
   - Detection: `SchedulingDependencyNotFound` Warning event, `SchedulingBlocked=True` with reason
-    `WorkloadNotFound` or `PodGroupTemplateNotFound`, and repeated Job sync errors. No pods are
+    `SchedulingDependencyNotFound`, and repeated Job sync errors. No pods are
     created while the dependency is missing.
   - Mitigations: create or repair the external `Workload` and its selected template. The controller
     retries with backoff and creates the `PodGroup` once the dependency resolves; the Job does not
@@ -1710,11 +1735,10 @@ recovers, the same as for pod creation. Running pods are unaffected.
   - Diagnostics: inspect the Job's `scheduling.k8s.io/workload-name` and
     `scheduling.k8s.io/group-template-name` annotations, and the named `Workload` and `PodGroupTemplate`.
   - Testing: unit and integration tests cover delayed Workload discovery and a missing template.
-- Duplicate, colliding, or externally mutated controller-owned objects.
-  - Detection: `UnsupportedWorkloadStructure` Warning event, `SchedulingBlocked=True` on the Job,
-    and `job_scheduling_object_syncs_total{result="error"}` increasing. No new pods are created
-    while the condition is true.
-  - Mitigations: remove an unintended duplicate or colliding object, or repair the authoritative
+- Colliding or externally mutated scheduling objects, or an incomplete delegation annotation pair.
+  - Detection: `InvalidSchedulingObjects` Warning event and `SchedulingBlocked=True` on the Job.
+    No new pods are created while the condition is true.
+  - Mitigations: remove the colliding object, or repair the authoritative
     object. The controller retries with backoff and clears the condition after the objects validate.
   - Diagnostics: audit log for writers on `workloads`/`podgroups`.
   - Testing: unit and integration tests for blocking, condition persistence, and recovery.
@@ -1744,6 +1768,7 @@ BYO clarification, and delayed delegated dependencies.
 - 2026-09-25: Delegated `PodGroup` discovered by name and controller-owned by the Job,
 - 2026-09-28: `PodGroup` discovered by name in every mode, so sibling Jobs sharing a 
 `PodGroupTemplate` get one `PodGroup` each.
+- 2026-11-19: KEP synced with the Beta implementation.
 
 ## Drawbacks
 
@@ -1781,12 +1806,12 @@ Job controller already honors, and no additional BYOW mechanism is planned.
 ### Reference-based discovery
 
 The alpha discovered every `Workload` through `spec.controllerRef` and every `PodGroup` through
-`spec.podGroupTemplateRef`, both filtered by a controller `ownerReference` to the Job. The following 
+`spec.workloadRef`, both filtered by a controller `ownerReference` to the Job. The following 
 variants were considered during the Beta review:
 
 - **Filter by ownerReference.** A higher-level controller may create the `PodGroup` before the
   Job exists, so it cannot reference the Job.
-- **Filter by `spec.podGroupTemplateRef` alone.** Sibling Jobs that select the same template
+- **Filter by `spec.workloadRef` alone.** Sibling Jobs that select the same template
   carry identical references, so they would all share one `PodGroup`. Each replica must be able
   to form its own gang.
 - **Match `Workload.spec.controllerRef` to the Job's parent.** The `Workload` may be compiled by
