@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 545" role="img" aria-labelledby="title description">
+  <title id="title">Karpenter AddOn deletion outcomes</title>
+  <desc id="description">deletionPolicy: Orphan clears the AddOn finalizer and leaves Karpenter and its resources in place. deletionPolicy: Delete keeps Karpenter and the AddOn finalizer until dependent resources are gone. With deletionPolicy: Delete, dependentResourceCleanupPolicy: Block waits for users to request dependent-resource deletion; dependentResourceCleanupPolicy: Delete asks the AddOn Manager to request it. Solid arrows show the progress of deletion. Karpenter is then uninstalled and the finalizer cleared.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#595959"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-weight: 400; }
+  </style>
+  <rect x="0" y="0" width="960" height="545" fill="#ffffff"/>
+  <text x="480" y="36" font-family="Arial, sans-serif" font-size="22" text-anchor="middle" fill="#202020">What happens when the AddOn is deleted?</text>
+  <rect x="345" y="65" width="270" height="60" fill="#ffffff" stroke="#595959"/>
+  <text x="480" y="90" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#202020">Delete the AddOn</text>
+  <text x="480" y="109" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#202020">karpenter-cluster-a</text>
+  <path d="M 405 127 V 147 H 190 V 163" fill="none" stroke="#595959" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 555 127 V 147 H 655 V 163" fill="none" stroke="#595959" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="30" y="165" width="320" height="360" fill="#f3f3f3" stroke="#595959"/>
+  <text x="190" y="199" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#202020">deletionPolicy: Orphan</text>
+  <rect x="50" y="222" width="280" height="110" fill="#ffffff" stroke="#595959"/>
+  <text x="190" y="253" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#202020">Leave Karpenter,</text>
+  <text x="190" y="276" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#202020">NodePools, NodeClaims,</text>
+  <text x="190" y="299" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#202020">Nodes, and instances</text>
+  <line x1="190" y1="334" x2="190" y2="434" stroke="#595959" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="50" y="436" width="280" height="55" fill="#d9ead3" stroke="#595959"/>
+  <text x="190" y="459" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#202020">Clear AddOn finalizer</text>
+  <text x="190" y="478" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#202020">AddOn is deleted</text>
+
+  <rect x="380" y="165" width="550" height="360" fill="#f3f3f3" stroke="#595959"/>
+  <text x="655" y="199" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#202020">deletionPolicy: Delete</text>
+  <rect x="400" y="222" width="245" height="98" fill="#fff2cc" stroke="#595959"/>
+  <text x="522" y="246" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#202020">dependentResourceCleanupPolicy</text>
+  <text x="522" y="281" font-family="Arial, sans-serif" font-size="17" text-anchor="middle" fill="#202020">Block</text>
+  <text x="522" y="307" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#202020">Users remove resources</text>
+  <rect x="665" y="222" width="245" height="98" fill="#fff2cc" stroke="#595959"/>
+  <text x="787" y="246" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#202020">dependentResourceCleanupPolicy</text>
+  <text x="787" y="281" font-family="Arial, sans-serif" font-size="17" text-anchor="middle" fill="#202020">Delete</text>
+  <text x="787" y="307" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#202020">AddOn Manager removes resources</text>
+  <line x1="522" y1="322" x2="522" y2="340" stroke="#595959" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="787" y1="322" x2="787" y2="340" stroke="#595959" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="420" y="342" width="470" height="64" fill="#ffffff" stroke="#595959"/>
+  <text x="655" y="367" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#202020">Wait until dependent resources are gone</text>
+  <text x="655" y="390" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#202020">Karpenter + AddOn finalizer stay</text>
+  <line x1="655" y1="408" x2="655" y2="434" stroke="#595959" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="440" y="436" width="430" height="55" fill="#d9ead3" stroke="#595959"/>
+  <text x="655" y="459" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#202020">Uninstall Karpenter</text>
+  <text x="655" y="478" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#202020">Clear AddOn finalizer</text>
+  <text x="655" y="513" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#202020">Examples: NodePool, NodeClaim, other dependent kinds</text>
+</svg>

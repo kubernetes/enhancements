@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="340" viewBox="0 0 1000 340" role="img" aria-labelledby="title description">
+  <title id="title">A dedicated controller provides functionality for each AddOn</title>
+  <desc id="description">The hub hosts addon-a targeting cluster-a, addon-b targeting cluster-b, and their AddOn Manager. The manager reconciles both AddOns and manages two dedicated controllers on the hub, one for each AddOn. Each controller reconciles add-on resources only for its assigned AddOn in the corresponding spoke cluster. Arrows identify the actor that reconciles or manages each component.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#595959" />
+    </marker>
+  </defs>
+  <style>
+    text { font-family: Arial, sans-serif; font-weight: 400; fill: #202020; }
+    .kind { font-size: 15px; text-anchor: middle; }
+    .detail { font-size: 12px; text-anchor: middle; }
+    .flow { fill: none; stroke: #595959; stroke-width: 1.5; marker-end: url(#arrow); }
+  </style>
+  <rect width="1000" height="340" fill="#ffffff" />
+  <g id="boundaries">
+    <rect id="hub" x="20" y="20" width="690" height="300" rx="6" fill="#f3f3f3" stroke="#595959" stroke-width="1.5" />
+    <rect id="target-a" x="790" y="20" width="190" height="135" rx="6" fill="#f3f3f3" stroke="#595959" stroke-width="1.5" />
+    <rect id="target-b" x="790" y="185" width="190" height="135" rx="6" fill="#f3f3f3" stroke="#595959" stroke-width="1.5" />
+  </g>
+  <g id="connections">
+    <path id="reconcile-addon-a" class="flow" d="M 288 170 H 235 V 110 H 187" />
+    <path id="reconcile-addon-b" class="flow" d="M 288 210 H 235 V 270 H 187" />
+    <path id="manage-controller-a" class="flow" d="M 442 170 H 495 V 110 H 553" />
+    <path id="manage-controller-b" class="flow" d="M 442 210 H 495 V 270 H 553" />
+    <path id="reconcile-resources-a" class="flow" d="M 692 110 H 808" />
+    <path id="reconcile-resources-b" class="flow" d="M 692 270 H 808" />
+  </g>
+  <g id="resources">
+    <g id="addon-a">
+      <rect x="45" y="75" width="140" height="70" rx="6" fill="#fff2cc" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="115.0" y="94.0">AddOn</text>
+      <text class="detail" x="115.0" y="114.0">addon-a</text>
+      <text class="detail" x="115.0" y="134.0">target: cluster-a</text>
+    </g>
+    <g id="addon-b">
+      <rect x="45" y="235" width="140" height="70" rx="6" fill="#fff2cc" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="115.0" y="254.0">AddOn</text>
+      <text class="detail" x="115.0" y="274.0">addon-b</text>
+      <text class="detail" x="115.0" y="294.0">target: cluster-b</text>
+    </g>
+    <g id="manager">
+      <rect x="290" y="150" width="150" height="80" rx="24" fill="#cfe2f3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="365.0" y="194.0">AddOn Manager</text>
+    </g>
+    <g id="controller-a">
+      <rect x="555" y="75" width="135" height="70" rx="24" fill="#cfe2f3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="622.5" y="104.0">Controller</text>
+      <text class="detail" x="622.5" y="124.0">for addon-a</text>
+    </g>
+    <g id="controller-b">
+      <rect x="555" y="235" width="135" height="70" rx="24" fill="#cfe2f3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="622.5" y="264.0">Controller</text>
+      <text class="detail" x="622.5" y="284.0">for addon-b</text>
+    </g>
+    <g id="resources-a">
+      <rect x="810" y="75" width="150" height="70" rx="6" fill="#d9ead3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="885.0" y="114.0">Managed resources</text>
+    </g>
+    <g id="resources-b">
+      <rect x="810" y="235" width="150" height="70" rx="6" fill="#d9ead3" stroke="#595959" stroke-width="1.2" />
+      <text class="kind" x="885.0" y="274.0">Managed resources</text>
+    </g>
+  </g>
+  <g id="annotations">
+    <text x="40" y="48" font-size="16">Hub cluster</text>
+    <text x="810" y="44" font-size="16">Spoke cluster</text>
+    <text x="810" y="63" font-size="12">cluster-a</text>
+    <text x="810" y="209" font-size="16">Spoke cluster</text>
+    <text x="810" y="228" font-size="12">cluster-b</text>
+    <g id="reconcile-addon-a-label">
+      <rect x="201.0" y="83" width="72.0" height="21" rx="3" fill="#ffffff" />
+      <text x="237" y="98" font-size="13" text-anchor="middle" fill="#333333">reconciles</text>
+    </g>
+    <g id="reconcile-addon-b-label">
+      <rect x="201.0" y="275" width="72.0" height="21" rx="3" fill="#ffffff" />
+      <text x="237" y="290" font-size="13" text-anchor="middle" fill="#333333">reconciles</text>
+    </g>
+    <g id="manage-controller-a-label">
+      <rect x="462.0" y="83" width="66.0" height="21" rx="3" fill="#ffffff" />
+      <text x="495" y="98" font-size="13" text-anchor="middle" fill="#333333">manages</text>
+    </g>
+    <g id="manage-controller-b-label">
+      <rect x="462.0" y="275" width="66.0" height="21" rx="3" fill="#ffffff" />
+      <text x="495" y="290" font-size="13" text-anchor="middle" fill="#333333">manages</text>
+    </g>
+    <g id="reconcile-resources-a-label">
+      <rect x="714.0" y="83" width="72.0" height="21" rx="3" fill="#ffffff" />
+      <text x="750" y="98" font-size="13" text-anchor="middle" fill="#333333">reconciles</text>
+    </g>
+    <g id="reconcile-resources-b-label">
+      <rect x="714.0" y="243" width="72.0" height="21" rx="3" fill="#ffffff" />
+      <text x="750" y="258" font-size="13" text-anchor="middle" fill="#333333">reconciles</text>
+    </g>
+  </g>
+</svg>
