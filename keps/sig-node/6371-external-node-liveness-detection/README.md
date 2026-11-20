@@ -145,7 +145,8 @@ In `external` mode the controller:
   the same way a controller-detected failure is handled today: a NodeNotReady
   event is recorded and `MarkPodsNotReady` is called for the node's pods.
 - On controller restart or leader failover, treats a node whose Ready condition
-  is not True as needing `MarkPodsNotReady`.
+  is `Unknown` as needing `MarkPodsNotReady` (without recording a duplicate
+  `NodeNotReady` event), leaving `Ready=False` nodes unchanged.
 
 When a kubelet recovers, it continues to write `Ready=True` as it does today,
 and the controller treats that as recovery.
@@ -160,8 +161,9 @@ An external liveness detector:
   and waits for the informer cache to catch up. By taking over node liveness, an
   external writer takes responsibility for safety measures of this kind.
 - To record a node failure, sets the node's `Ready` condition to `Unknown` with
-  any reason other than `NodeStatusUnknown` and sets `lastTransitionTime`, but
-  does not modify `lastHeartbeatTime`.
+  any reason other than `NodeStatusUnknown`, updates `lastTransitionTime` only
+  when `Ready` transitions to `Unknown` (leaving `lastTransitionTime` unchanged
+  if `Ready` is already `Unknown`), and does not modify `lastHeartbeatTime`.
 - Treats the `Ready=True` condition as an indication that the kubelet is
   recovering and is careful not to interfere with the core controllers' handling
   of that condition. To avoid flapping, it does not overwrite a Ready condition
@@ -218,27 +220,37 @@ All changes are in `pkg/controller/nodelifecycle/node_lifecycle_controller.go`.
   cannot be used for this. It is only updated when `lastHeartbeatTime` changes,
   and external detectors do not change `lastHeartbeatTime`.
 - **External change detection:** Today, `tryUpdateNodeHealth` copies the
-  Ready condition at the start of a pass and compares against that copy at the
-  end. Only the controller's own writes show up as a change. In `external` mode,
-  compare against `lastReady` instead. A change made by an external detector
-  between passes now shows up as a change.
+  Ready condition at the start of a pass (`observedReadyCondition`) and compares
+  against that copy at the end, so only the controller's own writes (such as a
+  startup grace timeout) trigger a status update. Keep `observedReadyCondition`
+  for that in-pass check, and in `external` mode compare the current Ready
+  condition against `lastReady` to detect external transitions to `Unknown`
+  (from `True` or `False`, or remaining `Unknown` with a newer
+  `lastTransitionTime` to catch a recovery to `True` and subsequent failure
+  within a single monitor period).
 - **Timeouts:** In `external` mode, skip the block that marks a node
   Unknown when its `probeTimestamp` is older than the grace period. Keep running
   it for nodes that have no Ready condition at all, so the startup grace period
   still works.
 - **Update `monitorNodeHealth`:** Today, `monitorNodeHealth` records a
-  NodeNotReady event and calls `MarkPodsNotReady` when Ready goes from True to
-  anything else during a pass. In `external` mode, also do this when Ready has
-  become Unknown since the previous pass, from either True or False. On the
-  first pass after a restart or leader change there is no `lastReady`. If Ready
-  is not True on that pass, add the node to `nodesToRetry` so its pods are
-  marked NotReady.
+  `NodeNotReady` event and calls `MarkPodsNotReady` when Ready goes from `True`
+  to anything else during a pass (and queues `nodesToRetry` on the same check if
+  listing the node's pods fails). In `external` mode, do both when the external
+  transition check above fires instead. On the first pass that sees a node after
+  a restart or leader change (`lastReady` absent), in `external` mode only, if
+  Ready is `Unknown`, add the node to `nodesToRetry` so its pods are marked
+  `NotReady` without recording a `NodeNotReady` event, leaving `Ready=False`
+  nodes unchanged.
 - **Update `processPod`:** `processPod` marks a pod NotReady when it is assigned
   to a node that is already not Ready. It reads the node's Ready condition from
-  `status`. Read it from `lastReady` instead, for the same reason as above.
+  `status`. In `external` mode, read it from `lastReady` instead, for the same
+  reason as above (`kubelet` mode continues reading `status`).
 
-The controller still watches Leases, but ignores them for liveness in `external`
-mode.
+The controller still watches Leases, but ignores them in `external` mode: it
+does not refresh `probeTimestamp` from Lease renewals and bypasses
+`NodeControllerLeaseCircuitBreaker` (both the Lease-cache consistency check and
+the live Lease re-read on grace-period expiry), shifting cache-consistency
+safeguards to the external detector.
 
 ### Kubelet changes
 
@@ -280,14 +292,16 @@ None.
 Node lifecycle controller in `external` mode (`k8s.io/kubernetes/pkg/controller/nodelifecycle`):
 
 - A node that stops heartbeating is not marked Unknown.
-- When a node's Ready condition becomes Unknown, its pods are marked NotReady and
-  one NodeNotReady event is recorded. This holds whether the previous value was
-  True or False, and whether or not `lastHeartbeatTime` changed.
+- When a node's Ready condition becomes Unknown (from True or False, or remains
+  Unknown with a newer `lastTransitionTime`), its pods are marked NotReady and
+  one NodeNotReady event is recorded, whether or not `lastHeartbeatTime`
+  changed.
 - When a node's Ready condition becomes False, nothing happens (unchanged from
   today).
 - When a node's Ready condition returns to True, the node recovers.
-- After a controller restart, pods on nodes that are not Ready are marked
-  NotReady.
+- After a controller restart, pods on nodes with `Ready=Unknown` are marked
+  NotReady without recording a `NodeNotReady` event, while nodes with
+  `Ready=False` are left unchanged.
 - A node that never reported a Ready condition is marked Unknown after the
   startup grace period.
 
@@ -320,6 +334,7 @@ None for alpha.
 
 - `ExternalNodeLivenessDetection` feature gate implemented, disabled by
   default.
+- `node_collector_liveness_source` metric implemented.
 - Unit and integration tests above.
 - An example external implementation is available in open source.
 
@@ -356,9 +371,9 @@ kube-controller-manager replica back to `kubelet` mode. The feature gate can be
 disabled on each component once that component's setting is back to its
 default.
 
-A kube-controller-manager older than 1.38 rejects `--node-liveness-source` as an
+A kube-controller-manager older than 1.39 rejects `--node-liveness-source` as an
 unknown flag and fails to start, so the flag must be removed before downgrading.
-A kubelet older than 1.38 fails strict decoding of `enableNodeLease`, logs a
+A kubelet older than 1.39 fails strict decoding of `enableNodeLease`, logs a
 warning, falls back to lenient decoding, and heartbeats as it does today, so
 kubelet leases must be re-enabled before downgrading kubelets.
 
@@ -373,8 +388,8 @@ starts eviction. The live kubelet then re-asserts Ready=True within
 as recovery, and the cycle repeats roughly once a minute for every such node.
 
 Because `kubelet` mode is the default, and because kube-controller-managers
-older than 1.38 have no other mode, kubelet leases must never be disabled until
-every kube-controller-manager replica is running 1.38 or later in `external`
+older than 1.39 have no other mode, kubelet leases must never be disabled until
+every kube-controller-manager replica is running 1.39 or later in `external`
 mode. The two components do not otherwise interact beyond the Node and Lease
 objects they already use.
 
@@ -474,6 +489,8 @@ To be completed for beta.
 ## Implementation History
 
 - 2026-09-15: KEP opened, targeting alpha in v1.38.
+- 2026-11-04: Retargeted alpha to v1.39 and clarified external-mode controller
+  behavior and detector contract.
 
 ## Drawbacks
 
