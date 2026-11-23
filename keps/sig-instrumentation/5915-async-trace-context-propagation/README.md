@@ -41,6 +41,7 @@
   - [Controller-Side Annotation Injection](#controller-side-annotation-injection)
   - [In-Tree Admission Plugin in <code>kube-apiserver</code>](#in-tree-admission-plugin-in-kube-apiserver)
   - [First-Class <code>ObjectMeta</code> Trace Context Field](#first-class-objectmeta-trace-context-field)
+  - [Dedicated <code>TraceContext</code> Resource](#dedicated-tracecontext-resource)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -493,6 +494,13 @@ Annotation injection could be implemented as a built-in admission plugin inside 
 ### First-Class `ObjectMeta` Trace Context Field
 
 Adding a dedicated `traceContext` field to `metav1.ObjectMeta` was rejected because `ObjectMeta` changes affect every Kubernetes API schema and wire serialization, whereas `metadata.annotations` is the standard extension point for non-identifying operational metadata.
+
+### Dedicated `TraceContext` Resource
+
+Storing trace context in a separate API resource or CRD (for example, a dedicated `TraceContext` object referencing the target resource) could provide independent retention, garbage collection, and RBAC without persisting trace annotations on long-lived workload objects. This was rejected because atomic co-delivery with the triggering mutation and zero additional Kubernetes API calls are hard requirements for production control-plane tracing:
+
+- **Additional API calls and watch overhead**: Every traced `CREATE` or `UPDATE` would require an extra write to create or update the `TraceContext` object (plus another write or delete for TTL cleanup), increasing API server QPS and etcd write amplification. Every participating controller would also need an extra informer watch and cache for `TraceContext` objects (or extra `Get` calls during reconciliation).
+- **No cross-object atomicity**: Kubernetes does not expose multi-object transactions across the API. Writing a `TraceContext` before the target object risks dangling records if admission or validation rejects the mutation (and lacks the target object's UID on `CREATE`). Writing it after persistence introduces a race where the controller reconciles the target object before the corresponding `TraceContext` arrives in its informer cache, missing the Span Link.
 
 ## Infrastructure Needed (Optional)
 
