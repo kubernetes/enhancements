@@ -171,7 +171,7 @@ None required.
 
 - Beta (v1.31): gate introduced, disabled by default.
 - Beta on by default (v1.37): default flipped to enabled.
-- GA: TBD in a later release.
+- GA (v1.39): gate locked to default.
 
 ### Upgrade / Downgrade Strategy
 
@@ -320,6 +320,7 @@ watch cache initialization metrics for the affected resource.
 - v1.31: gate introduced as Beta, disabled by default, with the concurrent
   implementation.
 - v1.37: KEP created, gate proposed to default-on.
+- v1.39: gate graduated to GA, locked to default.
 
 ## Drawbacks
 
