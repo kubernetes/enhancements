@@ -219,6 +219,10 @@ this is the `controller.kubernetes.io/pod-deletion-cost` annotation. It
 holds one number per pod, so two controllers can only overwrite each
 other, and changing it means one PATCH per pod.
 
+The main problem this KEP solves is that overwrite. Each actor gets its
+own object, and a controller combines them, so every actor is heard and
+none can erase another.
+
 This KEP adds an API in the `lifecycle.k8s.io` group:
 
 - `PodDeletionPreference`: one object per writer per workload. It says
@@ -256,8 +260,28 @@ which may be the busy one. Scale-down then costs more than it should.
 Node autoscalers face the same wall from the other side. Karpenter
 wants the pods on a node it is consolidating to be the ones that go
 when the owner scales down. Today it does this with pod-deletion-cost,
-one PATCH per pod, and it collides with anyone else using the same
-annotation.
+one PATCH per pod.
+
+The annotation has one value and no owner, so it cannot be shared. This
+is the main problem this KEP solves, and it is already visible in the
+ecosystem:
+
+- Karpenter's [Pod Deletion Cost](https://karpenter.sh/docs/concepts/pod-deletion-cost/)
+  feature (alpha) writes a node rank into the annotation. Its
+  documentation says that Karpenter overwrites or removes any existing
+  value on the pods it manages, and that a user who orders scale-down
+  with the annotation has that ordering replaced.
+- Grove proposes to read the same annotation to choose which replica a
+  scale-in removes ([ai-dynamo/grove#971](https://github.com/ai-dynamo/grove/pull/971)),
+  with the value set by a caller that knows which replica is cheapest
+  to lose.
+
+Both are reasonable, and both want the same single number. Whoever
+writes last wins, the other opinion is lost without any error, and
+nothing records who wrote the value. Every new writer or reader of the
+annotation makes this worse. With this KEP each actor writes its own
+object and the scores are summed, so the opinions combine instead of
+replacing each other.
 
 A second motivation is Graceful Node Shutdown. During a shutdown the
 kubelet terminates pods tier by tier and, from v1.39 ([KEP-2000](https://github.com/kubernetes/enhancements/issues/2000)), admits
@@ -375,7 +399,9 @@ on its own.
 
 As a platform team, I run both the HPA and a node autoscaler against the
 same Deployment. I want both opinions to count, so a pod that is both
-idle and on a draining node is the first to go.
+idle and on a draining node is the first to go. Today both would write
+`controller.kubernetes.io/pod-deletion-cost` and the last writer would
+win.
 
 #### Story 5: Custom workload controller as a consumer
 
@@ -1204,6 +1230,9 @@ turned off without losing the API.
   preferences.
 - **Other consumers.** StatefulSet, DaemonSet, Job and out-of-tree
   workload controllers, each with the same read-one-object contract.
+- **Scheduler preemption.** The scheduler could read the same scores
+  when it picks victims, and prefer to preempt a less busy pod among
+  candidates of equal priority.
 
 ### Test Plan
 
