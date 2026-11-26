@@ -657,6 +657,16 @@ ResourceSlice controller helper, so that any errors in the ResourceSlices will b
 they even are applied to the APIServer. This will only work for drivers that use the helper
 code, but it will minimize the chances that the Allocator will find errors during the allocation phase.
 
+The allocator does not check whether the counters consumed by already allocated devices are still
+what they were at allocation time. It reads them from the devices' current entries in the resource
+pool, so if a driver removes an allocated device from the pool, the device no longer consumes
+anything, and if the driver republishes it with different `consumesCounters`, it consumes the new
+amounts. Either way the shared counters can be over-committed. Detecting this would need
+allocation-time state in the `ResourceClaim` status or extra work during allocation for drivers
+which behave correctly, so this is the driver's responsibility: a driver must keep an allocated
+device in its resource pool, with unchanged counter consumption, until the device is released.
+See [kubernetes/kubernetes#140802](https://github.com/kubernetes/kubernetes/issues/140802).
+
 #### Future options
 
 We can further improve the experience here by introducing a controller that can validate that all references within a resource pool
