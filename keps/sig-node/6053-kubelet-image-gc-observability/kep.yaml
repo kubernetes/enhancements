@@ -1,0 +1,32 @@
+title: Kubelet Image Garbage Collection Observability
+kep-number: 6053
+authors:
+  - "@mattsu2020"
+owning-sig: sig-node
+participating-sigs:
+  - sig-instrumentation
+status: provisional
+creation-date: 2026-05-01
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+stage: alpha
+latest-milestone: "v1.36"
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+
+feature-gates: []
+disable-supported: false
+
+metrics:
+  - kubelet_image_gc_attempts_total
+  - kubelet_image_gc_duration_seconds
+  - kubelet_image_gc_freed_bytes
+  - kubelet_image_gc_target_bytes
+  - kubelet_image_gc_image_deletions_total
+  - kubelet_image_gc_skipped_images_total
+  - kubelet_image_gc_image_fs_usage_percent
