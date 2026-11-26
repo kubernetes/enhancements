@@ -23,6 +23,8 @@
       - [Failure modes:](#failure-modes)
     - [Cache Directory Structure](#cache-directory-structure)
     - [Kubelet Cache Housekeeping](#kubelet-cache-housekeeping)
+    - [Handling private preloaded images](#handling-private-preloaded-images)
+      - [What is a preloaded image?](#what-is-a-preloaded-image)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -581,6 +583,82 @@ API versions the kubelet needs to support.
 Pruning of the `pulled` folder happens in kubelet's runtime and is tied to kubelet
 image garbage collection. If an image gets garbage collected and its ID no longer
 appears on the node, its record of being pulled should also be removed from the disk.
+
+#### Handling private preloaded images
+
+Some images can be preloaded with a certain image name, but the same image might
+appear as a private image if pulled with a different name (e.g. from a different registry).
+Such an image is still addressable with the same `imageRef`, but is only considered
+preloaded when referenced with image name `A`, and is considered private when
+referenced with image name `B`.
+
+`ImagePulledRecord` is not expressive enough for these cases - no such record is created
+when an image name `A` is being used, but once an image with image name `B` is requested and
+pulled successfully,`ImagePulledRecord` with `imageRef` for this image and
+for image name `B` is created. This would result in the image to no longer be accessible
+using image name `A`, because the image pull manager now considers the image with this
+`imageRef` to be private, since there is an `ImagePulledRecord` for it.
+
+For this purpose, we introduce a new API struct:
+```go
+// ImagePreloadedRecord is a record of a successful access of an image that was
+// preloaded onto a node.
+type ImagePreloadedRecord struct {
+	metav1.TypeMeta
+
+	// LastUpdatedTime is the time of the last update to this record
+	LastUpdatedTime metav1.Time
+
+	// ImageRef is a reference to the image represented by this file as received
+	// from the CRI.
+	// The filename is a SHA-256 hash of this value. This is to avoid filename-unsafe
+	// characters like ':' and '/'.
+	ImageRef string
+
+	// ObservedImages is a set of images, where `image` is the content of a pod's
+	// container `image` field that's got its tag/digest removed.
+	//
+	// Example:
+	//   Container requests the `hello-world:latest@sha256:91fb4b041da273d5a3273b6d587d62d518300a6ad268b28628f74997b93171b2` image:
+	//     "observedImages": {
+	//       "hello-world": {}
+	//     }
+	ObservedImages map[string]PreloadedImage
+}
+
+// PreloadedImage describes specifics of a preloaded image for use within ImagePreloadedRecord
+type PreloadedImage struct{}
+```
+These records are written to the `image_manager/observed-preloaded` subdirectory of
+the kubelet's main directory.
+
+An `ImagePreloadedRecord` for an image with a given `imageRef` and image name `A`
+is written if and only if all of the following conditions are true:
+
+1. the image exists on the node
+2. this image was evaluated as exempted by the policy in `ImagePullManager.MustAttemptImagePull()`
+3. there are no pre-existing `ImagePulledRecords` for the `imageRef`
+4. there are no pre-existing `ImagePullIntents` for image name `A`
+
+This means that an `ImagePreloadedRecord` is not written for an image that has other
+intent/pulled records.
+A preloaded image is typically expected to be used shortly after it has been loaded
+onto the node. Once a pulled/intent record exists for this image, we know that the
+kubelet attempted to pull it, and we should no longer consider it preloaded, at least
+not until other intent/pulled records are removed.
+
+##### What is a preloaded image?
+
+An image with a given `imageRef` and image name is considered preloaded in the
+context of a `ImagePullManager.MustAttemptImagePull()` call if:
+
+All of the below are true:
+1. it exists on the node (== we're able to address it with an `imageRef`)
+2. there is no `ImagePulledRecord` for the `imageRef` and image name
+3. if there is an `ImagePulledRecord` for the `imageRef`, it does not contain
+   any records for the image name AND there exists an `ImagePreloadedRecord` for
+   the `imageRef` and image name
+3. there is no `ImagePullIntent` for the image name
 
 ### Test Plan
 
