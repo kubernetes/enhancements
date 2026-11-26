@@ -339,7 +339,7 @@ spec:
 #### Partial GPU allocation
 
 As a user, I want to use a GPU as accelerator, but don't need exclusive access
-to that GPU. Running my workload with just 2Gb of memory is sufficient. This is
+to that GPU. My workload requires more than 2 GiB of GPU memory. This is
 supported by the ACME GPU hardware. I know that the administrator has created
 an "acme-gpu" DeviceClass and set up the hardware such that each card is
 partitioned into slices of different sizes. Each slice is represented as
@@ -407,7 +407,7 @@ spec:
 ```
 
 This request triggers allocation on a node that has a GPU device or fraction of a GPU device
-with at least 2Gi of memory and then the Pod runs on that node.
+with more than 2 GiB of memory and then the Pod runs on that node.
 The lifecycle of the allocation is tied to the lifecycle of the Pod.
 
 In production, a similar PodTemplateSpec in a Deployment will be used.
