@@ -707,7 +707,7 @@ This section implements the Layer 2 changes described in the Proposal: the `Node
 
 1. **Dedicated Node Capacity syncLoop** (`pkg/kubelet/kubelet.go`)
 
-   A dedicated node capacity syncLoop runs as its own goroutine within `Run()`, analogous to the pod syncLoop. It owns the full lifecycle of a capacity reconciliation event and executes all reconciliation steps serially, ensuring no concurrent capacity mutations. The loop is fed by a single `capacityReconciliationCh` channel written by two sources: the Node informer (when `Node.Spec.ConfiguredCapacity` or `Node.Spec.ConfiguredKubeReserved` changes) and the cAdvisor hardware-drift detector (when physical capacity changes).
+   A dedicated node capacity syncLoop runs as its own goroutine within `Run()`, analogous to the pod syncLoop. It owns the full lifecycle of a capacity reconciliation event and executes all reconciliation steps serially, ensuring no concurrent capacity mutations. The loop is fed by a single `capacityReconciliationCh` channel written by two sources: the Node informer (when `Node.Spec.ConfiguredCapacity` or `Node.Spec.ConfiguredKubeReserved` changes) and the cAdvisor hardware-drift detector (when physical capacity changes). While a downscale is `Deferred`, the events that already retry deferred in-place pod resizes (a pod removed or terminated, or a pod's requests shrinking) also write to the channel.
 
 ```go
 // 1. Wire up the Node Informer to feed the capacity syncLoop immediately on Spec changes
@@ -722,10 +722,23 @@ kl.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
     },
 })
 
+// While a downscale is Deferred, also wake the capacity syncLoop on the events that already
+// retry deferred in-place pod resizes (pod removed or terminated, pod requests shrank).
+kl.allocationManager.OnPendingAllocationsRetry(func() {
+    if !kl.isCapacityDeferred() {
+        return
+    }
+    select {
+    case kl.capacityReconciliationCh <- struct{}{}:
+    default: // a reconciliation is already queued
+    }
+})
+
 // 2. Node capacity syncLoop
 if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
     go wait.Until(func(ctx context.Context) {
         // capacityReconciliationCh is written by: Node informer OR cAdvisor hardware-drift detector
+        // OR, while a downscale is Deferred, pod removal / resize-down
         for range kl.capacityReconciliationCh {
             
             configuredCapacity := kl.getNodeSpecConfiguredCapacity()
@@ -915,7 +928,7 @@ These tests must be merged before any Layer 2 Kubelet code is written. They veri
 
 7. **ConfiguredKubeReserved & CPUSetSourceFile** (`node_container_manager_linux_test.go`, `cpu_manager_test.go`, `validation_test.go`): Verify that `SyncCapacity` uses `Node.Spec.ConfiguredKubeReserved` when set (and falls back to bootstrap `kubeReserved` when unset) when computing `/kubepods` `memory.max` and `Node.Status.Allocatable`, and that `CPUSetSourceFile` updates apply the external CPU set to `/kubepods` and QoS `cpuset.cpus` instead of overwriting it with the root cpuset, and that Kubelet configuration validation rejects `cpusetSourceFile` combined with `cpuManagerPolicy: static`.
 
-8. **Deferred Downscale & Admission Serialization** (`kubelet_test.go`, `allocation_manager_test.go`, `eviction_manager_test.go`): Verify that a Spec-driven downscale whose target allocatable is below the sum of allocated pod requests sets `CapacityConfigured=False` (Reason: `Deferred`), evicts no pod, and is applied on a later reconciliation once the pods fit; that the fit check, IPPR admission, and new pod admission serialize under `allocationMutex` and evaluate fit against `appliedCapacity` rather than the cached `Node.Status.Allocatable`; that only a drop of physical capacity below applied capacity (Path B) evicts pods, including while a Spec downscale is `Deferred`; and that `memory.available` eviction observations use applied capacity.
+8. **Deferred Downscale & Admission Serialization** (`kubelet_test.go`, `allocation_manager_test.go`, `eviction_manager_test.go`): Verify that a Spec-driven downscale whose target allocatable is below the sum of allocated pod requests sets `CapacityConfigured=False` (Reason: `Deferred`), evicts no pod, and is applied when a pod removal or resize-down makes the pods fit; that the fit check, IPPR admission, and new pod admission serialize under `allocationMutex` and evaluate fit against `appliedCapacity` rather than the cached `Node.Status.Allocatable`; that only a drop of physical capacity below applied capacity (Path B) evicts pods, including while a Spec downscale is `Deferred`; and that `memory.available` eviction observations use applied capacity.
 
 ##### Layer 2: e2e tests (require `InPlaceNodeResourceResize` feature gate)
 
@@ -1412,7 +1425,7 @@ For each of them, fill in the following information by copying the below templat
 
   - **Detection**: The `CapacityConfigured` condition remains `False (Reason: Deferred)`; the condition message lists the resources whose allocated requests exceed the target allocatable.
 
-  - **Mitigations**: Remove or resize down pods on the node; the Kubelet applies the downscale at its next reconciliation, which is triggered by a change to `Node.Spec.ConfiguredCapacity` or to physical capacity. To cancel the downscale, patch `Node.Spec.ConfiguredCapacity` back to `Node.Status.Capacity`.
+  - **Mitigations**: Remove or resize down pods on the node; the Kubelet re-evaluates the downscale on each pod removal or resize-down and applies it once the pods fit. To cancel the downscale, patch `Node.Spec.ConfiguredCapacity` back to `Node.Status.Capacity`.
 
 * **Downscale Stuck in InProgress (Eviction Stall)**
 
