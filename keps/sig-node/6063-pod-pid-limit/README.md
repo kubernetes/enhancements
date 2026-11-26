@@ -135,6 +135,7 @@ spec:
 ```
 
 - Only `spec.resources.limits.pids` is accepted; `spec.resources.requests.pids` is forbidden and will be rejected by the API server
+- `pids` is a Pod-level-only resource: `containers[*].resources.limits.pids` is rejected
 - When `spec.resources.limits.pids` is specified, the kubelet applies this limit to the Pod's cgroup
 - All containers in the Pod share the same PID pool enforced by the pod cgroup
 - If both kubelet `podPidsLimit` and Pod `spec.resources.limits.pids` are set, the kubelet enforces `min(podPidsLimit, spec.resources.limits.pids)`. The Pod may request a value higher than the node's `podPidsLimit` (up to the API maximum of 16384), but the kubelet always caps at the node's `podPidsLimit`, ensuring the node administrator retains control.
@@ -183,8 +184,10 @@ that starves infrastructure pods) or allowing infrastructure pods to function
 
 With this enhancement: I can set the kubelet's `podPidsLimit` to 4096 to
 support infrastructure pods. I can then enforce
-`spec.resources.limits.pids: "2048"` on tenant pods (via admission control or
-default LimitRanges). Since the lower value wins, tenant pods are strictly
+`spec.resources.limits.pids: "2048"` on tenant pods via admission control,
+e.g. a mutating webhook or MutatingAdmissionPolicy to set it, or a
+ValidatingAdmissionPolicy to require it (LimitRange does not support `pids` in
+Alpha). Since the lower value wins, tenant pods are strictly
 capped at 2048, while infrastructure pods can scale up to the node limit of
 4096.
 
@@ -215,7 +218,11 @@ Lower value precedence: When both kubelet and Pod specify limits, the lower valu
 
 Hierarchical cgroup limits: PID limits are hierarchical in cgroups, so the most restrictive limit in the hierarchy applies.
 
-Resource quota and limits: PID limits should be considered in cluster resource planning, though they do not consume schedulable resources like CPU or memory.
+Resource quota and limits: PID limits should be considered in cluster resource planning, though they do not consume schedulable resources like CPU or memory. `pids` is not a ResourceQuota resource and is not supported in LimitRange in Alpha (see [Beta](#beta-target-139)).
+
+Pod status: `status.resources` does not report the `pids` limit in Alpha. The enacted value can differ from the requested one (it is capped by the node's `podPidsLimit`), so reporting it is deferred until the kubelet can report the enacted value (see [Beta](#beta-target-139)).
+
+`cgroupsPerQOS=false`: When the kubelet runs with `cgroupsPerQOS=false`, pod-level cgroups are not created and the pod-level PID limit is not applied. This matches the existing behavior for other pod-level resources.
 
 Pod Security Admission (PSA) compatibility: The `spec.resources.limits.pids` field has no PSA impact. Pods specifying PID limits are admitted under all PSA profiles (Privileged, Baseline, and Restricted) without triggering any policy violations. PSA does not inspect resource limits, so no special configuration or exemptions are needed.
 
@@ -242,26 +249,45 @@ Node Declared Features: This feature integrates with the Node Declared Features 
 #### Feature Gate
 The feature is controlled by a new feature gate: `PerPodPIDLimit`.
 
-This feature depends on the following feature gates:
-
-- `PodLevelResources` (Beta, enabled by default since v1.34) — because `pids`
-  is specified under `pod.spec.resources.limits`.
-- `PodLevelResourcesFixKubeletQOSClass` (Beta, enabled by default since v1.37)
-  — fixes QoS class computation when pod-level resources are used.
-
-If either dependency is disabled, `PerPodPIDLimit` cannot be enabled — the
-kubelet and API server will reject the configuration at startup.
+This feature depends on the `PodLevelResources` feature gate (GA and locked to
+enabled since v1.38), because `pids` is specified under
+`pod.spec.resources.limits`. The dependency is declared in the feature gate
+dependency map, so `PerPodPIDLimit` cannot be enabled without it.
 
 When the feature gate is disabled:
 
-- The kube-apiserver rejects Pods that specify `pids` under `spec.resources.limits`
+- The kube-apiserver rejects Pods that specify `pids` under `spec.resources.limits` with a `Forbidden` error ("requires the PerPodPIDLimit feature gate")
 - Existing Pods that already contain `pids` are preserved and remain unchanged
 - The kubelet rejects pods that specify `pids` during admission, mirroring the `PodLevelResources` behavior; already running pods are unaffected until the kubelet restarts and readmits them
 
 #### API Validation
-Add `pids` to the list of valid resource types
+Add `pids` as a valid Pod-level resource name (`spec.resources.limits.pids`).
 
-Validate that `pids` values are integers within the allowed range (128-16384)
+Validate that:
+
+- `pids` values are integers within the allowed range (128-16384)
+- `spec.resources.requests.pids` is forbidden ("pids may only be specified in limits, not requests")
+- `containers[*].resources.limits.pids` is rejected (`pids` is Pod-level only)
+- `pids` is rejected in LimitRange. Pod-type LimitRange support is deferred (see [Beta](#beta-target-139))
+- `spec.resources.limits.pids` is immutable on in-place resize. Because `pids` does not count as a pod-level resource for resize, a pod whose only pod-level entry is `limits.pids` can still resize its containers' CPU and memory without `InPlacePodLevelResourcesVerticalScaling` being enabled
+- Existing Pods that already set `pids` keep validating when the gate is disabled (validation ratcheting)
+
+`pids` is a limit-only resource. It shares the `limitOnlyResources` set
+(`IsLimitOnlyResource()` in `k8s.io/component-helpers/resource`) with `swap`
+([KEP-5359](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5359-swap-awareness-api)).
+Limit-only resources may appear only in limits, are never defaulted from limits
+into requests, and are rejected in LimitRange.
+
+`pids` is intentionally not a supported pod-level resource (it is not in
+`supportedPodLevelResources`) and not a standard resource. As a result, it does
+not participate in pod-level accounting:
+
+- It does not change the Pod's QoS class. QoS is still derived from the CPU and memory requests and limits.
+- It is excluded from `PodRequests`/`PodLimits` aggregation and from scheduling.
+- A Pod whose only pod-level entry is `limits.pids` does not trigger pod-level CPU, memory, or hugepages defaulting.
+- It is not a ResourceQuota resource.
+
+It is registered as an integer resource so that fractional values are rejected.
 
 #### Kubelet Implementation
 Parse Pod specification: The kubelet reads `spec.resources.limits.pids` from the Pod spec during Pod admission.
@@ -271,11 +297,17 @@ Limit enforcement: When creating the Pod cgroup, the kubelet sets effective PID 
 - If Pod `spec.resources.limits.pids` is set: `min(podPidsLimit, pod.spec.resources.limits.pids)`
 - If Pod `spec.resources.limits.pids` is not set: `podPidsLimit` (current behavior)
 
-Validation: The kubelet validates that the PID limit is within acceptable bounds (128 to 16384).
+Validation: The kubelet does not re-check the 128-16384 range. Range validation is left to API validation, which also runs for static pods (`ValidatePodCreate` in the kubelet's static pod config source). This lets the API server and the kubelet use different bounds during version skew.
+
+Admission: The kubelet rejects pods that specify `spec.resources.limits.pids` during admission when:
+
+- the `PerPodPIDLimit` feature gate is disabled on the node
+- the node is not on cgroupsv2
+- the node OS does not support per-pod PID limits. On Windows the pod is rejected regardless of the feature gate state ("per-pod PID limits are not supported on Windows"), rather than run without its requested limit.
 
 cgroupsv2 requirement: The kubelet checks the cgroup version and only applies Pod-level limits on cgroupsv2 systems. On cgroupsv1 systems, the kubelet rejects pods that specify `spec.resources.limits.pids` during admission.
 
-Event on capping: When a pod's requested PID limit exceeds the node's `podPidsLimit`, the kubelet emits a `PIDLimitCapped` event on the pod, indicating the effective limit was capped at the node-defined maximum. This gives users visibility when their requested PID limit is not fully honored.
+Event on capping: When a pod's requested PID limit exceeds the node's `podPidsLimit`, the kubelet emits a `PIDLimitCapped` warning event on the pod after the pod cgroup is successfully created, for example: `Requested PID limit 8192 exceeds node podPidsLimit; capped to 4096`. This gives users visibility when their requested PID limit is not fully honored.
 
 #### Pod Security Admission (PSA)
 
@@ -306,7 +338,7 @@ of node-wide PID exhaustion and therefore reduce the frequency of
 
 This feature integrates with the Node Declared Features framework
 ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features),
-GA since v1.36) to handle version skew gracefully.
+GA and locked to enabled since v1.37) to handle version skew gracefully.
 
 When the `PerPodPIDLimit` feature gate is enabled, the kubelet declares
 `PerPodPIDLimit` in `node.status.declaredFeatures` during bootstrap. This
@@ -337,19 +369,28 @@ in `test/e2e_node/pids_test.go` (`PodPidsLimit` suite) cover the node-level
 
 This feature touches API validation, validation ratcheting, and kubelet cgroup enforcement. For Alpha, unit test coverage for the following packages is added:
 
-* `pkg/apis/core/validation` will be updated with validation rules for the `pids` resource (range 128-16384, container-level rejection, `requests.pids` forbidden).
-* `pkg/api/pod` will be updated with validation ratcheting logic when the `PerPodPIDLimit` gate is disabled (existing pods with `limits.pids` are preserved on update; `requests.pids` is always rejected by validation).
-* `pkg/kubelet/cm` will be updated with `EnsureExists` logic (pod limit lower/higher than node via `min()`, no pod limit fallback), cgroupsv1 rejection error message, `PIDLimitCapped` event emission when the effective limit is capped, and static pod PID limit enforcement (kubelet applies the PID limit logic uniformly for both regular and static pods).
-* `pkg/apis/core/helper` will be updated to exclude `ResourcePID` from `standardContainerResources`.
-* `pkg/kubelet/eviction` will be updated to verify that PID pressure detection, eviction ranking, and pod selection are unaffected by `spec.resources.limits.pids` when the `PerPodPIDLimit` gate is enabled.
-* `k8s.io/component-helpers/nodedeclaredfeatures` will be updated to verify that the kubelet declares `PerPodPIDLimit` in `node.status.declaredFeatures` when the feature gate is enabled, and does not declare it when the gate is disabled.
-
-`k8s.io/kubernetes/pkg/apis/core/validation`: API validation of `pids` resource
-`k8s.io/kubernetes/pkg/api/pod`: Validation ratcheting when gate is disabled
-`k8s.io/kubernetes/pkg/kubelet/cm`: EnsureExists PID limit enforcement logic
-`k8s.io/kubernetes/pkg/apis/core/helper`: ResourcePID helper functions
-`k8s.io/kubernetes/pkg/kubelet/eviction`: Eviction manager unaffected by per-pod PID limits
-`k8s.io/component-helpers/nodedeclaredfeatures`: Node Declared Features registration and inference
+* `pkg/apis/core/validation`: validation rules for the `pids` resource. This covers:
+  - the 128-16384 range, including the boundaries
+  - zero, negative, and fractional values
+  - container-level rejection
+  - `requests.pids` forbidden
+  - LimitRange rejection
+  - the `Forbidden` error when the gate is off
+  - immutability on resize, including that a pids-only pod does not block container resize
+  - validation ratcheting when the `PerPodPIDLimit` gate is disabled (`pod_validation_options.go`, `TestValidateAllowPodPIDLimit`)
+* `pkg/apis/core/v1` and `pkg/api/pod`: a Pod whose only pod-level entry is `limits.pids` is not defaulted (no pod-level CPU, memory, or hugepages requests or limits are materialized).
+* `pkg/apis/core/v1/helper/qos`: `limits.pids` does not change the container-derived QoS class.
+* `pkg/apis/core/helper`: `pids` is neither a standard resource nor a standard container resource. Integer handling is covered by the fractional-value case in `pkg/apis/core/validation`.
+* `k8s.io/component-helpers/resource`: `IsLimitOnlyResource()`; `pids` is not a supported pod-level resource and never appears in `PodRequests`/`PodLimits`.
+* `pkg/quota/v1/evaluator/core`: a pod-level `pids` limit does not bypass required container resources for quota.
+* `pkg/kubelet/cm`: `EnsureExists` logic, covering:
+  - the effective limit `min(podPidsLimit, limits.pids)`
+  - fallback to the node limit when the pod sets none
+  - `PIDLimitCapped` event emission only after successful cgroup creation
+* `pkg/kubelet/lifecycle`: kubelet admission for the feature gate and cgroupsv2 on Linux, and rejection on Windows. The cgroup version check is injectable so the cgroupsv1 path is tested.
+* `pkg/kubelet/config`: static pods with `pids` go through the same API validation (range and fractional values) as regular pods.
+* `pkg/kubelet/eviction`: PID pressure detection, eviction ranking, and pod selection are unaffected by `spec.resources.limits.pids`.
+* `k8s.io/component-helpers/nodedeclaredfeatures/features/perpodpidlimit`: discovery of `PerPodPIDLimit` from the feature gate, and inference for scheduling and update.
 
 ##### Integration tests
 
@@ -357,21 +398,44 @@ e2e tests provide good test coverage of the interaction between the API server (
 
 ##### e2e tests
 
-* Pod PID limit lower than node podPidsLimit is applied.
-* Pod PID limit higher than node podPidsLimit is capped at node podPidsLimit and a `PIDLimitCapped` event is emitted.
-* Multi-container pod shares a single pod-level PID limit.
-* No pod PID limit falls back to node podPidsLimit.
-* Pod with pids limit is admitted under Baseline PSA profile and limit is enforced.
-* Pod with pids limit is admitted under Restricted PSA profile and limit is enforced.
-* Pod specifying `spec.resources.limits.pids` on a cgroupsv1 node is rejected during admission.
-* Static pod with `spec.resources.limits.pids` has PID limit enforced at the pod cgroup level (bypasses apiserver).
-* Static pod without `spec.resources.limits.pids` falls back to node-level `podPidsLimit`.
-* Node with `PerPodPIDLimit` enabled declares `PerPodPIDLimit` in `node.status.declaredFeatures`.
-* Pod with `spec.resources.limits.pids` is not scheduled to a node that does not declare `PerPodPIDLimit`.
-* Pod with `hostPID: true` and `spec.resources.limits.pids` has the pod cgroup `pids.max` set correctly; spawning processes up to the limit succeeds and fork fails with `EAGAIN` at the limit; host processes are visible via `ps` but are not counted against the pod's cgroup PID limit.
+The following node e2e tests are implemented in
+[`test/e2e_node/pids_test.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pids_test.go).
+All suites skip on cgroupsv1 nodes.
 
-- [PerPodPIDLimit](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pids_test.go): [SIG Node](https://testgrid.k8s.io/sig-node-kubelet-serial), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=PerPodPIDLimit)
-- [PerPodPIDLimit PSA Compatibility](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pids_test.go): validates admission and enforcement under Baseline and Restricted PSA profiles
+`PerPodPIDLimit` (non-serial):
+
+* Pod PID limit lower than the node podPidsLimit is applied to the pod cgroup.
+* A multi-container pod shares a single pod-level PID limit.
+* A pod with `hostPID: true` and `spec.resources.limits.pids` has the pod cgroup `pids.max` set correctly.
+* The PID limit is enforced via the pod cgroup (`pids.max`).
+* Fork is blocked when the per-pod PID limit is exhausted (the `pids.events` `max` counter increases).
+* A pod with guaranteed containers and only a pod-level `pids` limit keeps its container-derived QoS class (Guaranteed), and no pod-level requests are defaulted.
+
+`PerPodPIDLimit` (`[Serial]`, kubelet reconfigured with `podPidsLimit=4096`):
+
+* A pod PID limit higher than the node podPidsLimit is capped at the node podPidsLimit, and a `PIDLimitCapped` event is emitted.
+* With no pod PID limit, the pod falls back to the node podPidsLimit.
+
+`PerPodPIDLimit PSA Compatibility`:
+
+* A pod with a pids limit is admitted and runs under the Baseline PSA profile.
+* A pod with a pids limit is admitted and runs under the Restricted PSA profile.
+
+`PerPodPIDLimit Static Pod` (`[Feature:StandaloneMode]`):
+
+* A static pod with `spec.resources.limits.pids` has the PID limit enforced at the pod cgroup level without an API server.
+
+Covered by unit tests instead of e2e in Alpha:
+
+* cgroupsv1 admission rejection (`pkg/kubelet/lifecycle`)
+* Node Declared Features discovery and scheduling inference (`k8s.io/component-helpers/nodedeclaredfeatures/features/perpodpidlimit`)
+
+Test jobs:
+
+- Non-serial specs: `pull-kubernetes-node-e2e-containerd-alpha-features`
+- Static pod spec: `pull-kubernetes-node-e2e-containerd-standalone-mode-serial-all-alpha`
+- `[Serial]` specs: `pull-kubernetes-node-kubelet-serial-containerd-alpha-features`. During Alpha this job consistently hit its 4h timeout before reaching these specs, so they were verified locally with `e2e_node.test`. Getting them reliably exercised in CI is a Beta criterion.
+- [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=PerPodPIDLimit)
 
 ### Graduation Criteria
 
@@ -384,9 +448,14 @@ e2e tests provide good test coverage of the interaction between the API server (
 #### Beta (target 1.39)
 
 - Feature enabled by default
-- Node e2e tests stable in Testgrid for at least one release
+- Node e2e tests stable in Testgrid for at least one release, including the `[Serial]` specs running reliably in CI
 - Downgrade and upgrade testing completed
-- Address feedback and bugs reported during Alpha
+- Address feedback and bugs reported during Alpha, including:
+  - LimitRange support for `pids` (Pod-type LimitRange default/max, including the LimitRanger admission plugin), or a documented decision not to support it
+  - Reporting the enacted `pids` limit in `status.resources` (the value can differ from the request because of the node's `podPidsLimit` cap), or a documented decision not to report it
+  - Evaluating whether cgroupsv2 should be expressed as a Node Declared Features requirement, so that incompatible nodes are filtered at scheduling instead of rejected at kubelet admission
+  - Handling or explicitly surfacing the `cgroupsPerQOS=false` case, where the pod-level PID limit is not applied
+- Revisit observability needs, as discussed during Alpha implementation review: whether a signal is needed for PID availability as it relates to PID-based eviction, and whether failures (e.g. kubelet admission rejections) should be tracked to show the feature is working. The `kubelet_pod_pid_limit_applied_total` counter proposed earlier was dropped in Alpha review (see [Monitoring Requirements](#monitoring-requirements)).
 
 #### GA (target 1.41)
 
@@ -423,9 +492,14 @@ via validation error, so the field never reaches the kubelet. The kubelet
 applies the node-level `podPidsLimit`.
 
 **Static Pods:** Static pods are defined directly on the node and bypass
-the apiserver. Since the kubelet has the gate enabled, if
-`spec.resources.limits.pids` is present, the kubelet will enforce the
-configured validation and apply the pod-level PID limit logic accordingly.
+the apiserver. The kubelet runs the same API validation on static pods
+(`ValidatePodCreate`), including the 128-16384 range, using the kubelet's
+gate state. Kubelet admission then applies the feature gate, cgroupsv2, and OS
+checks, and the pod-level PID limit is enforced as for regular pods.
+
+The kubelet does not re-check the range during admission of API-server-admitted
+pods. This avoids rejecting pods that a newer or older API server accepted with
+different bounds during version skew.
 
 **Both ON:** Full enforcement. The kubelet declares `PerPodPIDLimit` in
 `node.status.declaredFeatures`, the scheduler places pods on compatible nodes,
@@ -488,7 +562,11 @@ will rollout across nodes.
 -->
 
 A rollout or rollback (enabling/disabling the feature gate and restarting
-components) does not impact already running workloads.
+components) can impact already running workloads. When the `PerPodPIDLimit`
+feature gate is disabled on a node and the kubelet is restarted, the kubelet
+readmits all running pods. Pods that specify `spec.resources.limits.pids` are
+rejected at admission (the gate is off) and are marked `Failed`. Workloads
+without `spec.resources.limits.pids` are unaffected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -524,9 +602,13 @@ An operator can query the API for pods with the field set:
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Events
-  - Event Reason: `PIDLimitCapped` — emitted when a pod's requested PID limit
-    exceeds the node's `podPidsLimit`, causing the effective limit to be capped
-    at the node-defined maximum.
+  - Event Reason: `PIDLimitCapped` (type `Warning`), emitted when a pod's
+    requested PID limit exceeds the node's `podPidsLimit`, causing the effective
+    limit to be capped at the node-defined maximum. Example message:
+    `Requested PID limit 8192 exceeds node podPidsLimit; capped to 4096`.
+  - Pods rejected at kubelet admission (gate disabled on the node, cgroupsv1,
+    or unsupported OS) fail with reason `PerPodPIDLimitNotSupported` and a
+    descriptive message.
 - [ ] API .status
   - Condition name: 
   - Other field: 
@@ -550,9 +632,17 @@ An operator can query the API for pods with the field set:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-A `kubelet_pod_pid_limit_applied_total` counter was considered for Alpha but
-deferred to Beta to reduce the initial surface area. It would track how many
-pods have had per-pod PID limits applied.
+A `kubelet_pod_pid_limit_applied_total` counter (the number of pods that had a
+per-pod PID limit applied) was proposed and then removed during Alpha
+implementation review
+([discussion](https://github.com/kubernetes/kubernetes/pull/139277#discussion_r3530881299)).
+Reviewers noted that it only counts that a limit was applied. It does not show
+whether those pods are still running or what value was enforced, and feature
+usage can already be determined from the pod specs and kubelet admission
+failures. Before Beta, we will revisit whether a metric is needed for:
+
+- visibility into PID availability, which matters for understanding PID-based evictions
+- failure tracking, as a more useful signal that the feature is working. Kubelet admission rejections for this feature (reason `PerPodPIDLimitNotSupported`) are already counted by the existing `kubelet_admission_rejections_total` metric. However, that reason is not in the kubelet's admission-rejection reason allowlist, so they are recorded as `reason="Other"`. Adding the reason to the allowlist is a candidate for Beta.
 
 
 ### Dependencies
@@ -564,17 +654,15 @@ pods have had per-pod PID limits applied.
     - Impact of its outage on the feature: On cgroupsv1 nodes, pods specifying `spec.resources.limits.pids` are rejected during admission.
     - Impact of its degraded performance or high-error rates on the feature: N/A — cgroup is a kernel interface, not a service.
 
-- `PodLevelResources` feature gate (Beta, enabled by default since v1.34)
+- `PodLevelResources` feature gate (GA and locked to enabled since v1.38)
   - Usage description: `pids` is specified under `pod.spec.resources.limits`, which requires `PodLevelResources`.
-    - Impact of its outage on the feature: If `PodLevelResources` is disabled, `PerPodPIDLimit` cannot be enabled.
+    - Impact of its outage on the feature: N/A in v1.38+ (the gate is locked to enabled). On earlier versions, if `PodLevelResources` is disabled, `PerPodPIDLimit` cannot be enabled.
     - Impact of its degraded performance or high-error rates on the feature: N/A — feature gate is a binary on/off.
 
-- `PodLevelResourcesFixKubeletQOSClass` feature gate (Beta, enabled by default since v1.37)
-  - Usage description: Fixes QoS class computation when pod-level resources are used. Without this gate, a pod with only `limits.pids` at pod level could be misclassified as BestEffort.
-    - Impact of its outage on the feature: If `PodLevelResourcesFixKubeletQOSClass` is disabled, `PerPodPIDLimit` cannot be enabled.
-    - Impact of its degraded performance or high-error rates on the feature: N/A — feature gate is a binary on/off.
+`pids` does not affect QoS classification (it is not a supported pod-level
+resource), so no QoS-related feature gate is required.
 
-- `NodeDeclaredFeatures` feature gate (GA since v1.36)
+- `NodeDeclaredFeatures` feature gate (GA and locked to enabled since v1.37)
   - Usage description: The kubelet declares `PerPodPIDLimit` in `node.status.declaredFeatures` when the feature gate is enabled. The scheduler uses this to filter nodes for pods with `spec.resources.limits.pids`. cgroupsv1 incompatibility is handled by kubelet admission rather than by the declaration.
     - Impact of its outage on the feature: If `NodeDeclaredFeatures` is disabled, the scheduler cannot filter nodes based on per-pod PID limit support. The feature still works via graceful degradation (kubelet admission rejection on incompatible nodes).
     - Impact of its degraded performance or high-error rates on the feature: N/A — feature gate is a binary on/off.
@@ -656,6 +744,8 @@ For each of them, fill in the following information by copying the below templat
 - 2026-05-06: [Enhancement issue created](https://github.com/kubernetes/enhancements/issues/6063)
 - 2026-05-06: [KEP PR created](https://github.com/kubernetes/enhancements/pull/6064)
 - 2026-05-25: [Alpha implementation PR created](https://github.com/kubernetes/kubernetes/pull/139277) retargeted to v1.38
+- 2026-11-19: Implementation aligned with [KEP-5359](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5359-swap-awareness-api) ([kubernetes/kubernetes#142885](https://github.com/kubernetes/kubernetes/pull/142885)): `pids` is tracked in the shared `limitOnlyResources` set and is not a supported pod-level resource. The kubelet range re-check was removed in favor of API validation, and the feature gate dependency was reduced to `PodLevelResources`.
+- 2026-11-20: [Alpha implementation merged](https://github.com/kubernetes/kubernetes/pull/139277) for v1.38
 
 ## Drawbacks
 
