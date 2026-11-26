@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="847" height="542" viewBox="0 0 847 542">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<rect x="145" y="15" width="246" height="36" fill="none" stroke="#000000" stroke-width="1"/>
+<text x="268" y="27" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">kubelet</text>
+<rect x="162" y="33" width="97" height="17" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="210.5" y="45" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">CPU Manager</text>
+<line x1="210.5" y1="50" x2="210.5" y2="68" stroke="#000000" stroke-width="1" stroke-dasharray="3 2"/>
+<rect x="205.5" y="68" width="10" height="397" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<line x1="210.5" y1="465" x2="210.5" y2="535" stroke="#000000" stroke-width="1" stroke-dasharray="3 2"/>
+<rect x="286" y="33" width="88" height="17" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="330" y="45" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">Volume Manager</text>
+<line x1="330" y1="50" x2="330" y2="68" stroke="#000000" stroke-width="1" stroke-dasharray="3 2"/>
+<rect x="325" y="68" width="10" height="389" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<line x1="330" y1="457" x2="330" y2="535" stroke="#000000" stroke-width="1" stroke-dasharray="3 2"/>
+<rect x="436" y="15" width="87" height="36" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="479.5" y="36.5" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">Containerd</text>
+<line x1="479.5" y1="51" x2="479.5" y2="68" stroke="#000000" stroke-width="1" stroke-dasharray="3 2"/>
+<rect x="474.5" y="68" width="10" height="389" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<line x1="479.5" y1="457" x2="479.5" y2="535" stroke="#000000" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="171" y="92" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">Pod CPU resize 4-&gt;3</text>
+<line x1="118" y1="96" x2="205.5" y2="96" stroke="#000000" stroke-width="1"/>
+<path d="M 205.5 96 l -7 -3 l 0 6 z" fill="#000000"/>
+<rect x="175" y="119" width="71" height="30" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="210.5" y="127" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000" font-weight="bold">Allocate</text>
+<text x="210.5" y="136" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000" font-weight="bold">exclusive CPUs</text>
+<text x="210.5" y="147" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#ff0000" font-weight="bold">1,2,11</text>
+<text x="272" y="163" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#1a6fb5">Get cpuset status</text>
+<line x1="215.5" y1="167" x2="325" y2="167" stroke="#1a6fb5" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 325 167 l -7 -3 l 0 6 z" fill="#1a6fb5"/>
+<text x="458" y="167" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#1a6fb5">Write cpuset to the file</text>
+<line x1="335" y1="172" x2="601" y2="172" stroke="#1a6fb5" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 601 172 l -7 -3 l 0 6 z" fill="#1a6fb5"/>
+<path d="M 175 130 q -13 0 -13 12 L 162 244 q 0 12 -12 12 q 12 0 12 12 L 162 368 q 0 12 13 12" fill="none" stroke="#000000" stroke-width="1"/>
+<text x="80" y="254" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">&gt;scaleDownGracePeriodSeconds</text>
+<text x="80" y="265" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">(5s)</text>
+<rect x="175" y="370" width="71" height="29" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="210.5" y="387" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">Reconcile Loop</text>
+<text xml:space="preserve" x="254" y="383" font-family="Helvetica, Arial, sans-serif" font-size="9.5"><tspan fill="#000000">Call UpdateContainerResources() to update </tspan><tspan fill="#0000ff">cpuset</tspan></text>
+<line x1="246" y1="388" x2="474.5" y2="388" stroke="#000000" stroke-width="1"/>
+<path d="M 474.5 388 l -7 -3 l 0 6 z" fill="#000000"/>
+<text xml:space="preserve" x="494" y="388" font-family="Helvetica, Arial, sans-serif" font-size="9.5"><tspan fill="#000000">Apply </tspan><tspan fill="#0000ff">cpuset</tspan></text>
+<line x1="484.5" y1="392" x2="559" y2="392" stroke="#000000" stroke-width="1"/>
+<path d="M 559 392 l -7 -3 l 0 6 z" fill="#000000"/>
+<rect x="559" y="2" width="176" height="62" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="647" y="17" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">Container</text>
+<circle cx="610.5" cy="38" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="610.5" y="41" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">1</text>
+<line x1="610.5" y1="61" x2="610.5" y2="52" stroke="#000000" stroke-width="1"/>
+<path d="M 610.5 46 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="635.5" cy="38" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="635.5" y="41" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">11</text>
+<line x1="635.5" y1="61" x2="635.5" y2="52" stroke="#000000" stroke-width="1"/>
+<path d="M 635.5 46 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="661" cy="38" r="7" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+<text x="661" y="41" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">2</text>
+<line x1="661" y1="61" x2="661" y2="52" stroke="#000000" stroke-width="1"/>
+<path d="M 661 46 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="686.5" cy="38" r="7" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+<text x="686.5" y="41" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">12</text>
+<line x1="686.5" y1="61" x2="686.5" y2="52" stroke="#000000" stroke-width="1"/>
+<path d="M 686.5 46 l -3.5 6 l 7 0 z" fill="#000000"/>
+<rect x="559" y="120" width="176" height="105" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="647" y="138" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">Container</text>
+<text x="647" y="155" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#1a6fb5">/etc/podinfo/assigned_cpuset</text>
+<path d="M 601 159 H 680 L 694 173 V 185 H 601 Z" fill="#ffffff" stroke="#1a6fb5" stroke-width="1" stroke-dasharray="3 2"/>
+<path d="M 680 159 L 694 173 L 680 173 Z" fill="#f2f2f2" stroke="#1a6fb5" stroke-width="1"/>
+<text x="603" y="177" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#ff0000" font-weight="bold">1,2,11</text>
+<circle cx="610.5" cy="199" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="610.5" y="202" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">1</text>
+<line x1="610.5" y1="222" x2="610.5" y2="213" stroke="#000000" stroke-width="1"/>
+<path d="M 610.5 207 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="635.5" cy="199" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="635.5" y="202" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">11</text>
+<line x1="635.5" y1="222" x2="635.5" y2="213" stroke="#000000" stroke-width="1"/>
+<path d="M 635.5 207 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="661" cy="199" r="7" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+<text x="661" y="202" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">2</text>
+<line x1="661" y1="222" x2="661" y2="213" stroke="#000000" stroke-width="1"/>
+<path d="M 661 207 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="686.5" cy="199" r="7" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+<text x="686.5" y="202" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">12</text>
+<line x1="686.5" y1="222" x2="686.5" y2="213" stroke="#000000" stroke-width="1"/>
+<path d="M 686.5 207 l -3.5 6 l 7 0 z" fill="#000000"/>
+<rect x="559" y="232" width="176" height="105" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="647" y="250" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">Container</text>
+<text x="647" y="267" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#1a6fb5">/etc/podinfo/assigned_cpuset</text>
+<path d="M 601 271 H 680 L 694 285 V 297 H 601 Z" fill="#ffffff" stroke="#1a6fb5" stroke-width="1" stroke-dasharray="3 2"/>
+<path d="M 680 271 L 694 285 L 680 285 Z" fill="#f2f2f2" stroke="#1a6fb5" stroke-width="1"/>
+<text x="603" y="289" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#ff0000" font-weight="bold">1,2,11</text>
+<circle cx="610.5" cy="311" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="610.5" y="314" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">1</text>
+<line x1="610.5" y1="334" x2="610.5" y2="325" stroke="#000000" stroke-width="1"/>
+<path d="M 610.5 319 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="635.5" cy="311" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="635.5" y="314" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">11</text>
+<line x1="635.5" y1="334" x2="635.5" y2="325" stroke="#000000" stroke-width="1"/>
+<path d="M 635.5 319 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="661" cy="311" r="7" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+<text x="661" y="314" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">2</text>
+<line x1="661" y1="334" x2="661" y2="325" stroke="#000000" stroke-width="1"/>
+<path d="M 661 319 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="686.5" cy="311" r="7" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+<text x="686.5" y="314" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">12</text>
+<rect x="559" y="343" width="176" height="106" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="647" y="361" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#000000">Container</text>
+<text x="647" y="378" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#1a6fb5">/etc/podinfo/assigned_cpuset</text>
+<path d="M 601 382 H 680 L 694 396 V 408 H 601 Z" fill="#ffffff" stroke="#1a6fb5" stroke-width="1" stroke-dasharray="3 2"/>
+<path d="M 680 382 L 694 396 L 680 396 Z" fill="#f2f2f2" stroke="#1a6fb5" stroke-width="1"/>
+<text x="603" y="400" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#ff0000" font-weight="bold">1,2,11</text>
+<circle cx="610.5" cy="422" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="610.5" y="425" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">1</text>
+<line x1="610.5" y1="445" x2="610.5" y2="436" stroke="#000000" stroke-width="1"/>
+<path d="M 610.5 430 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="635.5" cy="422" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="635.5" y="425" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">11</text>
+<line x1="635.5" y1="445" x2="635.5" y2="436" stroke="#000000" stroke-width="1"/>
+<path d="M 635.5 430 l -3.5 6 l 7 0 z" fill="#000000"/>
+<circle cx="661" cy="422" r="7" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+<text x="661" y="425" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#000000">2</text>
+<line x1="661" y1="445" x2="661" y2="436" stroke="#000000" stroke-width="1"/>
+<path d="M 661 430 l -3.5 6 l 7 0 z" fill="#000000"/>
+<path d="M 611 82 L 617 82 L 617 92 L 623 92 L 614 101 L 605 92 L 611 92 Z" fill="#ffffff" stroke="#000000" stroke-width="1"/>
+<text x="633" y="95" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">Pod CPU resize 4-&gt;3</text>
+<text x="744" y="176" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">New cpuset file update</text>
+<text x="744" y="284" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">Workload preparation</text>
+<text x="744" y="401" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">New cpuset apply</text>
+<circle cx="580" cy="481" r="7" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+<text x="600" y="485" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#000000">baseline CPUs</text>
+<line x1="571" y1="503" x2="590" y2="503" stroke="#1a6fb5" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M 590 503 l -7 -3 l 0 6 z" fill="#1a6fb5"/>
+<text x="600" y="507" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="9.5" fill="#1a6fb5">optional, scope of KEP-6369</text>
+</svg>
