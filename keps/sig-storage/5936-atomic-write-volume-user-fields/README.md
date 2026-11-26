@@ -48,10 +48,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -362,7 +362,9 @@ __SIG Auth__
 
 #### GA
 
-TBD
+- Address any issues and feedback during beta
+- Graduate e2e tests as conformance tests
+- Lock the `AtomicWriteVolumeUserFields` feature gate
 
 ### Upgrade / Downgrade Strategy
 
@@ -635,9 +637,15 @@ Look for `Error writing payload to dir` and chown related errors.
 
 * 2026-02-24 Initial proposal to SIG
 * 2026-02-27 Initial KEP draft
-* 2026-06-15 KEP merged
+* 2026-06-15 Alpha KEP merged
 * 2026-07-22 Alpha code PR merged
 * 2026-08-04 Alpha docs PR merged
+* 2026-08-26 Kubernetes 1.37 released
+* 2026-09-23 Beta KEP PR merged
+* 2026-10-24 Beta docs PR merged
+* 2026-11-04 Beta code PR merged
+* 2026-11-08 Beta blog PR merged
+* 2026-12-xx Kubernetes 1.38 released
 
 ## Drawbacks
 

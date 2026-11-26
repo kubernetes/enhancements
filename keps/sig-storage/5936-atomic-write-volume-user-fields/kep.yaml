@@ -18,8 +18,8 @@ see-also:
   - https://github.com/kubernetes/kubernetes/issues/129043
 replaces:
 
-stage: beta
-latest-milestone: "v1.38"
+stage: stable
+latest-milestone: "v1.39"
 milestone:
   alpha: "v1.37"
   beta: "v1.38"
