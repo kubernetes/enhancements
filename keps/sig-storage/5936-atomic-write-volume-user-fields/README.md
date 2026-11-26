@@ -48,10 +48,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -79,18 +79,19 @@ ownerships. There have been several issue tickets since 2014, each with a lot of
 demonstrating the strong requirements from the Kubernetes user base.
 
 Many popular software requires strict file ownerships, such as MongoDB replica set
-[key files][mongodb-key-files] and SSHD [host keys][sshd-host-keys]. The existing atomic write volume
-implementation creates files owned by root and therefore not satisfying such ownership requirements.
-A known workaround involves running an initContainers as root to perform chown.
+[key files][mongodb-key-files] and SSHD [host keys][sshd-host-keys]. The existing implementation
+creates files owned by root and therefore not satisfying such ownership requirements.
+A known workaround involves running `initContainers` as root to perform `chown`.
 
-However, this workaround is not possible in clusters implementing the [restricted][restricted-policy] pod
-security standards policy that follow the current pod hardening best practices. The policy requires pods to
-run as non-root and drop all capabilities, therefore rending this workaround impossible.  Moreover, even in
-less hardened clusters, the workaround creates unnecessary friction and maintenance overhead for the users.
+However, this workaround is not feasible in clusters that enforce Pods to meet the [_restricted_][pss-restricted] Pod Security Standard.
+Requiring that Pods meet the restricted standard means that all of their containers, even init containers and sidecars,
+must run as non-root and drop all capabilities, therefore rendering the workaround impossible.
+
+Even in less hardened clusters, this init containers workaround still adds unnecessary friction and maintenance overhead.
 
 [mongodb-key-files]: https://www.mongodb.com/docs/manual/tutorial/enforce-keyfile-access-control-in-existing-replica-set/#enforce-keyfile-access-control-on-existing-replica-set
 [sshd-host-keys]: https://man.openbsd.org/sshd_config#HostKey
-[restricted-policy]: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
+[pss-restricted]: /docs/concepts/security/pod-security-standards/#restricted
 
 ### Goals
 
@@ -152,7 +153,7 @@ The following example demonstrates how the file owner UIDs are determined by the
 
 ```yaml
 volumes:
-- name: volA
+- name: vol-a
   configMap:
     defaultUser: 1000
     name: cm1
@@ -162,11 +163,11 @@ volumes:
     - key: bar # Owner=user
       path: bar
       user: 1001
-- name: volB
+- name: vol-b
   secret: # Owner=defaultUser
     defaultUser: 1000
     secretName: secret1
-- name: volC
+- name: vol-c
   secret:
     secretName: secret2
     items:
@@ -262,7 +263,7 @@ The following example illustrates a mixed application of the existing heuristic 
 
 ```yaml
 volumes:
-- name: volA
+- name: vol-a
   projected:
     sources:
     - serviceAccountToken: # Owner=runAsUser
@@ -270,7 +271,7 @@ volumes:
     - serviceAccountToken: # Owner=user
         path: tokenB
         user: 1001
-- name: volB
+- name: vol-b
   projected:
     defaultUser: 1001
     sources:
@@ -361,7 +362,9 @@ __SIG Auth__
 
 #### GA
 
-TBD
+- Address any issues and feedback during beta
+- Graduate e2e tests as conformance tests
+- Lock the `AtomicWriteVolumeUserFields` feature gate
 
 ### Upgrade / Downgrade Strategy
 
@@ -634,9 +637,15 @@ Look for `Error writing payload to dir` and chown related errors.
 
 * 2026-02-24 Initial proposal to SIG
 * 2026-02-27 Initial KEP draft
-* 2026-06-15 KEP merged
+* 2026-06-15 Alpha KEP merged
 * 2026-07-22 Alpha code PR merged
 * 2026-08-04 Alpha docs PR merged
+* 2026-08-26 Kubernetes 1.37 released
+* 2026-09-23 Beta KEP PR merged
+* 2026-10-24 Beta docs PR merged
+* 2026-11-04 Beta code PR merged
+* 2026-11-08 Beta blog PR merged
+* 2026-12-xx Kubernetes 1.38 released
 
 ## Drawbacks
 
