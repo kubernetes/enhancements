@@ -123,10 +123,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -797,8 +797,17 @@ taint must allow a pod to run.
 #### GA
 
 - 3 examples of real-world usage
+  - DeviceTaints usage:
+    - https://github.com/intel/intel-resource-drivers-for-kubernetes/blob/main/doc/gpu/USAGE.md#health-monitoring-support (health information discovered by driver)
+    - https://github.com/kubernetes-sigs/dra-driver-nvidia-gpu/pull/983 (informational taints)
+  - DeviceTaintRule usage:
+    - https://github.com/intel/intel-resource-drivers-for-kubernetes/blob/main/doc/gaudi/USAGE.md#health-monitoring-support (health information discovered by monitoring component)
+    - https://github.com/CoHDI/composable-resource-operator (in preparation for detaching a device)
 - Allowing time for feedback
-- [Conformance tests]
+  - In beta for two release cycles.
+- Conformance tests
+  - https://github.com/kubernetes/kubernetes/blob/f15071f37174baf476617f175898beab3c9b8605/test/e2e/dra/dra.go#L114-L118, can only be promoted to conformance after graduation.
+    Tracked in https://github.com/kubernetes/kubernetes/issues/138814.
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
@@ -822,6 +831,9 @@ and ResourceSlices with that value must be removed before a downgrade.
 During version skew where the apiserver supports the feature and the scheduler
 doesn't, taints can be set without encountering errors or
 warnings, but they won't have any effect.
+
+`NoExecute` starts to have the desired effect once kube-controller-manager
+gets updated to have the feature enabled.
 
 ## Production Readiness Review Questionnaire
 
@@ -869,7 +881,14 @@ It takes effect again for scheduling and may evict pods.
 
 ###### Are there any tests for feature enablement/disablement?
 
-This will be covered through unit tests for the apiserver and scheduler.
+This was covered through unit tests for the apiserver and scheduler:
+- https://github.com/kubernetes/kubernetes/blob/f15071f37174baf476617f175898beab3c9b8605/pkg/registry/resource/resourceslice/strategy_test.go#L251-L268
+- https://github.com/kubernetes/kubernetes/blob/f15071f37174baf476617f175898beab3c9b8605/pkg/scheduler/eventhandlers_test.go#L315-L372
+
+Integration testing also verifies dropping resp. storing of fields in ResourceSlice,
+which covers the ResourceSlice controller running in DRA drivers:
+- dropped: https://github.com/kubernetes/kubernetes/blob/f15071f37174baf476617f175898beab3c9b8605/test/integration/dra/dra.go#L153-L155
+- stored: https://github.com/kubernetes/kubernetes/blob/f15071f37174baf476617f175898beab3c9b8605/test/integration/dra/dra.go#L244
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -897,6 +916,9 @@ increases, then perhaps scheduling no longer works as intended.
 Automated upgrade/downgrade testing verifies that:
 - A DeviceTaintRule created before a downgrade prevents pod scheduling after a downgrade.
 - A pod which gets scheduled because of a toleration is kept running after an upgrade.
+
+See [the implementation](https://github.com/kubernetes/kubernetes/blob/f15071f37174baf476617f175898beab3c9b8605/test/e2e_dra/devicetaints_test.go#L32-L136)
+for details.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1064,11 +1086,14 @@ None known at this point.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+There are no SLOs for this feature.
+
 ## Implementation History
 
 - 1.33: first KEP revision and implementation
 - 1.35: revised alpha with `effect: None` and DeviceTaintRule status
-- 1.36: graduation to beta (tentative)
+- 1.36: graduation to beta
+- 1.37: graduation to stable
 
 ## Drawbacks
 

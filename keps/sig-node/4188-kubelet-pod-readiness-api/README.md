@@ -344,13 +344,14 @@ enabling lean and efficient responses. Only authorized local admin users can use
 
 #### Alpha
 
-- [ ] Feature implemented behind a feature flag.
-- [ ] e2e tests completed and enabled.
-- [ ] sig-auth input on proposed lack of authorization for this API.
+- [x] Feature implemented behind a feature flag.
+- [x] e2e tests completed and enabled.
+- [x] sig-auth input on proposed lack of authorization for this API.
 
 #### Beta
 
-- [ ] Fix Kubelet restart [issue](https://github.com/kubernetes/kubernetes/issues/100277)
+- [x] Fix Kubelet restart [issue](https://github.com/kubernetes/kubernetes/issues/100277)
+- [x] Validate the API with at least two real-world consumers. The API was developed to support the [Inspektor Gadget](https://github.com/inspektor-gadget/inspektor-gadget/pull/5523) and Google Cloud use cases, and both consumers have validated the current API.
 
 #### GA
 
@@ -371,8 +372,8 @@ N/A
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `PodInfoAPI` is a new feature gate to
-  enable / disable PodInfo API.
+  - Feature gate name: `PodsAPI` is a new feature gate to
+  enable / disable the Pods API.
   - Components depending on the feature gate: Kubelet
 
 ###### Does enabling the feature change any default behavior?
@@ -395,15 +396,15 @@ Yes, test will demonstrate that when the feature gate is disabled, the API retur
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Kubelet may fail to start. The new API may cause the Kubelet to crash.
+Since the feature is implemented as a new gRPC service within Kubelet, Kubelet could fail to start if there are socket creation or permission errors. If the gRPC server itself crashes or encounters memory/goroutine leaks, it could cause the Kubelet to restart, temporarily interrupting Kubelet readiness or status updates. However, it will not directly impact already running container workloads, as the container runtime (CRI) operates independently.
 
 ###### What specific metrics should inform a rollback?
 
-`pod_info_endpoint_errors_get` - but only with feature gate `PodInfoAPI` enabled.
+The `status_code` label on `kubelet_pod_requests_total` (and its per-endpoint counterparts) - but only with feature gate `PodsAPI` enabled.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A.
+Upgrade and rollback have been tested manually during the Alpha phase by enabling and disabling the `PodsAPI` feature gate on Kubelet across cluster restarts. The gRPC server correctly starts serving when enabled, and gracefully shuts down/removes the socket when disabled. Existing workloads continued running without disruption during these transitions. Manual upgrade->downgrade->upgrade tests confirmed no resource leaks or socket conflicts.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -413,7 +414,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Look at the `pod_info_endpoint_requests_list`, `pod_info_endpoint_requests_get`, `pod_info_endpoint_requests_watch` metric exposed by the Kubelet.
+Look at the `kubelet_pod_requests_list_total`, `kubelet_pod_requests_get_total`, `kubelet_pod_requests_watch_total` metrics exposed by the Kubelet.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -426,22 +427,24 @@ Log entry indicating that API is ready to receive the traffic will be added.
 - [ ] API .status
   - Condition name:
   - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: An operator can verify the Kubelet log which prints an entry when the Pods API gRPC server is successfully started. In addition, querying the socket via a gRPC tool (like `grpcurl`) should return a list of pods.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A.
+Since this is a node-local gRPC API served directly from the Kubelet cache, we target the following SLOs:
+- **Latency**: 99% of `GetPod` and `ListPods` requests should be served within 5ms.
+- **Availability**: 99.9% of requests should return success (non-5xx / non-internal gRPC errors) when the Kubelet is running and initialized.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name:  `pod_info_endpoint_requests_total`, `pod_info_endpoint_requests_list` and `pod_info_endpoint_requests_get`.
+  - Metric name:  `kubelet_pod_requests_total`, `kubelet_pod_requests_list_total`, `kubelet_pod_requests_get_total` and `kubelet_pod_requests_watch_total`.
   - Components exposing the metric: Kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-As part of this feature enhancement, per-API-endpoint resources metrics are being added; `pod_info_endpoint_requests_get`, `pod_info_endpoint_requests_list` add `pod_info_endpoint_errors_get`.
+As part of this feature enhancement, per-API-endpoint request metrics are being added; `kubelet_pod_requests_get_total`, `kubelet_pod_requests_list_total`, and `kubelet_pod_requests_watch_total`, each broken down by `status_code`.
 
 ### Dependencies
 
@@ -481,7 +484,7 @@ Yes, the API needs to create new objects based on data stored in Kubelet cache. 
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A.
+This is one of the primary design motivations for this KEP. Because the PodInfo API serves pod specs and statuses directly from the local Kubelet cache, the API remains fully operational and can be queried normally by local clients even if the control plane (API server and/or etcd) is completely down or unreachable.
 
 ###### What are other known failure modes?
 
@@ -489,13 +492,17 @@ The Kubelet might be in init phase when client call the API. The API should retu
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-The API should be disabled using the feature gate.
+1. Monitor the `kubelet_pod_requests_total` metric (and its `status_code` label) to see error rates and request counts.
+2. Check the Kubelet logs for errors related to socket permission, client connection handling, or cache synchronization.
+3. If the Kubelet exhibits high CPU or RAM usage due to excessive local client requests, the rate-limiting configuration should be reviewed.
+4. As a mitigation, the feature can be disabled by setting the `PodsAPI` feature gate to `false` in Kubelet's configuration.
 
 ## Implementation History
 
 - 2023-09-05: KEP created
 - 2025-09-30: KEP updated with new API and goals
 - 2026-01-27: KEP milestones updated
+- 2026-05-29: KEP updated to target Beta in v1.37
 
 ## Drawbacks
 

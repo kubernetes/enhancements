@@ -24,6 +24,7 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
+    - [Post-GA cleanup](#post-ga-cleanup)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -49,15 +50,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -469,7 +470,7 @@ the extent agreed on above.
 
 ##### Integration tests
 
-No new tests, and once the feature gate is locked on, we will remove
+No new tests, and we will eventually remove
 `test/integration/apiserver/cve_2021_29923_test.go`, which tests that
 it is possible to create new objects with invalid IP values (since it
 won't be possible any more).
@@ -530,13 +531,17 @@ longer be possible to test behavior regarding them.)
 - Updated validation available behind a feature gate, enabled by
   default.
 
-- Unit tests added/updated, old e2e and integration tests removed.
+- Unit tests added/updated, old e2e tests removed.
 
 #### GA
 
 - Allow time for feedback, etc
 
-- Remove the integration test that now tests unreachable behavior.
+#### Post-GA cleanup
+
+- Remove the integration and unit tests for the old behavior once the
+  feature gate is removed and can no longer be disabled even by
+  setting an emulation version.
 
 ### Upgrade / Downgrade Strategy
 
@@ -756,6 +761,7 @@ N/A.
 - 2024-01-01: Proposed as a PR ([kubernetes #122550])
 - 2024-10-02: Proposed as a KEP
 - 2025-04-25: Alpha in Kubernetes v1.33
+- 2026-04-22: Beta in Kubernetes v1.36
 
 ## Drawbacks
 

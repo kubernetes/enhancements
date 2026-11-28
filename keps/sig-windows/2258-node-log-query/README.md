@@ -553,6 +553,7 @@ If log queries are failing or timing out frequently:
 - Updated on May 2nd, 2023
 - Updated on Feb 5th, 2024
 - Updated on Feb 2th, 2026: KEP updated to GA
+- Updated on May 19, 2026: KEP marked as implemented (GA graduation)
 
 ## Drawbacks
 

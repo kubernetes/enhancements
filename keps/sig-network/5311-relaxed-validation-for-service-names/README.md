@@ -1,63 +1,3 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [X] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [X] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [X] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [X] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [X] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-5311: Relaxed validation for Services names
 
 <!-- toc -->
@@ -101,14 +41,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
@@ -387,14 +327,22 @@ N/A
 - [x] Beta
   - [x] KEP (`k/enhancements`) update PR(s):
     - https://github.com/kubernetes/enhancements/pull/5561
-  - [ ] Code (`k/k`) update PR(s):
+  - [x] Code (`k/k`) update PR(s):
 	- (this PR was rolled back by the PR below) https://github.com/kubernetes/kubernetes/pull/134493
 	- https://github.com/kubernetes/kubernetes/pull/135426
-    - ...
-  - [ ] Docs (`k/website`) update(s):
+    - https://github.com/kubernetes/kubernetes/pull/136389
+  - [x] Docs (`k/website`) update(s):
 	- (this PR was rolled back by the PR below)  https://github.com/kubernetes/website/pull/52920
 	- https://github.com/kubernetes/website/pull/53471
-    - ...
+    - https://github.com/kubernetes/website/pull/54691
+- [x] GA
+  - [x] KEP (`k/enhancements`) update PR(s):
+    - https://github.com/kubernetes/enhancements/pull/6110
+  - [x] Code (`k/k`) update PR(s):
+    - https://github.com/kubernetes/kubernetes/pull/139282
+    - 
+  - [x] Docs (`k/website`) update(s):
+    - 
 
 ## Drawbacks
 

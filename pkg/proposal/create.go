@@ -135,7 +135,7 @@ func populateProposal(p *api.Proposal, opts *CreateOpts) {
 	p.Title = opts.Title
 
 	if len(opts.Authors) > 0 {
-		authors := []string{}
+		authors := make([]string, 0, len(opts.Authors))
 		for _, author := range opts.Authors {
 			if !strings.HasPrefix(author, "@") {
 				author = fmt.Sprintf("@%s", author)
@@ -166,7 +166,7 @@ func populateProposal(p *api.Proposal, opts *CreateOpts) {
 }
 
 func updatePersonReference(names []string) []string {
-	persons := []string{}
+	persons := make([]string, 0, len(names))
 	for _, name := range names {
 		if !strings.HasPrefix(name, "@") {
 			name = fmt.Sprintf("@%s", name)

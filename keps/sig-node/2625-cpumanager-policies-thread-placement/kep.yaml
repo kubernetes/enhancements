@@ -12,6 +12,7 @@ reviewers:
   - "@klueska"
   - "@swatisehgal"
 approvers:
+  - "@klueska" # sig-node-assigned-approver
   - "@sig-node-tech-leads"
 see-also:
 - "keps/sig-node/2902-cpumanager-distribute-cpus-policy-option/"

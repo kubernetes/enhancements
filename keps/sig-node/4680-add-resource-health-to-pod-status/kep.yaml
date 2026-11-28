@@ -16,7 +16,7 @@ reviewers:
   - "@johnbelamaric"
 approvers:
   - "@mrunalp" # sig-node-tl
-  - "@SergeyKanzhelev" # sig-node-assigned-approver"
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/1287-in-place-update-pod-resources" # for AllocatedResources status field

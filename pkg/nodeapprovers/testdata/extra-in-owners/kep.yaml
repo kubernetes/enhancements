@@ -1,0 +1,8 @@
+title: Extra In OWNERS Fixture
+kep-number: 7
+owning-sig: sig-node
+status: implementable
+reviewers:
+  - "@tallclair" # sig-node-assigned-reviewer
+approvers:
+  - "@dchen1107" # sig-node-assigned-approver

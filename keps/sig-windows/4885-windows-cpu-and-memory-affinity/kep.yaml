@@ -23,17 +23,17 @@ replaces:
 
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.32"
+latest-milestone: "v1.38"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.32"
-  beta: ""
+  beta: "v1.38"
   stable: ""
 
 # The following PRR answers are required at alpha release
@@ -46,3 +46,12 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - cpu_manager_pinning_requests_total
+  - cpu_manager_pinning_errors_total
+  - cpu_manager_shared_pool_size_millicores
+  - cpu_manager_exclusive_cpus_allocation_count
+  - memory_manager_pinning_requests_total
+  - memory_manager_pinning_errors_total
+  - topology_manager_admission_requests_total
+  - topology_manager_admission_errors_total
+  - topology_manager_admission_duration_ms

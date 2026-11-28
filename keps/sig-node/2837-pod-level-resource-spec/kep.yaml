@@ -1,4 +1,4 @@
-title: KEP Template
+title: Pod Level Resource Specifications
 kep-number: 2837
 authors:
   - "@ndixita"
@@ -19,23 +19,25 @@ reviewers:
 
 approvers:
   - "@dchen1107"
+  - "@haircommander" # sig-node-assigned-approver
 
 see-also: []
  
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.36"
+latest-milestone: "v1.38"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.33"
   beta: "v1.34"
+  stable: "v1.38"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -57,6 +59,7 @@ disable-supported: true
 # The following PRR answers are required at beta release
 metrics:
 - apiserver_rejected_requests
+- kubelet_pod_level_resources_admission_total
 - schedule_attempts_total{result="error|unschedulable"}
 - node_collector_evictions_total
 - started_pods_errors_total

@@ -1,0 +1,8 @@
+title: Alpha Valid
+kep-number: 1
+owning-sig: sig-node
+stage: alpha
+approvers:
+  - "@dchen1107" # sig-node-assigned-approver
+  - "@someoneelse"
+latest-milestone: "v1.99"

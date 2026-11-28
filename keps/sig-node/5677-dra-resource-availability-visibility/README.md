@@ -27,10 +27,19 @@
     - [ResourcePoolStatusRequest Object](#resourcepoolstatusrequest-object)
     - [Spec Fields](#spec-fields)
     - [Status Fields](#status-fields)
+    - [Companion API Change: <code>ResourceSlice.Spec.PartitionTypeAttribute</code>](#companion-api-change-resourceslicespecpartitiontypeattribute)
+      - [Where validation happens](#where-validation-happens)
+      - [Feature gate: <code>DRAPartitionableDevicesType</code>](#feature-gate-drapartitionabledevicestype)
   - [Controller Implementation](#controller-implementation)
     - [Controller in KCM](#controller-in-kcm)
     - [One-time Processing](#one-time-processing)
+    - [Incomplete-Pool Handling and Requeue](#incomplete-pool-handling-and-requeue)
     - [Reusing Existing Informers](#reusing-existing-informers)
+    - [Partitionable &amp; Consumable Device Accounting](#partitionable--consumable-device-accounting)
+      - [Conditions and Metrics](#conditions-and-metrics)
+      - [Devices That Are Both Partitionable and Consumable](#devices-that-are-both-partitionable-and-consumable)
+    - [TTL-Based Cleanup](#ttl-based-cleanup)
+    - [Controller RBAC](#controller-rbac)
   - [kubectl Integration](#kubectl-integration)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -38,8 +47,17 @@
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
+    - [Alpha (1.36)](#alpha-136)
+    - [Alpha (1.37)](#alpha-137)
+    - [Alpha (1.38)](#alpha-138)
+      - [Semantics corrections](#semantics-corrections)
+      - [Observability and operational hardening](#observability-and-operational-hardening)
+      - [UX](#ux)
+      - [Test coverage](#test-coverage)
+    - [Beta (1.39)](#beta-139)
+      - [API graduation](#api-graduation)
+      - [Out-of-tree validation](#out-of-tree-validation)
+      - [Version transition testing](#version-transition-testing)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -66,20 +84,21 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in
   [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and
   SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] e2e Tests for all Beta API Operations (endpoints) — `UpdateStatus`
+    is still missing; see [Alpha (1.38)](#alpha-138)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests]
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints] must be hit by [Conformance Tests]
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for
-  publication to [kubernetes.io]
+  publication to [kubernetes.io] — required for the 1.39 Beta promotion
 - [ ] Supporting documentation—e.g., additional design documents, links to
   mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -171,7 +190,9 @@ for imperative operations through declarative APIs.
 │                                                                             │
 │   Step 1: CREATE               Step 2: WAIT              Step 3: READ       │
 │   $ kubectl create             $ kubectl wait            $ kubectl get      │
-│     resourcepoolstatusrequest    --for=condition=Complete  rpsr/my-check    │
+│     -f request.yaml              --for=condition=Complete  ...-o yaml       │
+│                                  <object-name>                              │
+│   (kind: ResourcePoolStatusRequest, resource.k8s.io/v1alpha3)               │
 └───────────┬─────────────────────────┬─────────────────────────┬─────────────┘
             │                         │                         │
             ▼                         ▼                         ▼
@@ -185,13 +206,16 @@ for imperative operations through declarative APIs.
 │  │    name: my-check                                                     │  │
 │  │                                                                       │  │
 │  │  spec:                              status:                           │  │
-│  │    driver: example.com/gpu    ───►    observationTime: <timestamp>    │  │
+│  │    driver: example.com/gpu    ───►    poolCount: 1                    │  │
 │  │    poolName: node-1                   pools:                          │  │
 │  │                                       - driver: example.com/gpu       │  │
 │  │                                         poolName: node-1              │  │
+│  │                                         generation: 5                 │  │
+│  │                                         resourceSliceCount: 1         │  │
 │  │                                         totalDevices: 4               │  │
 │  │                                         allocatedDevices: 3           │  │
 │  │                                         availableDevices: 1           │  │
+│  │                                         unavailableDevices: 0         │  │
 │  │                                       conditions:                     │  │
 │  │                                       - type: Complete                │  │
 │  │                                         status: "True"                │  │
@@ -207,12 +231,16 @@ for imperative operations through declarative APIs.
 │  │                ResourcePoolStatusRequest Controller                    │ │
 │  │                                                                        │ │
 │  │  1. Watch for new ResourcePoolStatusRequest objects                    │ │
-│  │  2. Skip if status.observationTime already set (one-time processing)   │ │
+│  │  2. Skip if status is already set (one-time processing)                │ │
 │  │  3. Read ResourceSlices matching spec filters (driver, poolName)       │ │
 │  │  4. Read ResourceClaims to determine allocations                       │ │
-│  │  5. Compute availability summary per pool                              │ │
-│  │  6. Write result to status with timestamp                              │ │
-│  │  7. Set condition Complete=True                                        │ │
+│  │  5. Compute availability summary per pool (per-pool validationError    │ │
+│  │     when observed slice count < expected; controller requeues to       │ │
+│  │     give drivers time to publish remaining slices)                     │ │
+│  │  6. Write result to status                                             │ │
+│  │  7. Set condition Complete=True (or Failed=True on error)              │ │
+│  │  8. TTL cleanup: completed requests deleted after 1h, pending          │ │
+│  │     requests after 24h                                                 │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
 │  Reuses existing informers:                                                 │
@@ -245,7 +273,7 @@ and plan for capacity expansion.
 ```bash
 # Create a status request for all GPU pools
 $ kubectl create -f - <<EOF
-apiVersion: resource.k8s.io/v1alpha1
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: check-gpus-$(date +%s)
@@ -255,40 +283,47 @@ EOF
 resourcepoolstatusrequest.resource.k8s.io/check-gpus-1707300000 created
 
 # Wait for processing
-$ kubectl wait --for=condition=Complete rpsr/check-gpus-1707300000 --timeout=30s
+$ kubectl wait --for=condition=Complete resourcepoolstatusrequest/check-gpus-1707300000 --timeout=30s
 resourcepoolstatusrequest.resource.k8s.io/check-gpus-1707300000 condition met
 
 # View results
-$ kubectl get rpsr/check-gpus-1707300000 -o yaml
-apiVersion: resource.k8s.io/v1alpha1
+$ kubectl get resourcepoolstatusrequest/check-gpus-1707300000 -o yaml
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: check-gpus-1707300000
 spec:
   driver: example.com/gpu
 status:
-  observationTime: "2026-02-07T10:30:00Z"
+  poolCount: 2
   pools:
   - driver: example.com/gpu
     poolName: node-1
     nodeName: node-1
+    generation: 1
+    resourceSliceCount: 1
     totalDevices: 4
     allocatedDevices: 3
     availableDevices: 1
+    unavailableDevices: 0
   - driver: example.com/gpu
     poolName: node-2
     nodeName: node-2
+    generation: 1
+    resourceSliceCount: 1
     totalDevices: 4
     allocatedDevices: 1
     availableDevices: 3
+    unavailableDevices: 0
   conditions:
   - type: Complete
     status: "True"
     reason: CalculationComplete
+    message: "Calculated status for 2 pools"
     lastTransitionTime: "2026-02-07T10:30:00Z"
 
-# Cleanup
-$ kubectl delete rpsr/check-gpus-1707300000
+# Cleanup (or wait for TTL - 1h after completion)
+$ kubectl delete resourcepoolstatusrequest/check-gpus-1707300000
 ```
 
 #### Story 2: Developer Debugging Resource Allocation
@@ -300,8 +335,8 @@ resources", I want to understand what resources are available.
 ```bash
 # Quick one-liner to check GPU availability
 $ kubectl create -f - <<EOF && sleep 2 && \
-  kubectl get rpsr/debug-check -o jsonpath='{.status.pools[*]}'
-apiVersion: resource.k8s.io/v1alpha1
+  kubectl get resourcepoolstatusrequest/debug-check -o jsonpath='{.status.pools[*]}'
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: debug-check
@@ -330,7 +365,7 @@ DRIVER="example.com/gpu"
 
 # Create request
 kubectl create -f - <<EOF
-apiVersion: resource.k8s.io/v1alpha1
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: $REQUEST_NAME
@@ -339,16 +374,16 @@ spec:
 EOF
 
 # Wait and get result
-kubectl wait --for=condition=Complete rpsr/$REQUEST_NAME --timeout=60s
-AVAILABLE=$(kubectl get rpsr/$REQUEST_NAME -o jsonpath='{.status.pools[*].availableDevices}' | tr ' ' '+' | bc)
+kubectl wait --for=condition=Complete resourcepoolstatusrequest/$REQUEST_NAME --timeout=60s
+AVAILABLE=$(kubectl get resourcepoolstatusrequest/$REQUEST_NAME -o jsonpath='{.status.pools[*].availableDevices}' | tr ' ' '+' | bc)
 
 # Alert if low
 if [ "$AVAILABLE" -lt 5 ]; then
   echo "ALERT: Only $AVAILABLE devices available cluster-wide"
 fi
 
-# Cleanup
-kubectl delete rpsr/$REQUEST_NAME
+# Cleanup (or let TTL delete it after 1h)
+kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
 ```
 
 ### Notes/Constraints/Caveats
@@ -356,11 +391,16 @@ kubectl delete rpsr/$REQUEST_NAME
 1. **Asynchronous operation**: Unlike SubjectAccessReview (synchronous), this
    uses the CSR pattern where user must wait for controller processing.
 
-2. **One-time calculation**: Each request is processed once. To get updated
-   data, delete and recreate the request.
+2. **One-time calculation**: Each request is processed once. Once `status`
+   is set it becomes immutable; metadata (labels, annotations) follows
+   the standard object-meta update rules. To get updated data, delete and
+   recreate the request.
 
-3. **Object persists in etcd**: Requests are stored until deleted. Users should
-   clean up old requests or use unique names with timestamps.
+3. **Automatic TTL cleanup**: Completed or failed requests are deleted by the
+   controller 1 hour after their `Complete`/`Failed` condition is set.
+   Pending requests (no status) are deleted 24 hours after creation to
+   handle stuck requests. Users can still delete requests manually at any
+   time.
 
 4. **Controller processing delay**: Status is not immediate - controller must
    process the request. Typically completes within seconds.
@@ -368,16 +408,61 @@ kubectl delete rpsr/$REQUEST_NAME
 5. **RBAC controls access**: Users need RBAC permission to create/read
    ResourcePoolStatusRequest objects to use this feature.
 
-6. **Partitionable devices**: Device counts may be misleading for partitionable
-   devices (e.g., a single GPU that can be split into 15 mutually exclusive
-   partitions). The controller counts devices as listed in ResourceSlices
-   without understanding partition relationships. Future versions may add
-   driver-provided metadata to indicate partitioning.
+6. **Partitionable & consumable devices**: Alpha 1.36 counted each
+   entry in `ResourceSlice.Spec.Devices` once per allocation result,
+   which was misleading for two device shapes:
 
-7. **Generation handling**: ResourceSlices with older pool generations are
+   - **Partitionable** (`DRAPartitionableDevices` feature gate): a
+     single physical device may appear as multiple mutually-exclusive
+     partitions that share a `CounterSet`. Counting devices ignores
+     the shared bottleneck.
+   - **Consumable** (`DRAConsumableCapacity` feature gate): a device
+     with `allowMultipleAllocations=true` may serve many claims
+     simultaneously. Counting each claim against `allocatedDevices`
+     drove `availableDevices` to 0 on pools that still had free
+     capacity (the `max(0, …)` floor in the controller hid the
+     overcount as "0 available" rather than as a negative number).
+
+   Alpha 1.37 added an optional `partitionSummary` list (a typed
+   "devices-by-partition-type" view that nets out shared counter
+   consumption) and a `shareableSummary` aggregate to each
+   `PoolStatus`, capped the per-device contribution to
+   `allocatedDevices` at 1, and skipped AdminAccess allocations in all
+   accounting. `partitionSummary` is emitted when a grouping attribute
+   can be resolved for the pool — either because the driver declared
+   `ResourceSlice.Spec.PartitionTypeAttribute` on a slice, or because
+   the request named `spec.defaultPartitionTypeAttribute`. A pool for
+   which neither source names an attribute reports no
+   `partitionSummary` at all. See
+   [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting)
+   under Controller Implementation.
+
+7. **Incomplete pools**: When a pool's observed ResourceSlice count is less
+   than `ResourceSliceCount` declared by the driver, the pool is considered
+   incomplete and the controller requeues the request (up to 5 attempts) to
+   give drivers time to publish remaining slices. The status is **not**
+   written while any pool is incomplete. A request therefore either
+   completes once every pool is whole — in which case no `PoolIncomplete:`
+   marker survives into the result — or exhausts its retries and is left
+   with `status` unset until the 24-hour pending TTL deletes it. Either way
+   the incomplete state is never visible to a reader. Reaching a terminal state in this case is
+   an Alpha 1.38 item; see [Alpha (1.38)](#alpha-138) under Graduation Criteria.
+
+8. **Generation handling**: ResourceSlices with older pool generations are
    ignored during computation (not counted as errors). Drivers are expected
    to delete old-generation slices eventually. The `generation` field in
-   status reflects the highest generation observed.
+   each PoolStatus reflects the highest generation observed.
+
+9. **`unavailableDevices`**: in Alpha 1.36 always `0`. Alpha 1.37
+   computes this from real device taints (`NoSchedule` and
+   `NoExecute` effects) on each device. The count is taken over all
+   devices in the pool regardless of whether they are also allocated,
+   so a device that is both allocated and tainted is subtracted twice
+   from `availableDevices`; the `max(0, …)` floor hides the resulting
+   underflow. Alpha 1.38 resolves this in favour of the field's stated meaning
+   ("not available due to taints … but are not allocated") by excluding
+   allocated devices from the taint tally; see
+   [Alpha (1.38)](#alpha-138) under Graduation Criteria.
 
 ### Risks and Mitigations
 
@@ -385,30 +470,34 @@ kubectl delete rpsr/$REQUEST_NAME
 
 | Risk | Mitigation |
 |------|------------|
-| Request accumulation in etcd | Document cleanup; consider TTL for Beta |
-| Large status objects (many pools) | Required `driver` field bounds response; `limit` field caps further |
-| Controller processing spike | Work queue with rate limiting |
-| Simultaneous request flood | Rate limiting per user (Beta) |
+| Request accumulation in etcd | Controller-side TTL cleanup (Alpha): 1h after completion, 24h for pending |
+| Large status objects (many pools) | Required `driver` field bounds response; `limit` field capped at 1000 (default 100); status `pools` list capped at `maxItems=1000` |
+| Controller processing spike | Work queue with default rate limiting; max 5 retries per request; a single worker bounds concurrent lister scans |
+| Simultaneous request flood | Per-user rate limiting (planned for Alpha 1.38) |
+| TTL sweep spike | Cleanup lists from the informer cache, but issues one `delete` per expired object; batching / pacing is an Alpha 1.38 item |
 
-**Alpha approach:** For Alpha, the required `driver` field naturally bounds
-response size to one driver's pools, with `limit` as an additional cap. We rely
-on documentation and controller-side rate limiting. Cluster administrators
-can enforce object count limits using admission webhooks (e.g., Gatekeeper,
-Kyverno) if needed for their environment. This is sufficient for initial
-adoption while we gather feedback on usage patterns.
+**Alpha approach:** The required `driver` field naturally bounds response
+size to one driver's pools, with `limit` (default 100, max 1000) as an
+additional cap. Built-in TTL cleanup runs every 10 minutes and deletes
+completed requests after 1 hour and pending requests after 24 hours, so etcd
+growth is bounded without user action. Cluster administrators can still
+enforce additional object-count limits via admission webhooks (e.g.
+Gatekeeper, Kyverno).
 
-**Beta improvements:** TTL-based auto-cleanup (`ttlSecondsAfterComplete`) and
-per-user rate limiting will be added. If Alpha feedback indicates a need, we
-may also add a built-in cluster-wide object limit (similar to how some APIs
-cap total objects).
+**Alpha 1.38 improvements:** Per-user rate limiting for request creation, paced
+TTL-delete sweeps, and consideration of configurable TTLs and a built-in
+cluster-wide object limit if Alpha feedback indicates a need. Scale
+validation at ≥100 pools with ≥1000 expired requests is an Alpha 1.38
+deliverable; see
+[Alpha (1.38)](#alpha-138).
 
 #### Operational Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Stale data if not recalculated | Timestamp shows age; recreate for fresh |
-| Controller not running | Condition stays pending; user can detect |
-| Feature gate mismatch | Document both apiserver and KCM required |
+| Stale data if not recalculated | `Complete` condition's `lastTransitionTime` shows age; delete and recreate for fresh data |
+| Controller not running | `status` stays nil (no `Complete` or `Failed` condition); user can detect; request will be auto-deleted after 24h pending TTL |
+| Feature gate mismatch | Feature gate `DRAResourcePoolStatus` must be enabled on both kube-apiserver and kube-controller-manager |
 
 ### Security Considerations
 
@@ -485,148 +574,726 @@ in their namespace.
 
 #### ResourcePoolStatusRequest Object
 
+The API is introduced in `resource.k8s.io/v1alpha3` (Kubernetes 1.36).
+
 ```yaml
-apiVersion: resource.k8s.io/v1alpha1
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: my-request
   # Cluster-scoped (no namespace)
 spec:
-  # Driver is REQUIRED - bounds response to one driver's pools
+  # Driver is REQUIRED - bounds response to one driver's pools.
+  # Must be a DNS subdomain.
   driver: example.com/gpu
 
-  # Filter by pool name (optional)
+  # Filter by pool name (optional).
+  # When set, must be a valid resource pool name (DNS subdomains separated by "/").
   poolName: node-1
 
-  # Limit number of pools returned (optional)
-  # Default and max values will be determined at implementation time
-  # based on max-size calculations to ensure the object fits in etcd
+  # Max pools to return (optional). Default: 100. Min: 1. Max: 1000.
   limit: 100
 
-status:
-  # Timestamp when calculation was performed
-  observationTime: "2026-02-07T10:30:00Z"
+  # Grouping attribute to fall back to for partitionable pools whose
+  # slices do not declare one (optional, gated by
+  # DRAPartitionableDevicesType). Must be fully qualified.
+  defaultPartitionTypeAttribute: gpu.example.com/profile
 
-  # List of pools matching the filter
+status:
+  # Total number of pools that matched the filter (even if the response is
+  # truncated by `limit`). If 0, no pools matched.
+  poolCount: 4
+
+  # First `spec.limit` matching pools, sorted by driver then pool name.
+  # If len(pools) < poolCount, the response was truncated.
   pools:
   - driver: example.com/gpu
     poolName: node-1
-    nodeName: node-1              # Empty for non-node-local pools
+    generation: 5                 # Pool generation observed (int64)
+    nodeName: node-1              # Omitted for multi-node / mixed-node pools
+    resourceSliceCount: 1         # Observed ResourceSlices at the latest generation
     totalDevices: 4
     allocatedDevices: 3
     availableDevices: 1
-    unavailableDevices: 0         # Devices with constraints
-    sliceCount: 1                 # ResourceSlices in this pool
-    generation: 5                 # Pool generation observed
+    unavailableDevices: 0         # 0 in Alpha 1.36; computed from device taints in Alpha 1.37
+  - driver: example.com/gpu
+    poolName: node-2
+    generation: 5
+    # validationError is set when a pool is incomplete (observed < expected
+    # slice count). When set, count fields are unset. Max 256 bytes.
+    validationError: "pool example.com/gpu/node-2 is incomplete: observed 1/2 slices at generation 5"
+  # Partitionable pool (Alpha 1.37): one physical GPU offered as either a
+  # full partition (80Gi cost) or two half partitions (40Gi cost each), all
+  # backed by a single 80Gi CounterSet. A grouping attribute was resolved
+  # for the pool, so the controller emits the typed view. Here one half
+  # partition is in use, so 40Gi of the counter is consumed (debited
+  # per-device, not per-claim), leaving 40Gi. The other half still fits;
+  # the full partition no longer does.
+  - driver: example.com/gpu
+    poolName: node-3
+    generation: 7
+    nodeName: node-3
+    resourceSliceCount: 1
+    totalDevices: 3               # 1 full + 2 half device entries
+    allocatedDevices: 1           # one half in use (cap-at-1)
+    availableDevices: 2           # naive count — see partitionSummary for truth
+    unavailableDevices: 0
+    partitionSummary:             # emitted when a grouping attribute is
+                                  # resolved for the pool; entries are keyed
+                                  # by (attribute, type) and are measured
+                                  # independently — they must not be summed
+    - attribute: gpu.example.com/profile
+      type: Full                  # value of the grouping attribute
+      total: 1                    # device entries of this partition type
+      allocatable: 0              # 40Gi left, Full needs 80Gi → blocked
+    - attribute: gpu.example.com/profile
+      type: Half
+      total: 2
+      allocatable: 1              # 1 fresh Half remains, 40Gi available, fits
+  # Consumable pool (Alpha 1.37): devices with allowMultipleAllocations=true.
+  # allocatedDevices counts each shared device once (cap-at-1), so it can read
+  # "1 available" while capacity headroom remains; consult shareableSummary.
+  - driver: example.com/gpu
+    poolName: node-4
+    generation: 3
+    nodeName: node-4
+    resourceSliceCount: 1
+    totalDevices: 3
+    allocatedDevices: 2
+    availableDevices: 1
+    unavailableDevices: 0
+    shareableSummary:             # emitted only when the pool has shareable devices
+      fullyAvailableDevices: 1    # devices with zero non-AdminAccess claims
+      partiallyAvailableDevices: 2 # devices with at least one such claim,
+                                   # regardless of remaining capacity
+      capacity:                   # per-capacity-key aggregate across shareable devices
+      - name: example.com/memory
+        total: 240Gi
+        consumed: 90Gi
+        available: 150Gi
 
-  # Conditions indicating processing status
+  # Conditions indicating processing status.
+  # Known types: "Complete" (True when processed successfully) and
+  # "Failed" (True when the request could not be processed). Max 10 entries.
   conditions:
   - type: Complete
     status: "True"
     reason: CalculationComplete
-    message: "Processed 2 pools"
+    message: "Calculated status for 4 pools (1 incomplete)"
     lastTransitionTime: "2026-02-07T10:30:00Z"
-
-  # Validation errors found (max 10 entries, max 256 chars each)
-  validationErrors:
-  - "pool node-1: device gpu-0 appears in multiple slices"
-
-  # True if more pools exist but were not included due to limit
-  truncated: false
-
-  # Total number of pools matching filter (even if truncated)
-  totalMatchingPools: 2
 ```
+
+Once `status` is populated it becomes write-once (frozen via
+`ValidateImmutableField`). `spec` is independently immutable from creation
+(`+k8s:immutable`). `metadata` (labels, annotations) follows the standard
+object-meta update rules through the main endpoint; the status subresource
+strips metadata changes per the usual `ResetObjectMetaForStatus` convention.
+To re-run a query, delete and recreate the request.
 
 #### Spec Fields
 
-The spec is **immutable after creation**, following the CSR pattern. Updates
-to the spec fields will be rejected by API validation. To query with different
-filters or get fresh data, delete and create a new request.
+The spec is **immutable after creation** (enforced via `+k8s:immutable`).
+Updates to the spec are rejected by API validation regardless of whether
+`status` has been written. Status write-once semantics are described in
+the next section.
 
-| Field | Description |
-|-------|-------------|
-| `driver` | Driver name (**required**) - bounds response to one driver's pools |
-| `poolName` | Filter by pool name (optional) |
-| `limit` | Max pools to return (optional, values determined at implementation based on size calculations) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `driver` | string (required) | DRA driver name — bounds response to one driver's pools. Must be a DNS subdomain. |
+| `poolName` | `*string` (optional) | Filter by pool name. Must be a valid resource pool name (DNS subdomains separated by `/`). |
+| `limit` | `*int32` (optional) | Max pools to return. Default **100**, min **1**, max **1000**. Defaulted by the apiserver, so the field is required after defaulting. |
+| `defaultPartitionTypeAttribute` | `*string` (optional, gated by `DRAPartitionableDevicesType`) | Fully qualified name of a device attribute to use as the grouping attribute for partitionable pools whose slices declare none. A slice's own `PartitionTypeAttribute` always wins; this default applies only when **no** slice in the pool declares one, so a request can still get a `partitionSummary` from a driver that has not adopted the slice-side declaration. Cleared by the registry strategy when the gate is disabled, unless the stored object already sets it (standard ratcheting); the declarative `+k8s:ifDisabled(DRAPartitionableDevicesType)=+k8s:forbidden` rule backstops that drop. |
 
 #### Status Fields
 
-| Field | Description |
-|-------|-------------|
-| `observationTime` | Timestamp when calculation was performed |
-| `pools[]` | List of pools matching filter (up to limit) |
-| `pools[].driver` | DRA driver name |
-| `pools[].poolName` | Pool name from ResourceSlice |
-| `pools[].nodeName` | Node name (for node-local pools) |
-| `pools[].totalDevices` | Total devices across all slices |
-| `pools[].allocatedDevices` | Devices allocated to claims |
-| `pools[].availableDevices` | Devices available for allocation |
-| `pools[].unavailableDevices` | Devices unavailable (constraints) |
-| `pools[].sliceCount` | Number of ResourceSlices in pool |
-| `pools[].generation` | Pool generation observed |
-| `conditions[Complete]` | Processing completed successfully |
-| `validationErrors` | Pool consistency issues (max 10, 256 chars each) |
-| `truncated` | True if more pools exist beyond limit |
-| `totalMatchingPools` | Total pools matching filter |
+Status is a pointer (`*ResourcePoolStatusRequestStatus`). Presence of a
+non-nil status indicates the request has been processed.
 
+| Field | Type | Description |
+|-------|------|-------------|
+| `poolCount` | `*int32` (required) | Total pools matching filter (regardless of truncation). |
+| `pools` | atomic list, max 1000 | First `spec.limit` matching pools, sorted by driver then pool name. Truncation is inferred from `len(pools) < poolCount`. |
+| `pools.driver` | string (required) | DRA driver name. |
+| `pools.poolName` | string (required) | Pool name from ResourceSlice. |
+| `pools.generation` | int64 (required) | Latest pool generation observed. |
+| `pools.nodeName` | `*string` (optional) | Node name for node-local pools. Omitted when the pool spans multiple nodes or has mixed/no node assignment. |
+| `pools.resourceSliceCount` | `*int32` (optional, min 1) | Number of slices observed at the latest generation. Unset when `validationError` is set. |
+| `pools.totalDevices` | `*int32` (optional) | Total devices across all slices. Unset when `validationError` is set. |
+| `pools.allocatedDevices` | `*int32` (optional) | Devices allocated to claims. Unset when `validationError` is set. |
+| `pools.availableDevices` | `*int32` (optional) | `totalDevices - allocatedDevices - unavailableDevices`. Unset when `validationError` is set. |
+| `pools.unavailableDevices` | `*int32` (optional) | Count of devices with at least one `NoSchedule` or `NoExecute` taint, sourced from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s. **0 in Alpha 1.36** (hard-coded); computed from real taints since Alpha 1.37. Counted over all devices in the pool regardless of allocation, so a device that is both allocated and tainted is subtracted twice from `availableDevices`. **Corrected in Alpha 1.38** to exclude allocated devices, matching this field's doc comment and making `total = allocated + unavailable + available` exact — see [Alpha (1.38)](#alpha-138). Unset when `validationError` is set. |
+| `pools.validationError` | `*string` (optional, max 256 bytes) | Set when the pool's data could not be fully validated. When set, the count fields above may be unset (incomplete pool) or still populated (a view-level error, which clears `partitionSummary` but leaves the counts valid). The controller emits a stable, machine-readable prefix followed by `: ` and a free-form detail so operators can grep / alert on the specific case without parsing the message body. Prefixes as of Alpha 1.37 (provisional, may grow): `PoolIncomplete:` (observed slices < declared `ResourceSliceCount`) — note that this one is **computed but never persisted**, because the controller aborts the status write and requeues whenever any pool carries it, so in practice a reader never observes it; the remaining prefixes are permanent and are written to status: `PartitionTypeMissing:` (a grouped device lacks the resolved partition-type attribute, or the pool resolves a grouping attribute but publishes no `sharedCounters`), `PartitionCostMismatch:` (devices of the same partition type publish different `ConsumesCounters` costs), `PartitionSummaryOverCap:` (distinct partition types exceed the 32-item cap), `ShareableSummaryOverCap:` (distinct shareable capacity keys exceed the 32-item cap). Promoting this field to a structured `{reason, message}` pair (Condition-style) is tracked as a Beta consideration. |
+| `pools.partitionSummary` | atomic list of `PartitionTypeStatus`, max 32, unique on (`attribute`, `type`) (Alpha 1.37, **provisional** — revisit at Beta) | Per-(attribute, partition-type) aggregate, emitted for a partitionable pool that publishes `SharedCounters` and for which a grouping attribute could be resolved — from `ResourceSlice.Spec.PartitionTypeAttribute` on a slice, or from `spec.defaultPartitionTypeAttribute` on the request. A pool that mixes partitions declared under different attributes reports each independently. When neither source names an attribute, the pool reports no `partitionSummary`. A grouped device missing the resolved attribute produces a per-pool `validationError`, as does a device whose `ConsumesCounters` cost differs from peers of the same type — both prevent silent bucketing. Cap of 32 is a provisional starting point that fits MIG-class pools (3–7 partition types typical); over-cap pools produce a per-pool `validationError` instead of silent truncation. Entries are sorted by (`attribute`, `type`). |
+| `pools.partitionSummary.attribute` | string (required) | Fully qualified name of the device attribute whose value groups this entry — the `PartitionTypeAttribute` declared by the devices' own slice, or the request's `defaultPartitionTypeAttribute` when their slice declares none. |
+| `pools.partitionSummary.type` | string (required) | Value of that attribute for devices in this group (e.g. `Full`, `Half`). |
+| `pools.partitionSummary.total` | `*int32` (required) | Number of devices in the pool whose grouping attribute carries this value. |
+| `pools.partitionSummary.allocatable` | `*int32` (required) | Number of additional devices of this partition type that can still be allocated under current shared-counter constraints, capped by the number of unallocated devices of this type in the pool. Computed by a greedy per-device fit check against `counterAvailable[s][c] = SharedCounters[s].Counters[c].Value − sum_{in-use d in s} d.ConsumesCounters[s][c]` (each in-use device debited once, per-device not per-claim — matches scheduler counter accounting). For the common single-counter-set case this reduces to `min(freshDevices[type], min over counters c of floor(counterAvailable[s_type][c] / consumesCounters[type][c]))`, where `freshDevices[type]` is the count of devices of this type currently unallocated. **Every entry is computed independently against the same baseline**, so entries describe mutually exclusive alternatives and must not be summed. See [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting) for the multi-counter-set algorithm. On shareable partitions (`allowMultipleAllocations=true`) this counts only fresh device slots, not capacity headroom on already-in-use devices; operators reading the same pool should consult `shareableSummary.capacity.available` for per-key headroom on shared devices. |
+| `pools.shareableSummary` | `*ShareableSummaryStatus` (optional) | Pool-level aggregate for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. Per-device detail was intentionally not included: a per-device list would scale to hundreds of entries on large pools, so the aggregate gives the operator-relevant signal in three small numbers plus a per-capacity-key breakdown. |
+| `pools.shareableSummary.fullyAvailableDevices` | `*int32` (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
+| `pools.shareableSummary.partiallyAvailableDevices` | `*int32` (required) | Count of shareable devices with **at least one** non-AdminAccess claim, regardless of how much of their capacity is still free — a fully consumed device is counted here, not excluded. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. The field's own doc comment ("some but not all capacity consumed") does not describe this behaviour; **Alpha 1.38 corrects the doc comment** to match the implementation rather than tightening the computation, since the in-use count is the intended signal and per-key remaining capacity is already reported by `capacity[]` — see [Alpha (1.38)](#alpha-138). |
+| `pools.shareableSummary.capacity` | atomic list of `ShareableCapacityStatus`, max 32 (Alpha 1.37) | Per-capacity-key aggregate across all shareable devices in the pool, sorted by key. Cap of 32 matches the per-device combined `Attributes + Capacity` cap (no single device can carry more than 32 capacity keys); aggregation across devices may introduce additional keys but homogeneous-schema pools rarely exceed this. |
+| `pools.shareableSummary.capacity.name` | string (required) | Capacity key as it appears in `ResourceSlice.Spec.Devices[].Capacity`. |
+| `pools.shareableSummary.capacity.total` | `*resource.Quantity` (required) | Sum of `Device.Capacity[name].Value` across all shareable devices in the pool that carry this key. Devices that do not carry the key contribute nothing (rather than zero), which is the correct behaviour for heterogeneous-schema pools. |
+| `pools.shareableSummary.capacity.consumed` | `*resource.Quantity` (required) | Sum of `DeviceRequestAllocationResult.ConsumedCapacity[name]` across **all** non-AdminAccess allocations in the pool, not only those on shareable devices. In practice `ConsumedCapacity` is only set for consumable devices, so the two coincide; the aggregate is keyed off `total`, so a key consumed but carried by no shareable device is not reported at all. |
+| `pools.shareableSummary.capacity.available` | `*resource.Quantity` (required) | `total − consumed`, clamped at zero (never negative). |
+| `conditions[]` | map list by `type`, max 10 | `Complete` (True when processed) or `Failed` (True on error). |
+
+#### Companion API Change: `ResourceSlice.Spec.PartitionTypeAttribute`
+
+Alpha 1.37 adds one optional field to `ResourceSliceSpec`. Because the
+served ResourceSlice versions must stay in sync, it lands in **all three**
+external versions (`resource.k8s.io/v1`, `v1beta1`, `v1beta2`) plus the
+internal type, as protobuf field 9 immediately after `SharedCounters`:
+
+```go
+	// PartitionTypeAttribute names a string device attribute (by fully
+	// qualified name, e.g. "gpu.example.com/profile") whose value labels
+	// each device with its partition type, such as "Full" or "Half" for a
+	// MIG-style GPU.
+	//
+	// When set, every partitionable device in the slice must carry the attribute
+	// and devices sharing a value must share the same ConsumesCounters cost.
+	//
+	// +optional
+	// +featureGate=DRAPartitionableDevicesType
+	// +k8s:ifDisabled(DRAPartitionableDevicesType)=+k8s:forbidden
+	// +k8s:ifEnabled(DRAPartitionableDevicesType)=+k8s:optional
+	// +k8s:ifEnabled(DRAPartitionableDevicesType)=+k8s:format=k8s-resource-fully-qualified-name
+	PartitionTypeAttribute *FullyQualifiedName `json:"partitionTypeAttribute,omitempty" protobuf:"bytes,9,opt,name=partitionTypeAttribute"`
+```
+
+Example. A driver that publishes one MIG-style GPU per node as three
+mutually exclusive partition shapes — Full, Half, Quarter — declares
+`PartitionTypeAttribute: gpu.example.com/profile` on each slice in the
+pool, and each device sets that attribute to its shape:
+
+```yaml
+spec:
+  driver: gpu.example.com
+  pool:
+    name: node-1
+    generation: 1
+    resourceSliceCount: 1
+  partitionTypeAttribute: gpu.example.com/profile
+  sharedCounters:
+  - name: gpu-0
+    counters:
+      memory: { value: 80Gi }
+  devices:
+  - name: gpu-0-full
+    attributes:
+      gpu.example.com/profile: { string: "Full" }
+    consumesCounters:
+    - counterSet: gpu-0
+      counters: { memory: { value: 80Gi } }
+  - name: gpu-0-half-1
+    attributes:
+      gpu.example.com/profile: { string: "Half" }
+    consumesCounters:
+    - counterSet: gpu-0
+      counters: { memory: { value: 40Gi } }
+```
+
+With this declared, the status controller emits a typed
+`partitionSummary` entry per profile value (`Full`, `Half`, …) reporting
+total and currently-allocatable device counts. The controller also
+accepts the domain-stripped bare form of the attribute name on a device
+(`profile` on a slice whose driver is `gpu.example.com`), matching how
+drivers may abbreviate attributes in their own domain.
+
+##### Where validation happens
+
+Slice-side validation (`validatePartitionTypeAttribute` in
+`pkg/apis/resource/validation/validation.go`) enforces the per-slice
+rules at admission time:
+
+- The field may only be set on a slice that declares at least one device
+  with `ConsumesCounters`. A slice with no counter-consuming devices is
+  rejected.
+- Every counter-consuming device in the slice must carry the named
+  attribute, and its value must be a **string**. Devices that consume no
+  counters are exempt.
+
+The remaining rules are inherently cross-slice and are therefore checked
+by the resource pool status controller and surfaced as per-pool
+`validationError`s rather than rejected at write time:
+
+- Devices of the same partition type publishing different
+  `ConsumesCounters` costs (`PartitionCostMismatch:`).
+- A pool that resolves a grouping attribute but publishes no
+  `sharedCounters` (`PartitionTypeMissing:`).
+
+The slice-level rule is intentionally permissive about `SharedCounters`
+themselves: a counter-consuming slice in a multi-slice pool can carry
+only `Devices` and a reference to a counter set declared elsewhere in
+the pool, so requiring `SharedCounters` on every slice that declares
+this field would reject legitimate setups.
+
+##### Feature gate: `DRAPartitionableDevicesType`
+
+This field is **not** gated by `DRAResourcePoolStatus`. It has its own
+gate, added in 1.37:
+
+| Gate | Introduced | Stage | Default | Dependencies |
+|------|-----------|-------|---------|--------------|
+| `DRAPartitionableDevicesType` | 1.37 | Alpha | off | `DRAPartitionableDevices`, `DRAResourcePoolStatus` |
+
+A separate gate is needed because the field lives on `ResourceSlice`,
+which is served from the GA `resource.k8s.io/v1` group version — its
+lifecycle has to be steerable independently of the alpha
+ResourcePoolStatusRequest API. The dependency list encodes the two
+reasons the field is only meaningful in combination: `SharedCounters`
+are themselves gated by `DRAPartitionableDevices`, and
+`ResourcePoolStatusRequest` is the only consumer of the grouping
+attribute.
+
+The same gate also controls the request-side
+`ResourcePoolStatusRequestSpec.DefaultPartitionTypeAttribute`. Both
+follow the standard gated-field convention: the registry strategy clears
+the field on create and update while the gate is off
+(`dropDisabledDRAPartitionableDevicesTypeFields` in the ResourceSlice and
+ResourcePoolStatusRequest strategies), ratcheting so that an object which
+already carries the field keeps it through subsequent updates. Because the
+drop runs before validation, a write that sets the field on a
+gate-disabled cluster is silently cleared rather than rejected; the
+declarative `+k8s:ifDisabled(DRAPartitionableDevicesType)=+k8s:forbidden`
+rule exists as a backstop for paths that bypass the strategy. The status
+controller does not consult the gate — it groups on whatever attribute has
+been persisted.
+
+See also: [KEP-4815 (Partitionable
+Devices)](/keps/sig-scheduling/4815-dra-partitionable-devices) for the
+`SharedCounters` / `ConsumesCounters` machinery this field builds on.
 ### Controller Implementation
 
 #### Controller in KCM
 
 The controller is added to kube-controller-manager as a separate controller
-with its own client and QPS limits (not part of the resourceclaim controller).
-This ensures client-side throttling does not impact scheduling.
+named `resourcepoolstatusrequest-controller` with its own client (so
+client-side throttling does not impact scheduling). It is registered in
+`cmd/kube-controller-manager/app/resource.go` behind
+`requiredFeatureGates: []featuregate.Feature{features.DRAResourcePoolStatus}`.
 
 The controller:
-1. Watches ResourcePoolStatusRequest objects via informer
-2. Maintains a rate-limited work queue for processing
-3. Reuses existing ResourceSlice and ResourceClaim informers from KCM
-4. Uses `UpdateStatus` to write results to the status subresource
+1. Watches ResourcePoolStatusRequest (`resource.k8s.io/v1alpha3`) objects
+   via informer. Only add and update events are handled; there is no
+   delete handler, and slice / claim / taint-rule churn does not
+   re-trigger anything.
+2. Maintains a rate-limited work queue for processing, with up to 5 retries
+   per request before dropping. Requests are keyed by bare object name,
+   since the type is cluster-scoped.
+3. Reuses the ResourceSlice, ResourceClaim and DeviceTaintRule informers
+   from the stable `resource.k8s.io/v1` group already running in KCM.
+4. Uses `UpdateStatus` to write results to the status subresource.
+5. Runs a single worker (`controller.Run(ctx, 1)`). There is no
+   `ConcurrentSyncs` configuration knob; a request is a one-shot
+   read-and-summarise, so one worker has been sufficient. Revisiting this
+   is an Alpha 1.38 item if scale testing shows otherwise.
 
 #### One-time Processing
 
-Following the CSR pattern, the controller processes each request exactly once:
+Following the request/status pattern, the controller processes each request
+exactly once:
 
-1. When a new ResourcePoolStatusRequest is created, it is added to work queue
-2. Controller checks if `status.observationTime` is already set
-3. If set, the request was already processed - controller skips it
-4. If not set, controller computes pool status and writes to status
-5. Once status is written, the request is never processed again
+1. When a new ResourcePoolStatusRequest is created, it is added to the work queue.
+2. Controller checks if `status` is already non-nil.
+3. If non-nil, the request was already processed — controller skips it.
+   This check happens both when enqueueing and again inside the sync, so a
+   re-listed object is never reprocessed.
+4. If nil, controller computes pool status and writes to `status`.
+5. Once `status` is written, the request is complete: `status` is frozen
+   write-once (validated via `ValidateImmutableField`), and `spec` is
+   already immutable from creation (`+k8s:immutable`). Metadata (labels,
+   annotations) remains mutable via the main endpoint per standard
+   object-meta update rules.
 
-To get fresh data, users delete and recreate the request.
+To get fresh data, users delete and recreate the request. (See the TTL
+cleanup section below for automatic deletion of old requests.)
+
+#### Incomplete-Pool Handling and Requeue
+
+When the number of ResourceSlices observed for a pool (at the latest
+generation) is less than the pool's declared `ResourceSliceCount`, the pool
+is considered incomplete:
+
+- The pool's `validationError` is set in the computed status with a
+  `PoolIncomplete:`-prefixed message (truncated to 256 bytes), and
+  `resourceSliceCount`,
+  `totalDevices`, `allocatedDevices`, `availableDevices`,
+  `unavailableDevices`, `partitionSummary` and `shareableSummary` are all
+  left unset.
+- The sync then **returns an error before writing any status**, so the
+  request is requeued (up to `maxRetries = 5`) to give drivers time to
+  publish the remaining slices.
+- If retries are exhausted, the key is forgotten and **no status is ever
+  written**. The request stays with `status` unset — no `Complete`
+  condition, no `Failed` condition, no metric sample, no event — until the
+  24-hour pending TTL deletes it.
+
+`ResourceSliceCount` is read from the first slice observed for the pool and
+is not re-read from later slices.
+
+The last point is a known rough edge: a user whose driver never finishes
+publishing gets silence rather than a diagnosable object. Giving incomplete
+pools a terminal state is tracked as an Alpha 1.38 item.
 
 #### Reusing Existing Informers
 
-The controller reuses ResourceSlice and ResourceClaim informers that are
-already running in KCM for the device-taint-eviction controller. This adds
-minimal overhead since the informers are already cached in memory.
-
+The controller reuses the ResourceSlice, ResourceClaim and DeviceTaintRule
+informers from the `resource.k8s.io/v1` informer factory already running in
+KCM for other DRA controllers (e.g. device-taint-eviction), plus a
+`resource.k8s.io/v1alpha3` informer for the requests themselves. This adds
+minimal overhead since the shared informers are already cached in memory.
 The controller constructor accepts these shared informers rather than
-creating its own, following the established KCM pattern.
+creating its own, following the established KCM pattern. The DeviceTaintRule
+lister is only consulted when `DRADeviceTaintRules` is enabled.
+
+#### Partitionable & Consumable Device Accounting
+
+In Alpha 1.36 the controller computed `allocatedDevices` by walking
+each `ResourceClaim.Status.Allocation.Devices.Results` and incrementing
+a per-device counter. That arithmetic is correct for plain devices but
+wrong for two API shapes the broader DRA stack supports:
+
+- A single physical device can appear as multiple mutually-exclusive
+  partitions that draw from a shared `CounterSet`
+  (`DRAPartitionableDevices`).
+- A device with `allowMultipleAllocations=true` can be reserved by
+  many claims simultaneously, each consuming part of its capacity
+  (`DRAConsumableCapacity`).
+
+This work depends on `DRAPartitionableDevices`
+([KEP-4815](/keps/sig-scheduling/4815-dra-partitionable-devices),
+Beta in 1.36) and `DRAConsumableCapacity`
+([KEP-5075](/keps/sig-scheduling/5075-dra-consumable-capacity),
+Beta in 1.36). Both are Beta default-on by the time Alpha 1.37 ships,
+so the fields the controller reads (`SharedCounters`,
+`ConsumesCounters`, `AllowMultipleAllocations`, `ConsumedCapacity`) are
+part of the served `resource.k8s.io/v1` surface. When either gate is
+disabled on a cluster, the corresponding sub-object is omitted from the
+response — the source fields are nil on incoming `ResourceSlice`
+objects, the aggregation produces no entries (the slice stays nil
+rather than being initialised to an empty `[]`), and `omitempty` keeps
+the common-case payload shape unchanged.
+
+Alpha 1.37 changed the aggregation to handle all three shapes
+consistently:
+
+1. **Per-device cap on `allocatedDevices`.** Allocation results are
+   collected into a per-pool set keyed by device name, so a physical
+   device is counted at most once regardless of how many
+   non-AdminAccess claims reference it. This fixes the consumable
+   overcount in Alpha 1.36 (where N claims on one device added N to
+   the tally). The set is built from all claims without filtering on
+   pool generation, so a stale claim referencing a device that no
+   longer exists at the current generation still contributes.
+2. **AdminAccess allocations are skipped** in every device, counter,
+   and shareable-device tally. They are observers, not consumers,
+   and counting them misleads administrators about real availability.
+3. **`unavailableDevices`** is the count of devices with at
+   least one `NoSchedule` or `NoExecute` taint (sourced from
+   `ResourceSlice.Spec.Devices[].Taints` and any `DeviceTaintRule`
+   matches), replacing the Alpha 1.36 hard-coded `0`. Taint-rule
+   matching is deliberately narrow: only the `Driver`, `Pool` and
+   `Device` selector fields are evaluated, the CEL `Selectors` and
+   `DeviceClassName` fields are not, and a nil selector matches
+   *nothing* (the inverse of the device-taint-eviction convention,
+   chosen so an unscoped rule cannot silently zero out a pool's
+   availability). External `DeviceTaintRule` matching is skipped
+   entirely when `DRADeviceTaintRules` is disabled; embedded
+   `Spec.Devices[].Taints` still contribute. Because the count is taken
+   over all devices in the pool regardless of allocation, a device that
+   is both allocated and tainted is subtracted twice from
+   `availableDevices` — see the Alpha 1.38 criteria.
+4. **`partitionSummary`** is emitted when the pool publishes
+   `sharedCounters` **and** a grouping attribute can be resolved for
+   at least one device. Resolution works pool-wide, not per device:
+
+   - If **any** slice in the pool declares
+     `ResourceSlice.Spec.PartitionTypeAttribute`, that declaration
+     governs. Devices whose own slice declares nothing are left
+     ungrouped, and the request's `defaultPartitionTypeAttribute` is
+     ignored for the whole pool. This keeps a pool from being bucketed
+     under two different attributes by accident.
+   - If **no** slice in the pool declares one, the request's
+     `spec.defaultPartitionTypeAttribute` (when set) is applied to every
+     device in the pool.
+   - If neither source names an attribute, the pool reports **no**
+     `partitionSummary` at all.
+
+   Each entry self-describes the attribute it was resolved from, so a
+   pool whose slices declare different attributes reports each group
+   independently and the reader can tell them apart. Attribute lookup on
+   a device accepts either the fully qualified name or the
+   domain-stripped bare name within the driver's own domain. Devices
+   that consume no counters are not partitions and are excluded from the
+   grouping.
+
+   Per group G (identified by an `(attribute, type)` pair) the
+   controller computes:
+   - `total[G]` = count of devices in the pool in that group.
+   - `fresh[G]` = devices in G currently unallocated (no non-AdminAccess
+     claim references them).
+   - `cost[G]` = the canonical per-device `ConsumesCounters` profile for
+     the group, validated as homogeneous; mixed costs produce a per-pool
+     `PartitionCostMismatch:` `validationError`.
+   - `counterAvailable[s][c]` = `SharedCounters[s].Counters[c].Value`
+     minus the sum of `d.ConsumesCounters[s][c]` over **unique in-use**
+     non-AdminAccess devices `d` in the pool that consume from counter
+     set `s`. Each in-use device is counted once regardless of how
+     many claims reference it; this matches the scheduler's counter
+     accounting for shareable partitions, where the counter check is
+     skipped on subsequent allocations of an
+     `allowMultipleAllocations=true` device.
+   - `allocatable[G]` by a greedy per-device fit check: iterate fresh
+     devices `d` in G, and for each one check that for every counter set
+     `s` and counter `c` in `d.ConsumesCounters`,
+     `counterAvailable[s][c] >= cost[G][s][c]`. If the check passes,
+     increment `allocatable[G]` and deduct `cost[G]` from
+     `counterAvailable[s]` so subsequent siblings drawing from the same
+     counter set are accounted correctly. For the common case where every
+     device in G consumes from a single counter set `s_G` with the same
+     cost, this reduces to
+     `allocatable[G] = min(fresh[G], min over c of floor(counterAvailable[s_G][c] / cost[G][c]))`.
+     The fresh-device cap matters when counter headroom exceeds the
+     supply of unallocated devices (otherwise the scalar would
+     advertise impossible allocations).
+
+   **Every group is evaluated independently against the same baseline**
+   — the counter state is cloned per group rather than carried across
+   groups. Entries therefore describe mutually exclusive alternatives
+   ("you could allocate 1 more Full, *or* 2 more Half") and must not be
+   summed.
+
+   On shareable partitions (`allowMultipleAllocations=true`),
+   `allocatable[G]` counts only fresh device slots; capacity headroom
+   remaining on already-in-use devices is published separately under
+   `shareableSummary.capacity`. Operators on hybrid pools should read
+   both fields.
+
+   A pool that resolves a grouping attribute but publishes no
+   `sharedCounters` produces a `PartitionTypeMissing:` `validationError`,
+   as does a grouped device that does not carry the resolved attribute.
+   Any such error clears `partitionSummary` for that pool; the device
+   counts computed in steps 1–3 remain valid and are still reported.
+5. **`shareableSummary`** is emitted when the pool has any device
+   with `allowMultipleAllocations=true`. The controller scans all
+   shareable devices in the pool and produces three fields:
+   `fullyAvailableDevices` (devices with zero non-AdminAccess claims),
+   `partiallyAvailableDevices` (devices with at least one non-AdminAccess
+   claim — membership in the in-use set, not a measure of remaining
+   capacity, so a fully consumed device counts here too), and
+   `capacity[]` — a per-capacity-key aggregate where each entry sums
+   `Device.Capacity[name].Value` over the shareable devices carrying the
+   key (`total`) and `DeviceRequestAllocationResult.ConsumedCapacity[name]`
+   over all non-AdminAccess allocations in the pool (`consumed` — the
+   consumption map is accumulated per pool, not per device class), with
+   `available = total − consumed` clamped at zero. A per-device
+   array would scale to hundreds of entries on large pools; the
+   aggregate gives the operator-relevant signal far more compactly.
+   Heterogeneous-schema pools are handled by the rule "devices that
+   do not carry a given key contribute nothing to that key's total"
+   — the aggregate stays correct rather than reporting zeros that
+   would misrepresent capacity.
+
+Both views are computed only for pools that pass the completeness check;
+an incomplete pool reports neither.
+
+`availableDevices` keeps its existing definition
+(`totalDevices − allocatedDevices − unavailableDevices`). On plain
+pools it is the operationally useful "how many more claims fit"
+signal. **On pools with shared counters or shareable devices it is
+not.** Two cases the operator must understand:
+
+- **Partitionable pools.** When the bottleneck is a shared
+  `CounterSet`, all device entries can be unallocated yet no further
+  claim can fit — `availableDevices` will read high while no
+  partition actually fits. Operators must consult
+  `partitionSummary[G].allocatable`, which is the canonical signal:
+  how many more devices of that partition type still fit under current
+  counter state. On a pool for which no grouping attribute could be
+  resolved, no such signal is published — which is the practical reason
+  drivers are encouraged to declare `PartitionTypeAttribute`, and why
+  `spec.defaultPartitionTypeAttribute` exists as a client-side escape
+  hatch for drivers that have not yet done so.
+- **Consumable / shareable pools.** With the cap-at-1 rule, every
+  device with at least one claim is counted once in
+  `allocatedDevices`. A pool of N shareable devices each holding
+  one tiny claim will report `allocatedDevices=N` and
+  `availableDevices=0`, even though most of each device's capacity
+  is free. Operators must consult
+  `shareableSummary.capacity.available` vs `.total` for the
+  remaining-capacity signal, and the
+  `fullyAvailableDevices`/`partiallyAvailableDevices` counts for the
+  share-pattern signal.
+
+This is documented as a deliberate trade-off: `availableDevices`
+remains a stable scalar that older clients can use, and the new
+sub-objects carry the precise truth. The KEP does not redefine
+`availableDevices` per pool shape because doing so would silently
+change its meaning for existing 1.36 consumers.
+
+Both sub-objects are omitted when empty so plain pools stay compact.
+`partitionSummary` carries `+k8s:maxItems=32` and
+`shareableSummary.capacity` carries `+k8s:maxItems=32` (both
+provisional — revisit at Beta). Pools larger than either cap produce a
+per-pool `validationError` (`PartitionSummaryOverCap:` /
+`ShareableSummaryOverCap:`) rather than silent truncation; the
+controller measures size before populating the field and writes the
+`validationError` directly, avoiding a rejected write against the
+apiserver.
+
+##### Conditions and Metrics
+
+Exactly one condition is written per request, and the status is written
+exactly once:
+
+- `Complete` / `True` with reason `CalculationComplete` and message
+  `Calculated status for N pools`, or
+  `Calculated status for N pools (M incomplete)` when any pool carries a
+  `validationError`. The wording is misleading: because a status is never
+  written while any pool is incomplete, `M` can only ever count
+  **view-level** errors (`PartitionTypeMissing:`, `PartitionCostMismatch:`,
+  the two over-cap cases) — never an actually incomplete pool. It is also
+  counted over the post-truncation list, so pools dropped by `limit` are
+  not reflected. `observedGeneration` is not set.
+- `Failed` / `True` with reason `CalculationFailed` and a message naming
+  the failed list call. This is only reachable from a ResourceSlice,
+  ResourceClaim or DeviceTaintRule lister failure.
+
+The three metrics are recorded only on the two code paths that reach
+`UpdateStatus`. In particular
+`resourcepoolstatusrequest_controller_request_processing_errors_total`
+counts `UpdateStatus` failures only — a lister failure produces a
+`Failed` condition but no error sample — and the incomplete-pool requeue
+path records nothing at all. Widening metric coverage is an Alpha 1.38 item.
+
+##### Devices That Are Both Partitionable and Consumable
+
+When a single physical device is both partitionable and consumable —
+its partitions draw from a shared `CounterSet` *and* individual
+partitions allow multiple allocations — consuming capacity on one
+partition can make sibling partitions unallocatable through the shared
+counter, even though those siblings still appear as unconsumed
+devices.
+
+The typed `partitionSummary` view addresses this directly: because
+`allocatable[G] = min(fresh[G], min over c of floor(counterAvailable[c] / cost[G][c]))`
+reads the *current* `counterAvailable` after each in-use device's
+static `ConsumesCounters` has been subtracted, sibling partitions
+blocked by a shared counter are already netted out. Concretely: a
+device offered as one full partition (80Gi) or two half partitions
+(40Gi each), all backed by one 80Gi `CounterSet`. Allocate the full
+partition and the counter is fully consumed (80Gi cost, one in-use
+device). The controller reports
+`partitionSummary[full].allocatable = 0` (no counter headroom) and
+`partitionSummary[half].allocatable = 0` (no counter headroom) —
+exactly the bound operators need.
+
+Two residual cases worth calling out:
+
+- **Pools for which no grouping attribute could be resolved.**
+  `availableDevices` is not netted out against shared counters, and
+  `shareableSummary` reports raw device-capacity aggregates that do not
+  subtract counter-blocked siblings. Such a pool publishes no precise
+  counter signal at all. The fix is on the request or driver side:
+  set `spec.defaultPartitionTypeAttribute`, or have the driver declare
+  `ResourceSlice.Spec.PartitionTypeAttribute`.
+- **Capacity headroom on shareable in-use partitions
+  (`allowMultipleAllocations=true`).** The scheduler debits
+  `ConsumesCounters` exactly once per device — subsequent claims
+  against the same shareable device do not consume more counter
+  capacity — and `partitionSummary[G].allocatable` follows the same
+  rule (it counts only how many additional *fresh* devices of that
+  group can be allocated). What it does **not** capture is how much
+  per-claim capacity is still available on devices that are already
+  in use. For that, operators on hybrid pools must read
+  `shareableSummary.capacity`, which reports the remaining free
+  capacity per key across all shareable devices in the pool.
+
+The contract is: when `partitionSummary` is emitted, `allocatable` is
+the precise bound on fresh-device allocations, and `shareableSummary` is
+the precise bound on remaining capacity on already-shared devices. When
+no grouping attribute resolves, the operator has no precise
+counter-level signal — a gap that is closed by declaring the attribute
+on either side.
+
+#### TTL-Based Cleanup
+
+The controller runs a cleanup loop every 10 minutes that deletes stale
+ResourcePoolStatusRequest objects:
+
+| State | TTL | Measured from |
+|-------|-----|---------------|
+| Completed / Failed (status set) | 1 hour | `LastTransitionTime` of `Complete`/`Failed` condition |
+| Pending (status nil) | 24 hours | `CreationTimestamp` |
+
+Deletion uses a UID precondition to avoid racing with user recreates. This
+bounds etcd growth without requiring user cleanup and is implemented in
+Alpha (earlier than originally planned for Beta).
+
+#### Controller RBAC
+
+The controller's ClusterRole `system:controller:resourcepoolstatusrequest-controller`
+grants:
+
+- `get`, `list`, `watch`, **`delete`** on `resourcepoolstatusrequests`
+  (delete needed for TTL cleanup)
+- `update`, `patch` on `resourcepoolstatusrequests/status`
+- `get`, `list`, `watch` on `resourceslices`, `resourceclaims` and
+  `devicetaintrules`
+- standard events permissions
+
+The ClusterRole is only installed when `DRAResourcePoolStatus` is enabled.
+The events grant is currently unused — the controller has no event recorder
+and emits no events — and either wiring up events or dropping the grant is an
+Alpha 1.38 clean-up item.
 
 ### kubectl Integration
 
-Standard kubectl commands work:
+Standard kubectl commands work against the singular resource name
+`resourcepoolstatusrequest` (plural `resourcepoolstatusrequests`). The
+implementation also registers custom table columns so `kubectl get` returns
+a useful summary view:
+
+| Column | Source |
+|--------|--------|
+| Name | `metadata.name` |
+| Driver | `spec.driver` |
+| Total | `sum(status.pools[].totalDevices)` |
+| Available | `sum(status.pools[].availableDevices)` |
+| Allocated | `sum(status.pools[].allocatedDevices)` |
+| Unavailable | `sum(status.pools[].unavailableDevices)` |
+| Errors | count of pools with `validationError` |
+| Pools | `status.poolCount` |
+| Status | `Pending` / `Complete` / `Complete (m/n pools)` if truncated / `Failed` |
+| Completed | Age derived from `Complete`/`Failed` condition `lastTransitionTime` |
 
 ```bash
 # Create request
 $ kubectl create -f request.yaml
 
 # Wait for completion
-$ kubectl wait --for=condition=Complete rpsr/my-request
+$ kubectl wait --for=condition=Complete resourcepoolstatusrequest/my-request
 
 # Get status
-$ kubectl get rpsr/my-request -o yaml
+$ kubectl get resourcepoolstatusrequest/my-request -o yaml
 
 # List all requests
-$ kubectl get rpsr
+$ kubectl get resourcepoolstatusrequests
 
-# Delete request
-$ kubectl delete rpsr/my-request
+# Delete request (or let the TTL sweeper delete it 1h after completion)
+$ kubectl delete resourcepoolstatusrequest/my-request
 ```
 
-Short name `rpsr` is registered for convenience.
+No short name (e.g. `rpsr`) and no resource category are registered
+today; adding them is an Alpha 1.38 item.
+
+There is also no `kubectl describe` support. Because the table columns are
+cluster-wide sums, the per-pool detail that is the whole point of the API —
+`status.pools[]`, `partitionSummary`, `shareableSummary` and
+`validationError` — is only reachable via `-o yaml`/`-o jsonpath`. Adding a
+describer is the largest remaining UX gap and is an Alpha 1.38 requirement.
 
 ### Test Plan
 
@@ -636,100 +1303,765 @@ None required.
 
 #### Unit tests
 
-Coverage targets:
-- Pool status computation: 80%+
-- Cross-slice validation: 80%+
-- Controller logic: 75%+
+Coverage locations:
+- Pool status computation (`pkg/controller/resourcepoolstatusrequest/controller_test.go`)
+- Partition / shareable view computation and attribute resolution
+  (`pkg/controller/resourcepoolstatusrequest/views_test.go`)
+- Validation (`pkg/apis/resource/validation/validation_resourcepoolstatusrequest_test.go`)
+- Declarative validation equivalence
+  (`test/declarative_validation/resource/resourcepoolstatusrequest/declarative_validation_test.go`)
+- Registry strategy (`pkg/registry/resource/resourcepoolstatusrequest/strategy.go`
+  → `strategy_test.go`)
+- Metrics (`pkg/controller/resourcepoolstatusrequest/metrics/metrics_test.go`)
+- Printer columns (`pkg/printers/internalversion/printers_test.go`)
 
-Test cases:
+Test cases (Alpha 1.36):
 - Driver only (all pools for that driver)
 - Driver and pool name filter
 - No matching pools for driver
 - Missing driver field (validation error)
 - Various allocation states
-- Cross-slice validation errors
-- Generation handling
-- One-time processing (skip if processed)
+- Incomplete pools (observed slice count < expected) cause a requeue and
+  no status write, both before and after retries are exhausted
+  (`TestSyncRequestRequeuesIncompletePool` asserts no status update is
+  issued in either case)
+- Permanent view-level errors *are* written to status
+  (`TestSyncRequestWritesStructuralViewError`)
+- Older-generation slices ignored (generation handling)
+- Mixed / multi-node pools leave `nodeName` unset
+- One-time processing (skip if `status != nil`)
+- Spec / metadata immutability after status is set
+- TTL cleanup: completed (1h) and pending (24h) requests deleted
+- `limit` respected; `poolCount` reflects total matches
+
+Added in Alpha 1.37:
+- **Cap-at-1 for shareable devices**: a single device with
+  `allowMultipleAllocations=true` and several concurrent claims
+  contributes exactly `1` to `allocatedDevices`.
+- **AdminAccess skipped**: an AdminAccess allocation against a
+  device does not increment `allocatedDevices`. Because AdminAccess is
+  filtered out while building the shared in-use and consumed-capacity
+  maps, the same exclusion carries into
+  `shareableSummary.partiallyAvailableDevices`,
+  `shareableSummary.capacity.consumed` and
+  `partitionSummary.allocatable`; asserting that explicitly at the view
+  level is an Alpha 1.38 test-coverage item.
+- **`unavailableDevices` from taints**: a pool with `M` devices,
+  `K` of which carry a `NoSchedule` or `NoExecute` taint (via
+  `Spec.Devices[].Taints` or a matching `DeviceTaintRule`), reports
+  `unavailableDevices=K`. A `None`-effect taint — and any unrecognised
+  effect — leaves the device available. The `DeviceTaintRule` branch is
+  covered in both states, with `DRADeviceTaintRules` explicitly enabled
+  and explicitly disabled.
+- **Attribute resolution** (`TestResolveDevicePartitions`,
+  `TestResolvePartitionType`): a slice-declared
+  `PartitionTypeAttribute` wins pool-wide and suppresses the request
+  default; the request's `defaultPartitionTypeAttribute` applies only
+  when no slice declares one; the domain-stripped bare attribute name
+  resolves; a non-string or absent attribute value does not group.
+- **View gating** (`TestComputePoolViews_PartitionAttributeGatesView`):
+  a pool with `sharedCounters` and no resolvable attribute emits no
+  `partitionSummary`; a pool that resolves an attribute but publishes no
+  `sharedCounters` emits a `PartitionTypeMissing:` `validationError`.
+- **`partitionSummary` aggregation**: a pool whose slice declares
+  `sharedCounters: [{name: gpu-0, counters: {memory: {value: 80Gi}}}]`,
+  a partition-type attribute, and three device entries (1 `full`
+  consuming 80Gi, 2 `half` consuming 40Gi each; all drawing from
+  `gpu-0`). Walk four states using
+  `allocatable[G] = min(fresh[G], min over c of floor(counterAvailable[c] / cost[G][c]))`:
+  - Nothing in use → `freshFull=1, freshHalf=2, counterAvailable=80Gi`
+    → `allocatable[full]=1, allocatable[half]=2`. Note the entries are
+    alternatives, not a sum.
+  - One half in use → `freshFull=1, freshHalf=1, counterAvailable=40Gi`
+    → `allocatable[full]=0, allocatable[half]=1`.
+  - The full partition in use → `freshFull=0, freshHalf=2, counterAvailable=0Gi`
+    → `allocatable[full]=0, allocatable[half]=0`.
+  - **Fresh-device cap binds first** (counter has more headroom than
+    devices): same pool with `counters: {memory: {value: 800Gi}}`,
+    nothing in use → `allocatable[full]=1, allocatable[half]=2`
+    (not 10/20). Confirms the `fresh[G]` clamp.
+- **Multi-counter-set pools** (`TestComputePartitionSummary_MultiCounterSet`):
+  a group whose devices draw from more than one counter set is bounded
+  by the tightest counter across all of them.
+- **Per-device counter consumption (cap-at-1 for counters)**: a pool
+  with one shareable partition (`allowMultipleAllocations=true`,
+  consuming 40Gi from `gpu-0`) reserved by 3 concurrent non-AdminAccess
+  claims computes `partitionSummary` against
+  `counterAvailable = capacity − 40Gi`, not `capacity − 120Gi`,
+  matching the scheduler's per-device counter accounting.
+- **`partitionSummary` validation**: a group resolving to two devices of
+  partition type `full` with different `ConsumesCounters` costs (one
+  80Gi, the other 60Gi) produces a `PartitionCostMismatch:`
+  `validationError` instead of an inconsistent `allocatable`; a grouped
+  device that does not carry the resolved attribute produces
+  `PartitionTypeMissing:`. Either error clears `partitionSummary` while
+  leaving the device counts populated.
+- **`shareableSummary` aggregation**: a pool with three devices
+  (`nic-0`, `nic-1`, `nic-2`, all `allowMultipleAllocations=true`,
+  each with `bandwidth=10Gi`), where `nic-0` has two claims totalling
+  7Gi, `nic-1` has one claim of 2Gi and `nic-2` has no claims,
+  reports
+  `shareableSummary = {fullyAvailableDevices: 1, partiallyAvailableDevices: 2,
+  capacity: [{name: bandwidth, total: 30Gi, consumed: 9Gi, available: 21Gi}]}`.
+- **`shareableSummary` heterogeneous-schema handling**: a pool with
+  two devices that carry different capacity keys (`nic-a` has
+  `bandwidth=10Gi`, `nic-b` has `packets-per-sec=1M`) produces a
+  `capacity[]` with two entries; each entry's `total` only sums
+  the device(s) that carry that key.
+- **Hybrid pools** (`TestComputePoolViews_Hybrid`): a pool that is both
+  partitionable and consumable populates both views consistently.
+- **Both sub-objects omitted on plain pools**: a pool with no
+  `sharedCounters` and no `allowMultipleAllocations=true` device
+  produces a `PoolStatus` with `partitionSummary` and
+  `shareableSummary` both absent.
+- **`+k8s:maxItems` over-cap**: a pool with >32 distinct partition types
+  or >32 distinct capacity keys yields the corresponding
+  `validationError` rather than silent truncation. The controller
+  measures size before populating the field, avoiding a rejected write
+  against the apiserver.
+
+Gaps carried into Alpha 1.38: there is no `storage_test.go` for
+`pkg/registry/resource/resourcepoolstatusrequest/storage`, and the
+strategy unit tests currently cover only partition-attribute handling.
+Both are listed under [Alpha (1.38)](#alpha-138).
 
 #### Integration tests
 
-Integration tests verify controller logic using **fake clients and informers**
-without requiring a real cluster or DRA driver. These tests focus on the
-controller's internal behavior.
+Located at `test/integration/dra/resourcepoolstatusrequest_test.go`. These
+verify controller behavior end-to-end against a real apiserver (started
+with `--runtime-config=resource.k8s.io/v1alpha3=true`) and a real
+controller, with in-memory driver data.
 
-Test cases:
-1. Controller starts and watches requests
-2. New request triggers processing
-3. Status updated with correct pool data
-4. Processed requests are skipped (one-time processing)
-5. Validation errors detected and reported
-6. RBAC enforced correctly
-7. Limit field respected, truncated flag set correctly
+Implemented cases:
+1. `ProcessRequest` — controller starts, watches requests, processes new
+   ones, and populates status with correct pool data.
+2. `OneTimeProcessing` — processed requests are skipped.
+3. `LimitTruncation` — `limit` respected and truncation reflected via
+   `poolCount` vs `len(pools)`.
+4. `FilterByPoolName` — pool-name filter applied.
+5. `ValidationErrors` — apiserver admission validation, not per-pool
+   status: a missing `driver` and out-of-range `limit` values are
+   rejected at create time. Per-pool `validationError` reporting is
+   covered by unit tests, not here.
+6. `PartitionSummary` — a pool with `sharedCounters`, a declared
+   partition-type attribute, and devices that consume counters reports
+   the expected per-group `total` / `allocatable`.
+7. `ShareableSummary` — a pool with `allowMultipleAllocations=true`
+   devices and claims that set `consumedCapacity` reports the expected
+   `fullyAvailableDevices`, `partiallyAvailableDevices` and per-key
+   `capacity[]`, with `allocatedDevices` capped at 1 per device.
+
+The suite runs a single `feature-enabled` matrix entry with
+`DRAResourcePoolStatus`, `DRAPartitionableDevices`,
+`DRAPartitionableDevicesType` and `DRAConsumableCapacity` all on.
+Storage-path coverage lives separately in
+`test/integration/etcd/data.go`.
+
+Not yet covered, and therefore listed under [Alpha (1.38)](#alpha-138): a
+feature-gate-disabled matrix entry, RBAC enforcement (the test server
+runs with `AlwaysAllow`), and a scale case at ≥100 pools with ≥1000
+expired requests.
 
 #### e2e tests
 
-E2E tests will be added to the existing DRA e2e test suite at `test/e2e/dra/`,
-using the **existing test-driver** (`test/e2e/dra/test-driver/`) that is
-already available in CI. This test-driver publishes ResourceSlices and
-supports creating ResourceClaims, which is sufficient for testing
-ResourcePoolStatusRequest functionality.
+E2E tests live in the existing DRA e2e suite at `test/e2e/dra/dra.go`,
+using the existing test-driver (`test/e2e/dra/test-driver/`) behind
+`f.WithFeatureGate(features.DRAResourcePoolStatus)`.
 
-Test cases:
-1. Create ResourcePoolStatusRequest via kubectl
-2. Wait for condition Complete using `kubectl wait`
-3. Verify status contains expected pools via `kubectl get`
-4. Create ResourceClaim, create new request, verify updated counts
-5. Delete and recreate request, verify fresh data
-6. Test with multiple pools from the test-driver
-7. Delete request via `kubectl delete`, verify cleanup
+Implemented (Alpha 1.36):
+1. Conformance-style resource lifecycle (create / get / list / watch /
+   update / patch / delete) for `resource.k8s.io/v1alpha3
+   ResourcePoolStatusRequest`, asserting spec immutability via
+   label-only updates.
+2. "should report pool status with correct device counts": create a
+   request, wait for the `Complete` condition, and assert that the single
+   `network` pool reports `totalDevices=10`, `allocatedDevices=0`,
+   `availableDevices=10`, `unavailableDevices=0`, `resourceSliceCount=1`,
+   `generation=1`, `nodeName=nil`.
+3. "should reflect allocated devices after pod is scheduled": schedule a
+   pod that consumes devices, then create a new request and assert the
+   updated `allocatedDevices` / `availableDevices`.
+4. Filter and shape cases: "should populate status for all matching
+   pools", "should filter by pool name", "should truncate results when
+   limit is reached", "should return empty pools for unknown driver",
+   "should not reprocess after status is set" (asserted via unchanged
+   resourceVersion), "should set NodeName when all slices share the same
+   node", "should clear NodeName when pool has slices on different
+   nodes".
+
+Added in Alpha 1.37 (the "control plane views" context):
+5. "should report partitionSummary for a partitionable pool" (with
+   `DRAPartitionableDevices` and `DRAPartitionableDevicesType`): seed the
+   test driver to publish a pool with `sharedCounters`, a declared
+   partition-type attribute, and devices that consume counters; assert
+   `partitionSummary` shows the expected `total` / `allocatable` per
+   group.
+6. "should report no partition summary when no partition type is
+   declared" (with `DRAPartitionableDevices` only): the same pool without
+   a declared attribute publishes no `partitionSummary`.
+7. "should report shareableSummary for a pool with shareable devices"
+   (with `DRAConsumableCapacity`): assert `fullyAvailableDevices`,
+   `partiallyAvailableDevices`, the per-key `capacity[]` aggregate, and
+   `allocatedDevices` (cap-at-1 verified end-to-end).
+
+Not yet covered, and listed under [Alpha (1.38)](#alpha-138): the `UpdateStatus`
+endpoint in the CRUD block (an explicit TODO in `dra.go` notes it must be
+added before graduation), and an AdminAccess-invisibility case at the e2e
+or integration level (currently unit-tested only, and only against the
+device counts).
 
 Note: Testing with production DRA drivers (e.g., GPU drivers) is outside
-the scope of CI and would be validated separately by driver vendors.
+the scope of CI and is validated separately by driver vendors.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Alpha (1.36)
 
-- API defined and implemented
-- Controller in KCM behind feature gate
-- Basic kubectl workflow works
-- Unit and integration tests
+- API defined and implemented in `resource.k8s.io/v1alpha3`
+- Controller added to kube-controller-manager behind feature gate
+  `DRAResourcePoolStatus` (default off), gated on
+  `DynamicResourceAllocation`
+- Basic kubectl workflow works, including custom table columns
+- Unit, integration, and e2e tests (including conformance-style resource
+  lifecycle) passing in CI
+- Automatic TTL cleanup of completed (1h) and pending (24h) requests —
+  moved to Alpha to bound etcd growth without requiring user cleanup
+- Controller-side requeue for pools whose slices are not fully published,
+  with a per-pool `validationError` computed for them
+- Full object immutability once `status` is set
 - Documentation
 
-#### Beta
+#### Alpha (1.37)
 
-- E2E tests passing in CI (using test-driver)
-- Validated with at least one production DRA driver (out-of-tree testing)
-- Performance validated at scale (100+ pools)
-- User feedback incorporated
-- Add TTL field for automatic cleanup (`ttlSecondsAfterComplete`)
-- Add per-user rate limiting for request creation
-- Consider namespace-scoped variant if requested
+A second Alpha cycle was taken instead of an immediate Beta
+graduation. The reasoning, strongest first:
+
+1. **The 1.36 API did not correctly describe partitionable or
+   consumable devices.** The 1.36 controller incremented
+   `allocatedDevices` per allocation result, which (a) overcounted
+   on devices with `allowMultipleAllocations=true` (consumable) and
+   (b) did not reflect shared-counter consumption on partitionable
+   devices. The visible symptom was `availableDevices=0` reported on
+   pools that actually had free capacity. Fixing this required new
+   API fields (`partitionSummary`, `shareableSummary`) plus a new
+   optional field on `ResourceSlice` (`PartitionTypeAttribute`) to
+   drive the typed view — not just a controller patch — and adding
+   new API surface in Beta is exactly what Alpha cycles exist to
+   avoid.
+2. **No production DRA driver had been validated against.**
+   The Beta criteria require out-of-tree validation against at least
+   one production DRA driver; no driver-side code change is needed
+   (the controller reads existing ResourceSlice / allocation fields),
+   but operational validation in a real-driver environment cannot be
+   back-filled inside the same release that graduates to Beta.
+3. **Several Alpha reviewer follow-ups were open** (batched TTL
+   deletes, deterministic metrics tests, e2e assertion tightening).
+4. **Limited soak.** Alpha shipped in 1.36
+   (kubernetes/kubernetes#137028); only one release had elapsed.
+
+What shipped in 1.37 (kubernetes/kubernetes#140170):
+
+- API stayed at `resource.k8s.io/v1alpha3`; feature gate
+  `DRAResourcePoolStatus` stayed Alpha, default off.
+- **`ResourceSlice.Spec.PartitionTypeAttribute`** — a new optional
+  `*FullyQualifiedName` on `ResourceSliceSpec` (protobuf field 9), so
+  drivers can declare a grouping attribute for partition types. It
+  landed in `resource.k8s.io/v1`, `v1beta1` and `v1beta2` together,
+  since the served ResourceSlice versions must stay in sync.
+- **A second feature gate, `DRAPartitionableDevicesType`** (1.37,
+  Alpha, default off; depends on `DynamicResourceAllocation`,
+  `DRAPartitionableDevices` and `DRAResourcePoolStatus`) to gate that
+  slice field and its request-side counterpart independently of the
+  alpha status API.
+- **`spec.defaultPartitionTypeAttribute`** on
+  `ResourcePoolStatusRequestSpec` — a request-side grouping attribute
+  used when no slice in the pool declares one, so a client can get an
+  accurate `partitionSummary` from a driver that has not yet adopted
+  the slice-side declaration.
+- **`partitionSummary` on `PoolStatus`** — a list of
+  `PartitionTypeStatus` entries keyed by `(attribute, type)`, each
+  reporting `total` and `allocatable`, netting out shared-counter
+  consumption.
+- **`shareableSummary` on `PoolStatus`** — `fullyAvailableDevices`,
+  `partiallyAvailableDevices`, and per-capacity-key
+  `total`/`consumed`/`available` aggregates for pools containing at
+  least one `allowMultipleAllocations=true` device.
+- **Per-device cap on `allocatedDevices`**, fixing the consumable
+  overcount.
+- **AdminAccess allocations skipped** in all device, counter and
+  shareable-device tallies.
+- **`unavailableDevices` computed from real device taints**
+  (`NoSchedule` / `NoExecute`, embedded and via `DeviceTaintRule`),
+  replacing the Alpha 1.36 hard-coded `0`.
+- Controller migrated to the `resource.k8s.io/v1` `DeviceTaintRule`
+  API.
+- Unit, integration and e2e coverage for all of the above.
+
+Two items in the original 1.37 plan changed during API review and are
+recorded here because they are visible in the shipped shape:
+
+- **The `counterSets` fallback view was dropped.** The plan was for
+  pools without a declared grouping attribute to receive a raw
+  per-`CounterSet` capacity dump. Review preferred not to add a
+  second, verbose status shape for the same question; the request-side
+  `defaultPartitionTypeAttribute` covers the "driver has not adopted
+  the convention yet" case, and pools with no resolvable attribute
+  simply report no partition view.
+- **`partitionSummary` entries carry the attribute they were grouped
+  by.** The plan assumed one grouping attribute per pool. The shipped
+  list is keyed by `(attribute, type)` and unique on that pair, so a
+  pool whose slices declare different attributes reports each group
+  independently rather than being rejected.
+
+Two items from the Alpha reviewer follow-ups were **not** completed in
+1.37 and carry into Alpha 1.38: batched / paced TTL-delete sweeps, and scale
+validation at ≥100 pools with ≥1000 expired requests. The metrics-test
+follow-up was addressed — the tests now compare gathered output with the
+timing-dependent histogram fields stripped — though they still exercise
+the metric objects rather than the controller's emission paths.
+
+#### Alpha (1.38)
+
+A third Alpha cycle, targeted in place of the Beta promotion originally
+planned for 1.38. The API shape settled in 1.37 and the accounting is correct
+for all three device shapes, but graduating the group version is the last
+step, not the first: 1.38 closes the test gaps, corrects the remaining
+semantics, and hardens observability and UX while the type is still alpha and
+cheap to change. Locking a beta group version around behaviour that is still
+being corrected is the failure mode this ordering avoids.
+
+The work below is what 1.38 must deliver. `resource.k8s.io/v1alpha3` and the
+Alpha feature gates are unchanged.
+
+##### Semantics corrections
+
+Three behaviours where the implementation and the field documentation
+disagree. Each is described as-shipped elsewhere in this KEP; the resolution
+chosen for each is given here.
+
+- **`unavailableDevices` double-counts — fix the controller, not the doc.**
+  Tainted devices are counted regardless of allocation, so a device that is
+  both allocated and tainted is subtracted twice in
+  `availableDevices = max(0, total − allocated − unavailable)`, and the
+  `max(0, …)` floor hides the underflow. Alpha 1.38 excludes allocated
+  devices from the taint tally, which is what the field's doc comment
+  already says ("not
+  available due to taints … but are not allocated"). This is a controller-side
+  fix with **no API change**, and it makes the three counts a true partition:
+  `total = allocated + unavailable + available`, with `unavailableDevices`
+  meaning "unallocated and tainted".
+
+  Recorded trade-off: a device that is allocated *and* tainted — a taint
+  applied after allocation, since `NoSchedule` does not evict — is then
+  reported purely as allocated, and its taint is no longer visible anywhere in
+  the status. That signal is not being reported accurately today either; it is
+  corrupting `availableDevices`. If operators draining nodes by tainting
+  devices need "allocated but tainted" as a distinct number, it should be a
+  separate field, not an error term folded into this one.
+- **`partiallyAvailableDevices` means "in use" — correct the doc comment.**
+  It counts shareable devices with at least one non-AdminAccess claim, so a
+  device with *all* its capacity consumed is still reported as partially
+  available. Alpha 1.38 keeps both the field name and the computation, and fixes
+  the doc comment to describe what the field actually measures: membership in
+  the in-use set, not a measure of remaining capacity.
+
+  The "in use" semantic is the right one to report here, so there is nothing
+  to recompute; the mismatch is entirely in the field's documentation. The
+  precise remaining-capacity question is already answered by
+  `shareableSummary.capacity[]`, which reports `total`/`consumed`/`available`
+  per capacity key, so a per-device "has some capacity left" tally would be a
+  lossy restatement of data the status already carries.
+
+  No API change: the field keeps its name and its type, and no client sees a
+  different shape or a different number. Only the generated documentation
+  changes.
+- **Incomplete pools never reach a terminal state, and `PoolIncomplete:`
+  is unobservable.** The sync returns an error before writing status
+  whenever any pool is incomplete, so a request whose pool never completes
+  exhausts its five retries and is dropped with `status` unset — no
+  condition, no metric, no event — until the 24-hour pending TTL removes
+  it. A side effect is that the `PoolIncomplete:` `validationError` the
+  controller computes can never appear in a persisted status: either the
+  pool becomes whole and the marker disappears, or the status is never
+  written. That makes one of the five documented prefixes dead surface, and
+  it makes the `(M incomplete)` wording in the `Complete` condition
+  unreachable for actual incompleteness. Alpha 1.38 should write the partial
+  status once retries are exhausted, so the user gets a diagnosable object
+  instead of silence and the prefix means something.
+
+##### Observability and operational hardening
+
+- **Widen metric coverage.** All three metrics are recorded only on the
+  paths that reach `UpdateStatus`. Incomplete-pool requeues and give-ups are
+  invisible, and `..._request_processing_errors_total` counts `UpdateStatus`
+  failures only — a lister failure produces a `Failed` condition but no
+  error sample. At minimum, count calculation failures as errors and make
+  give-ups observable.
+- **Batch / pace TTL-delete sweeps** so a large cleanup does not spike
+  apiserver QPS (carried over from the Alpha 1.37 plan).
+- **Reconcile the duration histogram with the SLO.** The buckets are
+  `ExponentialBuckets(0.001, 2, 15)`, so the highest explicit bucket is
+  16.384s while the stated SLO is "99% of requests complete within 30
+  seconds". Anything slower than 16.384s lands in `+Inf`, making the SLO
+  unmeasurable from the metric. Either extend the buckets past 30s or
+  restate the SLO to something the histogram can actually report.
+- **Assert metric emission at the controller level.** The existing metrics
+  tests are deterministic — they use `testutil.GatherAndCompare` and strip
+  the timing-dependent histogram fields — but they exercise the metric
+  objects directly, so nothing asserts that the controller increments the
+  right metric on the right path. That is precisely where the coverage gap
+  above hides.
+- **Resolve the unused events grant.** The controller's ClusterRole
+  includes the standard events rule but the controller has no event
+  recorder; either emit events or drop the grant.
+- **Revisit the single hardcoded worker** (`controller.Run(ctx, 1)`) in
+  light of the scale results below, and add a `ConcurrentSyncs` knob only if
+  they justify it.
+- **Per-user rate limiting** for request creation, plus configurable TTLs
+  and a built-in cluster-wide object limit if Alpha feedback shows a need.
+
+##### UX
+
+- **`kubectl describe` support.** This is the largest remaining usability
+  gap. The table columns are cluster-wide sums, so the per-pool detail that
+  is the entire point of the API — `status.pools[]`, `partitionSummary`,
+  `shareableSummary`, `validationError` — is only reachable through
+  `-o yaml` or `-o jsonpath`. A describer is required before the promotion.
+- **Register a short name** (e.g. `rpsr`) and a resource category.
+
+##### Test coverage
+
+- **Registry storage tests.**
+  `pkg/registry/resource/resourcepoolstatusrequest/storage/storage_test.go`
+  does not exist; every sibling DRA type (`deviceclass`, `devicetaintrule`,
+  `resourceclaim`, `resourceclaimtemplate`, `resourceslice`) has one.
+- **Broaden the strategy unit tests**, which currently cover only
+  partition-attribute handling.
+- **e2e for all Beta API operations**, including the `UpdateStatus`
+  subresource — an explicit TODO in `test/e2e/dra/dra.go` notes it must be
+  added before graduation.
+- **Feature-gate-disabled integration case.** The integration matrix has
+  only a `feature-enabled` entry, so there is no coverage asserting the API
+  is absent and the gated fields are dropped when the gates are off.
+- **RBAC enforcement test.** The integration test server runs with
+  `AlwaysAllow`, so the claim that users cannot bypass the controller's
+  status permissions is untested.
+- **AdminAccess invisibility at the view level.** Currently asserted only
+  against the device counts in unit tests; extend to
+  `shareableSummary` and `partitionSummary`, and cover it in integration.
+- **Scale validation** at ≥100 pools with ≥1000 expired requests, asserting
+  cleanup completes within the 10-minute sweep interval and that apiserver
+  QPS for `delete resourcepoolstatusrequests` stays within a sensible bound.
+  This is a gate on the promotion, not a follow-up: the scale behaviour has
+  to be known before the API is graduated.
+
+#### Beta (1.39)
+
+Beta graduates the API once the 1.38 work above has landed and soaked. It is
+deliberately small: by this point the semantics are settled, the tests exist,
+and what remains is moving the type to a beta group version and proving it
+against a production driver.
+
+Entry criteria: every item under [Alpha (1.38)](#alpha-138) complete, with the
+scale validation and the test-coverage list closed rather than deferred.
+
+##### API graduation
+
+`ResourcePoolStatusRequest` currently lives only in
+`resource.k8s.io/v1alpha3`. Moving it to a beta group version does **not**
+make the feature reachable without explicit opt-in: beta group versions are
+disabled by default too, so an operator swaps
+`--runtime-config=resource.k8s.io/v1alpha3=true` for
+`--runtime-config=resource.k8s.io/v1beta2=true` and keeps the feature gate
+either way. The enablement burden is unchanged by this promotion.
+
+The move is still required, for reasons of lifecycle rather than
+reachability. A Beta-stability feature served only from an alpha group
+version is incoherent; there is no conventional `v1alpha3` → `v1` hop, so
+`v1beta2` is the only route to GA; and Beta starts the two-release clock that
+GA requires. `DeviceTaintRule` is the precedent to follow throughout — it was
+added to `v1beta2` at Beta in 1.36 and to `v1` at GA in 1.37.
+
+There is no externally imposed deadline on the `v1alpha3` copy. Since
+`kubernetes/kubernetes#138129` (1.38), `prerelease-lifecycle-gen` derives
+`deprecated` and `removed` only for beta group versions; alpha kinds get them
+only from an explicit tag. `ResourcePoolStatusRequest` in `v1alpha3` carries
+no such tag, so on master it has only `APILifecycleIntroduced` — no generated
+deprecation or removal release. Retiring the alpha copy is therefore a
+deliberate choice this KEP has to make rather than a schedule it inherits,
+and the promotion is where it gets made: the plan below tags `v1alpha3`
+deprecated in 1.39 and removed in 1.42, both explicitly.
+
+Concretely:
+
+- **Add `ResourcePoolStatusRequest` (and its status types) to
+  `resource.k8s.io/v1beta2`**, with
+  `+k8s:prerelease-lifecycle-gen:introduced=1.39`, conversions to and from
+  the internal type, and registration in `v1beta2Storage`
+  (`pkg/registry/resource/rest/storage_resource.go`). Keep `v1alpha3` served
+  so 1.38 clients keep working across the skew window.
+- **Serve `v1beta2` but keep storing `v1alpha3` in 1.39**, leaving the
+  override in `pkg/kubeapiserver/default_storage_factory_builder.go` as it
+  is, and switch the storage version to `v1beta2` in 1.40. That file's own
+  comment describes exactly this case — "when a new version for a resource
+  gets introduced and a downgrade to an older apiserver that doesn't know the
+  new version still needs to be supported for one release" — and
+  `DeviceTaintRule`, the precedent this KEP follows, still stores `v1beta2`
+  on master despite reaching `v1` at GA in 1.37. Deferring the storage switch
+  keeps a 1.39 → 1.38 rollback able to decode stored objects, which removes
+  the "delete all requests before downgrading" step from the downgrade path
+  below.
+- **Mark the superseded `v1alpha3` type,** so clients on the old endpoint
+  are told where to go. This needs **two** tags on the `v1alpha3` kind and
+  its list type, not one:
+
+  ```
+  +k8s:prerelease-lifecycle-gen:deprecated=1.39
+  +k8s:prerelease-lifecycle-gen:removed=1.42
+  +k8s:prerelease-lifecycle-gen:replacement=resource.k8s.io,v1beta2,ResourcePoolStatusRequest
+  ```
+
+  All three are required, because nothing is derived for an alpha version.
+  `status.go` emits `deprecated` only when `isBetaVersion || hasDeprecated`
+  and `removed` only when `isBetaVersion || hasRemoved`, so neither appears
+  without an explicit tag — the generator's `alpha type - explicit deprecated
+  only` test asserts exactly that. And `WarningMessage` returns early unless
+  `APILifecycleDeprecated` is non-zero, so a `replacement` tag on its own
+  would generate the method but never surface a warning.
+  `discovery.k8s.io/v1beta1` and `authentication.k8s.io/v1beta1` are the
+  convention to follow.
+- **Promote the gate:**
+  `DRAResourcePoolStatus: {Version: "1.39", Default: false, PreRelease: Beta}`.
+  It stays default-off because `resource.k8s.io/v1beta2` is itself an
+  off-by-default beta group version — the same position `DRADeviceTaintRules`
+  was in at 1.36, where the gate carries the comment
+  `// Depends on an off-by-default beta API.`
+- **Promote `DRAPartitionableDevicesType` to Beta, default off:**
+  `{Version: "1.39", Default: false, PreRelease: Beta}`. It gates a field on
+  `ResourceSlice`, which is served from the GA `resource.k8s.io/v1`, so its
+  lifecycle is not automatically tied to the status API's — but holding it at
+  Alpha while its only consumer goes Beta would leave the typed
+  `partitionSummary` path behind an alpha gate for at least another release,
+  which undercuts the promotion. It **must stay default-off** as long as
+  `DRAResourcePoolStatus` is: `AddDependencies` rejects a default-enabled
+  feature that depends on a default-disabled one, and it likewise rejects a
+  dependent whose stability level is higher than a dependency's. Both
+  constraints are hard errors at registration, not warnings.
+  Beta/default-off satisfies both — the gate's dependencies are
+  `DRAPartitionableDevices` (Beta) and `DRAResourcePoolStatus` (Beta after
+  this promotion), neither of which sits below Beta.
+
+  The two gates are coupled at runtime, not just at registration:
+  `AddDependencies` is checked again when gates are set, and enabling a
+  feature whose dependency is disabled is a startup error
+  (`"<feature> is enabled, but depends on features that are disabled"`). So
+  `DRAPartitionableDevicesType` cannot be switched on by itself — it requires
+  `DRAResourcePoolStatus` on as well. That coupling is another reason to move
+  both gates together rather than leaving one at Alpha.
+
+  The gates and the group version remain independent, though, and that
+  asymmetry is intentional. `ResourceSlice` is served from the GA
+  `resource.k8s.io/v1`, which is enabled by default, so a cluster running
+  `--feature-gates=DRAResourcePoolStatus=true,DRAPartitionableDevicesType=true`
+  and **no** `--runtime-config` change can accept
+  `ResourceSlice.Spec.PartitionTypeAttribute` from drivers while not serving
+  `ResourcePoolStatusRequest` at all. Drivers can therefore adopt the
+  attribute ahead of any cluster consuming it, which is the ordering this KEP
+  wants.
+- **Promote the metrics to BETA stability** alongside the gate. All three are
+  registered at ALPHA today. Metric stability tracks the feature's stage, so
+  this moves with the gate rather than in 1.38 — the widened coverage and the
+  histogram/SLO fix land in Alpha 1.38, and only the stability level changes
+  here.
+- **Settle the provisional caps.** `partitionSummary` and
+  `shareableSummary.capacity` both carry `+k8s:maxItems=32`, flagged in
+  Alpha as provisional. Confirm or change them before Beta locks the shape.
+- **Decide on structured `validationError`.** The field is a free-form
+  string with a machine-readable prefix convention
+  (`PoolIncomplete:`, `PartitionTypeMissing:`, …). Promoting it to a
+  Condition-style `{reason, message}` pair is cheap now and expensive later;
+  make the call at Beta.
+
+##### Out-of-tree validation
+
+- **Validation against at least one production DRA driver.** This has been
+  a standing requirement since the original Beta criteria and is a hard gate
+  for the promotion. The flat device counts need no driver-side change — the
+  controller reads existing `ResourceSlice` and allocation fields — but the
+  typed `partitionSummary` path is only exercised by a driver that declares
+  `PartitionTypeAttribute`, and CI cannot stand in for that.
+
+  The concrete target is `kubernetes-sigs/dra-driver-nvidia-gpu`, where most
+  of the groundwork is already in place:
+
+  - MIG devices already carry a `profile` string attribute
+    (`cmd/gpu-kubelet-plugin/mig.go`), so the grouping attribute is
+    `gpu.nvidia.com/profile` — nothing new needs to be invented or named.
+  - MIG devices already consume from their parent GPU's `CounterSet`
+    (`MigSpec.PartConsumesCounters`, `cmd/gpu-kubelet-plugin/partitions.go`),
+    which is what `computePartitionSummary` requires: devices consuming no
+    counters are skipped as non-partitions.
+  - The pool already publishes `SharedCounters`
+    (`PartSharedCounterSets`), without which the controller flags the pool
+    `PartitionTypeMissing:` rather than computing a partition view.
+  - The publishing helper already exposes the field —
+    `resourceslice.Slice.PartitionTypeAttribute` is present in the vendored
+    `k8s.io/dynamic-resource-allocation` at `v0.37.0`.
+
+  Setting `PartitionTypeAttribute` on the `Slice` at the two
+  `DriverResources` construction sites in `cmd/gpu-kubelet-plugin/driver.go`
+  (the split-slice and combined-slice models) is necessary but **not
+  sufficient**. `validatePartitionTypeAttribute` requires *every*
+  counter-consuming device in the slice to carry the named attribute, and the
+  full-GPU device (`GpuInfo.PartGetDevice`) also declares `ConsumesCounters`
+  and sits in the same slice as the MIG devices, while `GpuInfo.Attributes()`
+  publishes no `profile` — only MIG devices do. Declaring
+  `gpu.nvidia.com/profile` as-is would fail validation with "device consumes
+  counters and `partitionTypeAttribute` names this attribute, so it must be
+  set", rejecting the slice and hiding those GPUs from the scheduler. The
+  driver therefore also has to give the full device a profile value (for
+  example `profile: full`). This applies whenever a full GPU is announced
+  alongside partitions — dynamic-MIG on Hopper and later, or MIG mode off;
+  the driver only omits the full GPU on Ampere with MIG already enabled.
+
+  Two further caveats: the partitionable code path is behind the driver's own
+  `DynamicMIG` feature gate, and the apiserver drops `PartitionTypeAttribute`
+  unless `DRAPartitionableDevicesType` is enabled — which is why that gate is
+  promoted alongside `DRAResourcePoolStatus` above.
+
+  Validating this needs a MIG-capable host, so it is a criterion to be
+  satisfied during the 1.39 cycle, not a precondition of the enhancements
+  freeze. The extra cycle helps here: the driver-side change can land and
+  soak during 1.38 while the in-tree work above is in flight.
+
+##### Version transition testing
+
+- **Upgrade → downgrade → upgrade** exercised manually and documented in the
+  PRR section. This belongs with the promotion rather than with the 1.38
+  work, because the transition being tested — serving a newly added
+  `v1beta2` endpoint alongside `v1alpha3` — does not exist until the group
+  version is added. The storage version itself does not move in 1.39, so
+  what the test has to prove is endpoint equivalence and a clean rollback,
+  not a storage migration.
 
 #### GA
 
+- Promote `ResourcePoolStatusRequest` into `resource.k8s.io/v1` and flip
+  `DRAResourcePoolStatus` to GA default-on, mirroring the `DeviceTaintRule`
+  path from `v1beta2` (Beta, 1.36) to `v1` (GA, 1.37)
+- Move the storage version to `v1beta2` in 1.40, one release after it is
+  first served, and retire the `v1alpha3` copy once no supported skew
+  window needs it
 - At least 2 releases as beta
 - Validated at scale (1000+ pools)
+- All GA endpoints hit by conformance tests
 - kubectl plugin for better UX (optional)
 - Documentation complete
 
 ### Upgrade / Downgrade Strategy
 
-**Upgrade:**
-- Enable feature gate
-- New API becomes available
-- No migration needed
+**Upgrade (Alpha 1.37 → Alpha 1.38):**
+- No API version change and no gate change. The type stays in
+  `resource.k8s.io/v1alpha3` and `DRAResourcePoolStatus` stays Alpha,
+  default off, so a cluster that does not opt in sees no behavioural change
+  and one that does keeps the same endpoint and the same flags.
+- No fields are added, removed or renamed, so a 1.37 client reading a 1.38
+  object sees the same shape.
+- Two 1.38 corrections are visible to clients and must be called out in the
+  1.38 release notes, since Alpha clients may have scripted around the
+  current behaviour. First, `unavailableDevices` — and therefore
+  `availableDevices` — stops double-counting devices that are both allocated
+  and tainted. Second, a request whose pool stays incomplete now reaches a
+  terminal state: the controller writes a partial status once retries are
+  exhausted, where today it returns before `UpdateStatus` and leaves `status`
+  unset until the 24-hour pending TTL removes the object. Clients that treat
+  "no status" as "still processing" will start seeing a populated status
+  carrying a `PoolIncomplete:` `validationError`. The
+  `partiallyAvailableDevices` correction is documentation-only and changes no
+  value.
 
-**Downgrade:**
-- Disable feature gate
-- Existing requests become inaccessible
-- No impact on workloads
+**Downgrade (1.38 → 1.37):**
+- Nothing to undo at the storage layer: both releases store the type at
+  `v1alpha3`, so objects written by 1.38 are readable by a 1.37 apiserver.
+- Two visible differences on requests processed after the downgrade:
+  `unavailableDevices` reverts to the 1.37 double-counting behaviour, and
+  requests whose pools are incomplete go back to never reaching a terminal
+  state, sitting with `status` unset until the pending TTL removes them.
+  Requests are one-shot and TTL-swept within 24 hours, so both self-correct;
+  objects that already carry a partial status written by 1.38 remain
+  readable, since no field shape changed.
+
+**Upgrade (Alpha 1.38 → Beta 1.39):**
+- The gate moves to Beta but stays default off, because
+  `resource.k8s.io/v1beta2` is an off-by-default beta group version. A
+  cluster that does not opt in sees no behavioural change.
+- `ResourcePoolStatusRequest` is served from both
+  `resource.k8s.io/v1alpha3` and `resource.k8s.io/v1beta2`, but continues to
+  be **stored** at `v1alpha3` in 1.39; the storage version moves to
+  `v1beta2` in 1.40. Nothing is rewritten on upgrade and no storage
+  migration is required. Operators who want the old endpoint can keep
+  `--runtime-config=resource.k8s.io/v1alpha3=true` alongside the new one.
+- No fields are added, removed or renamed at Beta beyond whatever the
+  `validationError` decision produces.
+
+**Downgrade (1.39 → 1.38):**
+- Because 1.39 keeps `v1alpha3` as the storage version (see the API
+  graduation plan above), objects written by 1.39 remain decodable by a 1.38
+  apiserver and no pre-downgrade cleanup is required. Clients that had moved
+  to the `v1beta2` endpoint fall back to `v1alpha3`, which 1.38 serves.
+- The cleanup step would only become necessary if the storage switch to
+  `v1beta2` were taken in the same release as the promotion; that is why it
+  is deferred to 1.40, one release after `v1beta2` first ships.
+- No other persistent state exists, so downgrade requires no data
+  migration.
+
+**Downgrade (disable feature gate):**
+- Disable `DRAResourcePoolStatus` on both kube-apiserver and
+  kube-controller-manager.
+- Existing `ResourcePoolStatusRequest` objects become inaccessible,
+  but no workload impact.
+- No persistent state outside these objects, so downgrade does not
+  require a data migration.
+- Disabling `DRAPartitionableDevicesType` alone leaves the API fully
+  usable; partitionable pools simply stop reporting `partitionSummary`
+  once slices are rewritten without the attribute.
 
 ### Version Skew Strategy
 
-- API server and KCM must both have feature enabled
-- Older kubectl can still create/read objects (standard API)
-- No special version skew concerns
+- **kube-apiserver and kube-controller-manager** must both have
+  `DRAResourcePoolStatus` enabled; the gate is default off in 1.36 through
+  1.39, so both components must opt in explicitly. The apiserver
+  additionally needs the group version enabled via `--runtime-config`
+  (`resource.k8s.io/v1alpha3=true` through 1.38,
+  `resource.k8s.io/v1beta2=true` from 1.39).
+- **1.36 ↔ 1.37 skew:** Status API is `resource.k8s.io/v1alpha3` in
+  both releases. In the supported direction, a 1.36 KCM against a 1.37
+  apiserver simply does not populate the fields added in 1.37; readers
+  see a `PoolStatus` without `partitionSummary` or `shareableSummary`,
+  which is indistinguishable from a pool that has neither.
+- **1.37 ↔ 1.38 skew:** both releases serve the status API from
+  `resource.k8s.io/v1alpha3`, so there is no endpoint difference. A 1.37 KCM
+  against a 1.38 apiserver reports `unavailableDevices` with the old
+  double-counting behaviour; the field shape is identical either way.
+- **1.38 ↔ 1.39 skew:** the supported direction is a KCM no newer than
+  the apiserver it talks to. A 1.38 KCM against a 1.39 apiserver keeps
+  working through the `v1alpha3` endpoint, which 1.39 still serves;
+  since both versions describe the same internal type, the objects it
+  writes are readable through either endpoint. The reverse (a 1.39 KCM
+  against a 1.38 apiserver) is outside the supported skew policy and is
+  not accounted for here.
+- **`ResourceSlice.Spec.PartitionTypeAttribute` skew:** the field
+  lives in served `resource.k8s.io/v1` (and `v1beta1` / `v1beta2`).
+  An apiserver with `DRAPartitionableDevicesType` disabled
+  (default) drops the field on write, so drivers that set it on a
+  gate-disabled cluster see it silently cleared — the same shape as
+  other gated optional fields; objects that already carry it ratchet
+  through updates unchanged. A 1.36 apiserver does not know the field
+  and drops it as an unknown field. In both cases the controller sees
+  the attribute unset and simply publishes no `partitionSummary` for
+  that pool unless the request names a default.
+- **Older kubectl** can create/read objects via either served endpoint
+  without changes.
 
 ## Production Readiness Review Questionnaire
 
@@ -740,6 +2072,29 @@ the scope of CI and would be validated separately by driver vendors.
 - [x] Feature gate
   - Feature gate name: DRAResourcePoolStatus
   - Components: kube-apiserver, kube-controller-manager
+- [x] Feature gate
+  - Feature gate name: DRAPartitionableDevicesType
+  - Components: kube-apiserver
+
+`DRAResourcePoolStatus` gates the API type, its storage, the controller and
+the controller's bootstrap ClusterRole. It has no feature-gate dependencies
+of its own.
+
+`DRAPartitionableDevicesType` gates `ResourceSlice.Spec.PartitionTypeAttribute`
+and `ResourcePoolStatusRequestSpec.DefaultPartitionTypeAttribute` — the two
+ways a grouping attribute reaches the controller. It depends on
+`DRAPartitionableDevices` and `DRAResourcePoolStatus`. Those dependencies are
+enforced: enabling `DRAPartitionableDevicesType` while either is disabled makes
+feature-gate validation fail at component start, rather than being silently
+ignored. Disabling it while `DRAResourcePoolStatus` is on simply means
+partitionable pools report no `partitionSummary`. It is enforced only in the
+apiserver — the controller does not consult it and groups on whatever
+attribute has been persisted.
+
+The gate alone is not sufficient: the API's group version is off by
+default, so the apiserver also needs it enabled via `--runtime-config`
+(`resource.k8s.io/v1alpha3=true` from 1.36 through 1.38,
+`resource.k8s.io/v1beta2=true` from 1.39).
 
 ###### Does enabling the feature change any default behavior?
 
@@ -757,49 +2112,104 @@ be processed by the controller.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, integration tests verify behavior with feature gate on/off.
+Partially. The controller is registered behind
+`requiredFeatureGates: []featuregate.Feature{features.DRAResourcePoolStatus}`,
+its bootstrap ClusterRole is installed only when the gate is on, and the
+gated fields are covered by strategy and declarative-validation unit tests
+for both gate states. The integration suite, however, runs a single
+`feature-enabled` matrix entry — there is no gate-disabled integration case
+today. Adding one is an Alpha 1.38 requirement; see [Alpha (1.38)](#alpha-138).
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 **Rollout failures:**
-- Feature gate not enabled on both apiserver and KCM
-- RBAC not configured for users
+- `DRAResourcePoolStatus` not enabled on both apiserver and KCM. The
+  symptom differs by which side is missing: without it on the apiserver
+  the resource is not served at all; without it on KCM requests are
+  accepted but never processed, so `status` stays unset.
+- The group version not enabled via `--runtime-config`
+  (`resource.k8s.io/v1beta2=true` from 1.39). The gate alone is not
+  sufficient, since the version is off by default.
+- `DRAPartitionableDevicesType` enabled without its dependencies
+  (`DRAPartitionableDevices`, `DRAResourcePoolStatus`). Feature-gate
+  dependency validation rejects this at component start, so the component
+  fails to come up rather than running in a half-configured state.
+- RBAC not configured for users. No default ClusterRole grants access, so
+  every non-admin user needs an explicit grant.
 
 **Impact on workloads:**
-- None. This is a read-only visibility feature.
+- None. This is a read-only visibility feature. The controller only reads
+  ResourceSlices, ResourceClaims and DeviceTaintRules, and only writes the
+  status of its own request objects, so a failed rollout or rollback
+  cannot affect scheduling or running pods.
 
 ###### What specific metrics should inform a rollback?
 
-- High error rate on request processing
-- Controller crash loops
-- Excessive API server load from requests
+- `resourcepoolstatusrequest_controller_request_processing_errors_total`
+  rising — the controller is failing to write status.
+- `resourcepoolstatusrequest_controller_requests_processed_total` flat
+  while `ResourcePoolStatusRequest` objects accumulate — the controller is
+  not processing at all, or is stuck requeueing incomplete pools.
+- `resourcepoolstatusrequest_controller_request_processing_duration_seconds`
+  shifting into its upper buckets, which on a large cluster points at the
+  full-lister scans over slices and claims. Note this histogram tops out at
+  16.384s (`ExponentialBuckets(0.001, 2, 15)`), below the 30s SLO stated
+  above, so the SLO itself is not directly measurable from it — see
+  [Alpha (1.38)](#alpha-138).
+- KCM restart / crash-loop counts.
+- Elevated apiserver request rate for `resourcepoolstatusrequests`, including
+  the controller's own TTL `delete` traffic.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be tested manually before Beta promotion and documented here. For Alpha,
-the feature is behind a feature gate and has no persistent state that could
-cause issues during upgrade/downgrade cycles.
+Not yet, and it is not applicable in 1.38: that release keeps the type in
+`resource.k8s.io/v1alpha3` with no storage-version change, so there is no
+version transition to exercise. This is a Beta requirement and will be
+exercised manually before the 1.39 promotion and documented here. The
+specific path to test is 1.38 → 1.39 → 1.38: create requests on 1.38
+(`v1alpha3`), upgrade and confirm they are readable through both the
+`v1alpha3` and `v1beta2` endpoints, then downgrade and confirm the cluster
+is healthy with the objects still decodable — 1.39 keeps storing `v1alpha3`,
+so no pre-downgrade cleanup is needed. The equivalent test for the storage
+switch itself belongs to the 1.40 cycle. There is no persistent state
+outside the request objects themselves, and they are TTL-swept within 24
+hours.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No.
+No removals in either release, and no deprecation in 1.38. The 1.39
+promotion deprecates the `v1alpha3` endpoint — the plan tags it
+`deprecated=1.39` and `removed=1.42`, both explicitly, since neither is
+derived for an alpha version — but the endpoint stays served throughout, so
+1.38 clients keep working and the deprecation surfaces only as an apiserver
+warning pointing at `v1beta2`. Note that `v1alpha3` carries no such marker
+today: on master the kind has only `APILifecycleIntroduced`, and the
+`test/integration/etcd/data.go` entry only
+`IntroducedVersion: "1.36"`. Both the deprecation and the eventual removal
+are choices this KEP makes, not inherited schedule.
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
 
 - Check if ResourcePoolStatusRequest objects exist: `kubectl get resourcepoolstatusrequests`
-- Check controller metrics: `resourcepoolstatus_requests_processed_total > 0`
+- Check controller metrics: `resourcepoolstatusrequest_controller_requests_processed_total > 0`
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [ ] Events
   - Event Reason: N/A (no events emitted)
 - [x] API .status
-  - Condition name: `Complete` (status: "True" when processing finished)
-  - Other field: `status.observationTime` is set when calculation is performed
+  - The presence of a non-nil `status` indicates the controller has
+    processed the request.
+  - Condition type `Complete` with status `"True"` signals a successful
+    calculation; `Failed` with `"True"` signals a processing error (the
+    condition `message` carries details).
+  - The `Complete`/`Failed` condition's `lastTransitionTime` indicates
+    when the calculation occurred (this replaces the originally proposed
+    `status.observationTime` field, which was dropped during API review).
 - [ ] Other (Alarm, К8s resources status)
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -809,21 +2219,36 @@ No.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+All metrics use the subsystem `resourcepoolstatusrequest_controller` and are
+labeled by `driver_name`. Stability level: ALPHA.
+
 - [x] Metrics
-  - Metric name: `resourcepoolstatus_request_processing_duration_seconds`
-    - Aggregation method: histogram
+  - Metric name: `resourcepoolstatusrequest_controller_request_processing_duration_seconds`
+    - Aggregation method: histogram (exponential buckets starting at 1ms, 15 buckets × base 2)
+    - Labels: `driver_name`
     - Components exposing the metric: kube-controller-manager
-  - Metric name: `resourcepoolstatus_request_processing_errors_total`
+  - Metric name: `resourcepoolstatusrequest_controller_request_processing_errors_total`
     - Aggregation method: counter
+    - Labels: `driver_name`
     - Components exposing the metric: kube-controller-manager
-  - Metric name: `resourcepoolstatus_requests_processed_total`
+  - Metric name: `resourcepoolstatusrequest_controller_requests_processed_total`
     - Aggregation method: counter
+    - Labels: `driver_name`
     - Components exposing the metric: kube-controller-manager
 - [ ] Other (describe)
 
+Coverage caveat: all three metrics are recorded only on the code paths that
+reach `UpdateStatus`. `..._request_processing_errors_total` therefore counts
+`UpdateStatus` failures only — a ResourceSlice / ResourceClaim /
+DeviceTaintRule lister failure produces a `Failed` condition but no error
+sample — and the incomplete-pool requeue path records nothing at all.
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No, the controller will expose the standard metrics listed above.
+Yes. Two gaps follow from the coverage caveat above and are tracked as
+Alpha 1.38 items: requeues and give-ups on incomplete pools are invisible, and
+calculation failures that produce a `Failed` condition are not counted as
+errors.
 
 ### Dependencies
 
@@ -857,28 +2282,42 @@ Yes:
 |----------|---------------------|----------------------|
 | ResourcePoolStatusRequest | CREATE, GET, LIST, DELETE, WATCH | Hundreds per cluster (user-managed, ephemeral) |
 
-Note: Objects are intended to be short-lived. Users should delete requests after reading
-the status. TTL-based auto-cleanup will be added in Beta.
+Note: Objects are intended to be short-lived. Built-in TTL cleanup (Alpha)
+deletes completed requests 1 hour after completion and pending requests
+24 hours after creation.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 No.
 
-###### Will enabling / using this feature result in increasing size or count of existing API objects?
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+One existing type changes: `ResourceSlice.Spec` gains an optional
+`PartitionTypeAttribute *FullyQualifiedName` (gated behind
+`DRAPartitionableDevicesType`), present in `resource.k8s.io/v1`,
+`v1beta1` and `v1beta2`. It is a single, bounded string per slice
+and is omitted unless the driver opts in, so per-slice size is
+effectively unchanged on existing clusters.
+
+Alpha 1.37 also adds optional `partitionSummary` (`+k8s:maxItems=32`,
+provisional) and `shareableSummary` (a fixed-shape sub-object with an
+inner `capacity[]` capped at `+k8s:maxItems=32`) to each `PoolStatus`.
+Both are omitted on plain pools, so the typical response size is
+unchanged; on partitionable or consumable pools the response grows by a
+bounded, small amount — both are aggregates and are much smaller than
+the per-device lists they summarise.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 No impact on scheduling or pod startup.
 
-###### Will enabling / using this feature result in non-negligible increase of resource usage?
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 Minimal:
-- etcd: Small objects, users should clean up (TTL in Beta)
-- KCM: Reuses existing informers, adds small controller
+- etcd: Small objects, bounded by built-in TTL cleanup (Alpha: 1h completed / 24h pending)
+- KCM: Reuses existing `resource.k8s.io/v1` informers for ResourceSlice and ResourceClaim, adds a small controller with its own work queue
 - API server: Standard API operations
-- Response size: Bounded by required `driver` field (one driver's pools) and optional `limit` field (values determined at implementation based on size calculations)
+- Response size: Bounded by the required `driver` field (one driver's pools), the `limit` field (default 100, max 1000), the `+k8s:maxItems=1000` constraint on `status.pools`, and `+k8s:maxItems=32` on each of `partitionSummary` and `shareableSummary.capacity` per pool
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -898,11 +2337,13 @@ Requests cannot be created or read. No workload impact.
 
 | Failure Mode | Description | Detection | Mitigations | Diagnostics | Testing |
 |--------------|-------------|-----------|-------------|-------------|---------|
-| Controller not running | ResourcePoolStatusRequest controller in KCM is not running or crashed | Requests stay in pending state (no `status.observationTime`), `resourcepoolstatus_requests_processed_total` metric stays at 0 | Restart KCM, check KCM logs | Check KCM logs for controller startup errors, verify feature gate enabled | Covered by integration tests |
+| Controller not running | ResourcePoolStatusRequest controller in KCM is not running or crashed | Requests stay with `status` unset (no `Complete`/`Failed` condition); `resourcepoolstatusrequest_controller_requests_processed_total` stays at 0 | Restart KCM, check KCM logs | Check KCM logs for controller startup errors, verify feature gate enabled | Covered by integration tests |
 | Informers not synced | ResourceSlice or ResourceClaim informers have not completed initial sync | Controller logs warning, requests delayed | Wait for informer sync, check API server connectivity | Check KCM logs for informer sync status | Covered by integration tests |
-| Request accumulation | Users create many requests without cleanup | etcd storage grows, `kubectl get rpsr` shows many objects | Delete old requests, implement cleanup automation | List requests with `kubectl get rpsr`, check etcd metrics | Documented, TTL planned for Beta |
+| Incomplete pool data | Fewer slices published than `ResourceSliceCount` declared by the driver | Controller requeues up to 5 times, giving the driver time to finish publishing; once the pool is whole the status is written normally, with no incompleteness marker | Ensure driver fully publishes slices; retry by recreating request | While requeueing, the request stays `Pending`; check driver logs and `kubectl get resourceslices` for the pool | Covered by unit tests |
+| Pool never completes | A driver stops publishing partway through a generation, so a pool stays below its declared `ResourceSliceCount` | The request keeps `status` unset indefinitely — no `Complete` or `Failed` condition, no metric sample — because the sync returns an error before writing status and gives up after 5 retries | Fix the driver so it publishes the full slice set; the request is removed by the 24h pending TTL | `kubectl get` shows `Pending` with no `COMPLETED` timestamp; check driver logs and `kubectl get resourceslices` for the pool | Requeue path covered by unit tests; giving this case a terminal state is an Alpha 1.38 item |
+| Request accumulation | Users create many requests | etcd storage grows, `kubectl get resourcepoolstatusrequests` shows many objects | Built-in TTL cleanup deletes completed requests after 1h, pending after 24h | List requests, check etcd metrics; check KCM cleanup logs | Covered by integration tests |
 
-###### What steps should be taken if SLOs are not being met?
+###### What steps should be taken if SLOs are not being met to determine the problem?
 
 1. Check KCM logs for controller errors
 2. Check controller metrics
@@ -914,17 +2355,65 @@ Requests cannot be created or read. No workload impact.
 - 2025-12-20: KEP created in provisional state
 - 2026-01-15: Design revision - ResourceSlice status to ResourcePool
 - 2026-02-07: Design revision - in-tree CSR-like pattern per API review
+- 2026-02-10: KEP merged as implementable (#5749)
+- 2026-02/03: Alpha implementation in kubernetes/kubernetes — API shipped
+  in `resource.k8s.io/v1alpha3` (not `v1alpha1`) with several API-review
+  driven changes: `status` is now a pointer and the whole object is
+  immutable once populated; `observationTime` removed (use the
+  `Complete`/`Failed` condition's `lastTransitionTime`); top-level
+  `validationErrors` and `truncated` removed (per-pool `validationError`
+  and `len(pools) < poolCount` used instead); `sliceCount` renamed to
+  `resourceSliceCount`; count fields made pointers so they can be left
+  unset for incomplete pools; added `Failed` condition type; explicit
+  `limit` bounds (default 100, max 1000); and TTL-based cleanup moved
+  into Alpha.
+- 1.36 (Alpha): feature gate `DRAResourcePoolStatus` (default off);
+  API shipped at `resource.k8s.io/v1alpha3` (kubernetes/kubernetes#137028)
+- 1.37 (Alpha): second Alpha cycle on `v1alpha3` to correctly handle
+  partitionable and consumable devices
+  (kubernetes/kubernetes#140170). Added `partitionSummary` and
+  `shareableSummary` to `PoolStatus`,
+  `spec.defaultPartitionTypeAttribute` to the request,
+  `ResourceSlice.Spec.PartitionTypeAttribute` (in `v1`, `v1beta1` and
+  `v1beta2`), and a second feature gate `DRAPartitionableDevicesType`.
+  Capped `allocatedDevices` at one per physical device, skipped
+  AdminAccess allocations, and computed `unavailableDevices` from real
+  device taints. Two API-review changes relative to the plan: the
+  `counterSets` fallback view was dropped in favour of the request-side
+  `defaultPartitionTypeAttribute`, and `partitionSummary` entries are
+  keyed by `(attribute, type)` rather than assuming one grouping
+  attribute per pool. See "Alpha (1.37)" in Graduation Criteria.
+- 1.38 (Alpha, planned): a third Alpha cycle, taken in place of the Beta
+  promotion originally proposed for this release. The API stays at
+  `resource.k8s.io/v1alpha3` and both gates stay Alpha, default off. The
+  cycle delivers the three semantics corrections (`unavailableDevices` stops
+  counting allocated devices; incomplete pools reach a terminal state by
+  writing a partial status once retries are exhausted, which also makes the
+  `PoolIncomplete:` `validationError` observable for the first time; and the
+  `partiallyAvailableDevices` doc comment is corrected to describe the in-use
+  count it actually reports — no field is added or renamed), observability
+  and operational hardening, the
+  `kubectl describe` support, and the outstanding test coverage including
+  scale validation. See "Alpha (1.38)" in Graduation Criteria.
+- 1.39 (Beta, planned): promote `ResourcePoolStatusRequest` into
+  `resource.k8s.io/v1beta2` and move both `DRAResourcePoolStatus` and
+  `DRAPartitionableDevicesType` to Beta, each default off. Note that the
+  move to `v1beta2` does not reduce the enablement burden — beta group
+  versions are disabled by default too — it aligns the group version with
+  the feature's stability level and opens the path to GA. Validation against
+  a production DRA driver lands here. See "Beta (1.39)" in Graduation
+  Criteria.
 
 ## Drawbacks
 
 1. **Asynchronous operation**: User must wait for controller, unlike sync APIs
-   - Mitigation: Processing is fast (seconds); kubectl wait helps
+   - Mitigation: Processing is fast (seconds); `kubectl wait --for=condition=Complete` helps
 
-2. **Objects persist in etcd**: Users must clean up old requests
-   - Mitigation: Document cleanup; consider TTL in future
+2. **Objects persist briefly in etcd**: Each request is a cluster-scoped object
+   - Mitigation: Controller-side TTL cleanup (Alpha) — 1h after completion, 24h for pending
 
 3. **Not real-time**: Shows point-in-time snapshot, not live data
-   - Mitigation: Timestamp shows age; recreate for fresh data
+   - Mitigation: `Complete` condition `lastTransitionTime` shows age; delete and recreate for fresh data
 
 ## Alternatives
 

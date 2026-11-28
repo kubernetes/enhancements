@@ -14,6 +14,7 @@ reviewers:
   - "@mortent"
   - "@liggitt"
   - "@pohly"
+  - "@harche" # sig-node-assigned-reviewer
 approvers:
   - "@mrunalp"
 
@@ -23,19 +24,26 @@ see-also:
 
 stage: alpha
 
-latest-milestone: "v1.36"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.36"
+  beta: "v1.39"
 
 feature-gates:
   - name: DRAResourcePoolStatus
     components:
       - kube-apiserver
       - kube-controller-manager
+  # Gates ResourceSlice.Spec.PartitionTypeAttribute and the request's
+  # spec.defaultPartitionTypeAttribute. Enforced in the apiserver only;
+  # the controller groups on whatever attribute has been persisted.
+  - name: DRAPartitionableDevicesType
+    components:
+      - kube-apiserver
 disable-supported: true
 
 metrics:
-  - resourcepoolstatus_request_processing_duration_seconds
-  - resourcepoolstatus_request_processing_errors_total
-  - resourcepoolstatus_requests_processed_total
+  - resourcepoolstatusrequest_controller_request_processing_duration_seconds
+  - resourcepoolstatusrequest_controller_request_processing_errors_total
+  - resourcepoolstatusrequest_controller_requests_processed_total

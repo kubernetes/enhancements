@@ -1,0 +1,34 @@
+title: etcd RangeStream
+kep-number: 5966
+authors:
+  - "@Jefftree"
+owning-sig: sig-etcd
+participating-sigs:
+  - sig-api-machinery
+status: implementable
+creation-date: 2026-03-18
+reviewers:
+  - "@ahrtr"
+  - "@fuweid"
+  - "@serathius"
+approvers:
+  - "@ahrtr"
+  - "@fuweid"
+  - "@serathius"
+  - "@jpbetz"
+
+stage: beta
+
+latest-milestone: "v1.37"
+
+milestone:
+  beta: "v1.37"
+
+feature-gates:
+  - name: EtcdRangeStream
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics:
+  - apiserver_watch_cache_initialization_duration_seconds

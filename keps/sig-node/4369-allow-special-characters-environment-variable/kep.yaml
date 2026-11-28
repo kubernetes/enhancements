@@ -12,7 +12,7 @@ reviewers:
   - "@thockin"
 approvers:
   - "@thockin"
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
 
 see-also: []
 replaces: []

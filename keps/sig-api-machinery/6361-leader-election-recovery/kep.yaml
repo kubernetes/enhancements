@@ -1,0 +1,41 @@
+title: Leader Election Recovery
+kep-number: 6361
+authors:
+  - "@alvaroaleman"
+  - "@jpbetz"
+  - "@michaelasp"
+owning-sig: sig-api-machinery
+status: implementable
+creation-date: 2026-09-14
+last-updated: 2026-09-23
+reviewers:
+  - "@deads2k"
+  - "@sttts"
+approvers:
+  - "@deads2k"
+
+see-also:
+  - "/keps/sig-api-machinery/4355-coordinated-leader-election"
+  - "/keps/sig-api-machinery/5366-graceful-leader-transition"
+
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: LeaderElectionRecovery
+    components:
+      - kube-controller-manager
+      - cloud-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - leader_election_write_gate_rejections_total

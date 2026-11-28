@@ -1061,6 +1061,8 @@ need to do very careful testing to make sure it's safe before GA'ing.
 2023-05-19: KEP targeted at Beta in 1.28
 2023-05-19: KEP retargeted to Alpha in 1.29
 2025-10-07: KEP retargeted to Beta in 1.35
+2026-05-28: KEP retargeted to Beta (off by default) in 1.37
+2026-09-18: KEP bumped to Beta on by default in 1.38
 
 ## Drawbacks
 

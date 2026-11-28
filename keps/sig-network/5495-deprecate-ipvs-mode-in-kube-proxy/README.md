@@ -1,73 +1,11 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [X] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [X] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-5495: Deprecate IPVS mode in kube-proxy
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -76,7 +14,11 @@ SIG Architecture for cross-cutting KEPs).
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Deprecation](#deprecation)
+    - [Stage 1 (1.35)](#stage-1-135)
+    - [Stage 2 (1.37)](#stage-2-137)
+    - [Stage 3 (1.40)](#stage-3-140)
+    - [Stage 4 (1.43)](#stage-4-143)
+    - [Cleanup (1.46)](#cleanup-146)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -91,34 +33,6 @@ SIG Architecture for cross-cutting KEPs).
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
-
-## Release Signoff Checklist
-
-Items marked with (R) are required *prior to targeting to a milestone / release*.
-
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -145,19 +59,34 @@ and already solves many of the bugs present in the `ipvs` mode.
 
 ### Goals
 
-- Deprecate the `ipvs` mode of kube-proxy
+- Deprecate and eventually remove the `ipvs` mode of kube-proxy
 
 ### Non-Goals
 
-- Removal of the `ipvs` mode of kube-proxy - The specifics of removal of `ipvs` are being handled in [KEP-5343]
-
-[KEP-5343]: https://github.com/kubernetes/enhancements/pull/5344
+N/A
 
 ## Proposal
 
-### Notes/Constraints/Caveats (Optional)
+First, we will make the `ipvs` backend log a warning when it is run,
+and update the documentation to reflect its deprecation. (This
+happened in 1.35.)
 
-The specifics of removal of `ipvs` mode will be handled in [KEP-5343]
+We had previously talked about moving the `ipvs` backend to a separate
+repo (e.g. `kubernetes-sigs/kube-proxy-ipvs`), and this was going to
+be handled in [KEP-5343]. However, we would have no intention of
+maintaining this repo, and wouldn't want to be responsible for doing
+security fixes for it, so we would essentially have to create the repo
+and then immediately archive it.
+
+Additionally, since we started this deprecation, we've realized that
+the `nftables` kernel requirement situation isn't quite as dire as we
+had originally thought, and all of the kernels that are too old to
+support kube-proxy's `nftables` mode will be out of LTS by the end of
+2026. At that point, there will be even less of an argument for
+continuing to run `ipvs` rather than switching to `nftables`.
+
+Thus, we will simply remove the IPVS proxy from the tree, and not copy
+it anywhere else. This will be done via a `Deprecated` feature gate.
 
 ### Risks and Mitigations
 
@@ -175,31 +104,63 @@ to implement this enhancement.
 
 ##### Unit tests
 
-N/A - This KEP is only adding a deprecation warning and updating necessary parts of the website
+N/A - This KEP is only removing code, not adding new code.
 
 ##### Integration tests
 
-N/A - This KEP is only adding a deprecation warning and updating nessesary parts of the website
+N/A - This KEP is only removing code, not adding new code.
 
 ##### e2e tests
 
-N/A - This KEP is only adding a deprecation warning and updating nessesary parts of the website
+N/A - This KEP is only removing code, not adding new code.
 
 ### Graduation Criteria
 
-#### Deprecation
+#### Stage 1 (1.35)
 
 - The Kubernetes web site has been updated with deprecation notices for the `ipvs` mode of kube-proxy
 - Kube-proxy prints a warning when a user starts kube-proxy in `ipvs` mode
 - All nftables-mode bugfixes have been backported to 1.34 and 1.33, to ensure that `ipvs` users on older releases can still migrate to `nftables`.
 
+#### Stage 2 (1.37)
+
+- We have added a `KubeProxyIPVS` feature gate, `Default: true,
+  Prerelease: featuregate.GA`.
+
+- Docs and warning messages are updated to indicate that the plan is
+  for the feature gate to go `Default: false` in 1.40 and
+  `LockToDefault: true` in 1.43 (after which `ipvs` mode will no
+  longer be available).
+
+- We've done a blog post with information about migrating from `ipvs`
+  to `iptables` or `nftables`, including an explanation of why IPVS
+  schedulers aren't actually useful in Kubernetes, which a lot of
+  `ipvs` users don't seem to realize.
+
+#### Stage 3 (1.40)
+
+- The feature gate is flipped to `Default: false`, and the docs
+  updated. (If you try to run kube-proxy in `ipvs` mode without
+  overriding the feature gate, kube-proxy will exit with an error
+  listing the valid modes (`iptables` and `nftables`).)
+
+#### Stage 4 (1.43)
+
+- The feature gate is flipped to `LockToDefault: false` and
+  `pkg/proxy/ipvs` is removed. Remaining mentions of IPVS mode in the
+  docs are removed.
+
+#### Cleanup (1.46)
+
+- The feature gate is removed.
+
 ### Upgrade / Downgrade Strategy
 
-N/A - The only code change is a warning notice
+N/A
 
 ### Version Skew Strategy
 
-N/A - The only code change is a warning notice
+N/A
 
 ## Production Readiness Review Questionnaire
 
@@ -241,7 +202,11 @@ N/A
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-N/A
+The rollout *is* a deprecation/removal of features.
+
+We should probably keep the IPVS CLI/config options as no-ops (with
+warnings), in case anyone migrates to another backend but forgets to
+remove some of the IPVS flags and doesn't notice.
 
 ### Monitoring Requirements
 

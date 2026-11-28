@@ -16,6 +16,7 @@ reviewers:
   - '@dom4ha'
   - '@macsko'
   - '@haircommander' # sig-node-assigned-reviewer
+  - '@swatisehgal' # sig-node-assigned-reviewer
 approvers:
 - '@dchen1107' # sig-node-tl
 - '@tallclair' # sig-node-assigned-approver
@@ -23,12 +24,13 @@ approvers:
 - '@macsko' # SIG-Scheduling
 - '@jackfrancis' # SIG-Autoscaling
 - '@towca' # SIG-Autoscaling
-status: implementable
-stage: beta
-latest-milestone: "v1.36"
+status: implemented
+stage: stable
+latest-milestone: "v1.37"
 milestone:
   alpha: "v1.35"
   beta:  "v1.36"
+  stable: "v1.37"
 
 feature-gates:
   - name: NodeDeclaredFeatures

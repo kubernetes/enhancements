@@ -76,6 +76,8 @@ As of the 1.26 release, enhancements from this repo are visualized in the Enhanc
 
 Links:
 
+- [1.38 Milestone](https://rel.k8s.io/v138/enhancements)
+- [1.37 Milestone](https://rel.k8s.io/v137/enhancements)
 - [1.36 Milestone](https://rel.k8s.io/v136/enhancements)
 - [1.35 Milestone](https://bit.ly/k8s135-enhancements)
 - [1.34 Milestone](https://bit.ly/k8s134-enhancements)
@@ -100,7 +102,7 @@ Procedure:
 
 ### Current Release Cycle
 
-[Dates and further information for the 1.34 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.34)
+[Dates and further information for the 1.38 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.38)
 
 ## Exceptions to Enhancement Milestone Dates
 

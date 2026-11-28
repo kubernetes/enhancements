@@ -11,7 +11,7 @@ reviewers:
   - "@ffromani"
   - "@swatisehgal"                                                                      
 approvers:
-  - "@ffromani"
+  - "@ffromani" # sig-node-assigned-approver
 see-also: []
 replaces: []
 

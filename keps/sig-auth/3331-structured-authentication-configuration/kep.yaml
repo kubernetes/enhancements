@@ -10,7 +10,7 @@ reviewers:
 approvers:
 - "@liggitt"
 creation-date: "2022-06-02"
-status: implementable
+status: implemented
 stage: stable
 latest-milestone: "v1.35"
 milestone:

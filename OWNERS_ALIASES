@@ -21,9 +21,10 @@ aliases:
     - ritazh
   sig-autoscaling-leads:
     - adrianmoisey
-    - gjtempleton
     - jackfrancis
+    - omerap12
     - towca
+    - jmdeal
   sig-cli-leads:
     - ardaguclu
     - eddiezane
@@ -35,11 +36,11 @@ aliases:
     - elmiko
     - joelspeed
   sig-cluster-lifecycle-leads:
-    - CecileRobertMichon
     - fabriziopandini
+    - hakman
     - justinsb
     - neolit123
-    - vincepri
+    - sbueringer
   sig-contributor-experience-leads:
     - MadhavJivrajani
     - Priyankasaggu11929
@@ -55,13 +56,15 @@ aliases:
     - salaxander
   sig-etcd-leads:
     - ahrtr
-    - jmhbnz
+    - ivanvc
+    - jberkus
     - serathius
     - siyuanfoundation
   sig-instrumentation-leads:
     - dashpole
     - dgrisonnet
-    - logicalhan
+    # - logicalhan
+    - pohly
     - rexagod
     - richabanker
   sig-k8s-infra-leads:
@@ -72,13 +75,14 @@ aliases:
     - xmudrii
   sig-multicluster-leads:
     - jeremyot
+    - lauralorenz
     - skitt
   sig-network-leads:
     - aojea
     - bowei
     - danwinship
+    - guicassolato
     - mikezappa87
-    - shaneutt
     - thockin
   sig-node-leads:
     - SergeyKanzhelev
@@ -100,7 +104,9 @@ aliases:
     - wojtek-t
   sig-scheduling-leads:
     - dom4ha
+    - helayoty
     - macsko
+    - mm4tt
     - sanposhiho
   sig-security-leads:
     - IanColdwater
@@ -108,32 +114,28 @@ aliases:
   sig-storage-leads:
     - jsafrane
     - msau42
-    - saad-ali
+    - gnufied
     - xing-yang
   sig-testing-leads:
     - BenTheElder
-    - alvaroaleman
     - aojea
-    - cjwagner
     - jbpratt
     - michelle192837
     - pohly
-    - xmcqueen
   sig-ui-leads:
-    - floreks
     - joaquimrocha
-    - maciaszczykm
-    - shu-mutou
+    - kahirokunn
   sig-windows-leads:
     - aravindhp
     - claudiubelu
+    - jrvaldes
     - marosset
     - zylxjtu
   wg-api-expression-leads:
     - apelisse
     - kwiesmueller
   wg-batch-leads:
-    - kannon92
+    - amy
     - mwielgus
     - tenzen-y
   wg-data-protection-leads:
@@ -192,11 +194,13 @@ aliases:
     - johnbelamaric
     - justaugustus
     - palnabarun
+    - soltysh
   kep-tools-reviewers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
     - palnabarun
+    - soltysh
   prod-readiness-approvers:
     - deads2k
     - johnbelamaric

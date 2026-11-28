@@ -84,6 +84,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Shard Key](#shard-key)
   - [Consistent Hashing (Key Range)](#consistent-hashing-key-range)
   - [Client Request](#client-request)
+  - [Client Library Support (<code>client-go</code>)](#client-library-support-client-go)
   - [Server Design](#server-design)
   - [Hashing Implementation](#hashing-implementation)
   - [Test Plan](#test-plan)
@@ -134,18 +135,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -286,21 +287,17 @@ proposal will be implemented, this is the place to discuss them.
 ### API Extensibility: Sharding Parameters
 
 Clients will request shards via query parameters in their `LIST` and `WATCH` requests. 
-The request must contain the field used to shard, as well as the start and end of the hash range.
 
-Given that some Kubernetes features (like pagination) use individual, explicit query parameters,
-while others (like label selectors) provide a lightweight grammar for filter expressions, the exact
-syntax is currently under discussion. We will work with API Review to decide between two primary approaches:
+A dedicated `shardSelector` query parameter mapped to the `ShardSelector` field in
+`meta/v1.ListOptions`. This parameter accepts a lightweight CEL-based functional
+grammar, specifically utilizing a `shardRange()` function.
 
-1. **Explicit Query Parameters**: Adding individual fields directly to `meta/v1.ListOptions`.
-   - Example: `?shardKey=object.metadata.namespace&shardRange=0,100`
+**Syntax Details:**
+- `shardRange(fieldPath, hexStart, hexEnd)`
+- Bounds are defined as 64-bit strings with a `'0x'` prefix (e.g. `'0x0000000000000000'`, `'0x8000000000000000'`).
+- Supported field paths currently include `object.metadata.uid` and `object.metadata.namespace`.
 
-2. **Lightweight Grammar**: Introducing a new `selector` expression parameter.
-   - Example: `?selector=range(object.metadata.namespace, 0, 100)`
-   - If this path is chosen, it could be implemented as a strict subset of CEL or a simple
-     functional grammar.
-
-Regardless of the syntax chosen, the parameters will be strongly typed internally on both the client side
+The parameters are strongly typed internally on both the client side
 (for syntactic correctness in `client-go`) and the server side (for validation and execution).
 
 ### Shard Key
@@ -331,14 +328,27 @@ reshard occurs.
 
 ### Client Request
 
-Clients will append new parameters to their LIST and WATCH requests to subscribe to a specific
-slice of the stream.
+Clients will append the new parameter to their LIST and WATCH requests to subscribe
+to a specific slice of the stream.
 
 **Example Request:**
-`GET /api/v1/pods?watch=true&selector=shardRange(object.metadata.uid, 0, 8)`
+`GET /api/v1/pods?watch=true&shardSelector=shardRange(object.metadata.uid, '0x0000000000000000', '0x8000000000000000')`
 
-- `selector`: Introduces a new query parameter to encapsulate expression-based selection logic.
-- `shardRange(...)`: A function within the selector grammar that specifies the field to hash (e.g., `object.metadata.uid`) and the start and end range (`start <= x < end`) of hash values this client desires. This provides a future-proof foundation without bloating `ListOptions` with multiple individual parameter fields.
+Clients can also specify multiple hash ranges simultaneously using the logical OR
+operator (`||`) implemented by the CEL evaluator.
+
+**Multiple Range Example:**
+`GET /api/v1/pods?watch=true&shardSelector=shardRange(object.metadata.uid, '0x0000000000000000', '0x8000000000000000') || shardRange(object.metadata.uid, '0x8000000000000000', '0x10000000000000000')`
+
+- `shardSelector`: Introduces a new query parameter specifically for shard selection logic.
+- `shardRange(...)`: A CEL function that specifies the field to hash and the start
+  (inclusive) / end (exclusive) hex bounds (`hexStart <= x < hexEnd`) of hash values.
+
+### Client Library Support (`client-go`)
+
+For Beta, `k8s.io/apimachinery/pkg/sharding` and `k8s.io/client-go/tools/cache` will provide built-in support for sharded informers and reflectors:
+- **Shard Range Construction**: Helper utilities in `apimachinery/pkg/sharding` to construct `sharding.Selector` instances and format `ListOptions.ShardSelector` expressions for a given shard index and total shard count.
+- **Automatic Client-Side Fallback**: When configured with a `sharding.Selector`, `client-go` automatically attaches `ShardSelector` to outgoing `LIST` and `WATCH` requests. On `LIST`, it inspects `ListMeta.ShardInfo` and filters returned items client-side via `sharding.Selector.Matches` when `ShardInfo` is absent. On `WATCH`, because individual watch events do not carry `ListMeta.ShardInfo`, incoming object events are filtered client-side via `watch.Filter` using `sharding.Selector.Matches` (while passing `Bookmark` events through) before updating the local cache store.
 
 ### Server Design
 
@@ -409,8 +419,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/apimachinery/pkg/apis/meta/v1`: `2026-02-01` - `TBD` (Validation logic)
-- `k8s.io/apiserver/pkg/storage`: `2026-02-01` - `TBD` (Filtering logic)
+- `k8s.io/apimachinery/pkg/sharding`: FNV-1a hashing, field extraction, and range selector evaluation (`hash_test.go`, `accessor_test.go`, `selector_test.go`).
+- `k8s.io/apiserver/pkg/sharding`: `shardRange` CEL expression parsing and validation (`parser_test.go`).
+- `k8s.io/apiserver/pkg/storage`: `SelectionPredicate` shard matching, `ShardInfo` population, and pagination `continue` token binding (`selection_predicate_test.go`, `continue_test.go`).
+- `k8s.io/apiserver/pkg/storage/cacher` & `etcd3`: Watch cache list/watch filtering and etcd watcher filtering (`cacher_whitebox_test.go`, `watcher_test.go`).
 
 ##### Integration tests
 
@@ -436,7 +448,8 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- **Watch Sharding Test**: Ensure that sharded watches with different ranges function.
+- [`test/integration/apiserver/sharding_test.go`](https://github.com/kubernetes/kubernetes/blob/b8a17e1ce84/test/integration/apiserver/sharding_test.go): [TestGrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=TestSharded), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=TestSharded)
+  - `TestShardedList`, `TestShardedWatch`, `TestShardedListFeatureGateDisabled`, `TestShardedListComplete`, `TestShardedListByNamespace`, `TestShardedListAllResources`
 
 ##### e2e tests
 
@@ -455,7 +468,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- `test/e2e/apimachinery/sharding.go`: Verify multi-shard `LIST` (disjoint completeness, pagination, and `ListMeta.ShardInfo` echo) and `WATCH` event filtering (`ADDED`/`MODIFIED`/`DELETED`) by `object.metadata.uid` and `object.metadata.namespace`.
 
 ### Graduation Criteria
 
@@ -487,7 +500,7 @@ functionality is accessed.
 
 #### Alpha
 
-- Feature implemented behind `ShardableWatch` feature gate.
+- Feature implemented behind `ShardedListAndWatch` feature gate.
 - Basic unit and integration tests passing.
 
 #### Beta
@@ -495,6 +508,12 @@ functionality is accessed.
 - Benchmarks showing performance improvements for sharded clients.
 - Scalability tests verifying no regression in API server throughput.
 - Informer and reflector framework will be updated to support sharded watches.
+- Watch cache object matching is consolidated behind `SelectionPredicate.Matches` rather than
+  short-circuiting to `MatchesSharding` and `MatchesObjectAttributes`
+  ([kubernetes/kubernetes#137821](https://github.com/kubernetes/kubernetes/issues/137821)).
+- Code organization for CEL is settled, specifically whether CEL, or some subset of it, belongs
+  as a dependency of the apimachinery module
+  ([kubernetes/kubernetes#137649](https://github.com/kubernetes/kubernetes/issues/137649)).
 
 <!--
 #### GA
@@ -552,9 +571,16 @@ enhancement:
 -->
 - Clients must be updated to send the new parameters.
 - If a client sends sharding parameters to an old API server, the old server will ignore the unknown query parameters and send the full, un-sharded stream.
-- To allow clients to safely distinguish between a filtered stream and a full stream, the API Server will inject a new `Sharded: true` flag into the `ListMeta` of the initial `LIST` response (and the initial sync of a `WATCH`). 
-  - If a client requests a shard and observes `Sharded: true`, it can safely process all incoming events.
-  - If the flag is missing or false, the client knows the server ignored the parameter and must perform client-side filtering (or fail) to drop objects outside its shard range.
+- To allow clients to safely distinguish between a filtered stream and a full stream,
+  the API Server will return a new `ShardInfo` struct within the `ListMeta` of the
+  initial `LIST` response (and initial sync of a `WATCH`).
+  - The `ShardInfo` struct mirrors the applied selector back to the client via a `selector` string field.
+  - If a client requests a shard and observes a matching `ShardInfo.selector`, it can
+    safely construct partial lists, process incoming events, or merge responses
+    across multiple shards.
+  - If `ShardInfo` is absent, the client knows the server ignored the parameter
+    and can take appropriate action to avoid breaking mutual exclusion like falling back to
+    client-side sharding.
 - Clients can also deterministically check for server-side sharding support by querying the OpenAPI v3 discovery document for the presence of the sharding query parameters. 
 - To enable safe client-side fallback, the hash algorithm and range evaluation logic will be placed in a common library (`k8s.io/apimachinery`).
 
@@ -591,7 +617,7 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ShardableWatch`
+  - Feature gate name: `ShardedListAndWatch`
   - Components depending on the feature gate: `kube-apiserver`
 
 ###### Does enabling the feature change any default behavior?
@@ -610,6 +636,8 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+
+Yes, the feature can be disabled by setting the `ShardedListAndWatch` feature gate to `false` on `kube-apiserver` and restarting the component. When disabled, `kube-apiserver` ignores `shardSelector` parameters and omits `ShardInfo` from `ListMeta`, reverting to standard un-filtered list/watch behavior. Sharding-aware clients inspect `ListMeta.ShardInfo` and fall back to client-side filtering when absent, ensuring no disruption or violation of mutual exclusion for running workloads.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -652,6 +680,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+
+During a rolling upgrade or rollback in a high-availability control plane, some `kube-apiserver` instances may have `ShardedListAndWatch` enabled while others have it disabled. A client connecting to an un-upgraded or rolled-back API server will receive the full, un-sharded stream without `ListMeta.ShardInfo`.
+
+In Beta, `client-go` informers and reflectors configured with a shard selector handle this fallback automatically: on `LIST`, they inspect `ListMeta.ShardInfo` and apply client-side filtering via `k8s.io/apimachinery/pkg/sharding` when `ShardInfo` is absent, and on `WATCH`, they filter incoming object events client-side via `watch.Filter` (while passing `Bookmark` events through), ensuring out-of-shard objects are never added to the local store even if a watch reconnects to an un-upgraded API server. Workloads that do not specify `shardSelector` are completely unaffected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -698,13 +730,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- Clients can inspect `ListMeta.ShardInfo.Selector` returned in `LIST` responses (and initial `WATCH` sync/bookmark events), which echoes the applied `shardSelector` expression when server-side sharding is active.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -723,12 +749,15 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-Latency for sharded watches should be comparable to standard watches.
+- p99 `apiserver_request_duration_seconds` for `LIST` and `WATCH` requests with `shardSelector` is within 5% of (or lower than) equivalent requests without `shardSelector`.
+- p99 watch event dispatch latency (`apiserver_watch_events_dispatch_duration_seconds{stage="total"}`) for unsharded watchers on the same resource remains within 5% of baseline when concurrent sharded watches are active.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
   - Metric name: `apiserver_watch_shards_total`
+  - Components exposing the metric: `kube-apiserver`
+  - Metric name: `apiserver_watch_filtered_events_total`
   - Components exposing the metric: `kube-apiserver`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -832,6 +861,10 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Check `apiserver_request_duration_seconds` for `LIST` and `WATCH` requests to determine if latency degradation is isolated to requests specifying `shardSelector`.
+2. Inspect `apiserver_watch_shards_total` and `apiserver_watch_filtered_events_total` by `group` and `resource` to identify high-volume or uneven sharded watch streams.
+3. If the feature is causing degradation, disable the `ShardedListAndWatch` feature gate on `kube-apiserver` to immediately revert to standard un-filtered watch dispatch.
 
 ## Implementation History
 

@@ -1,0 +1,53 @@
+title: DRA Node Allocatable Resources
+kep-number: 5517
+authors:
+  - "@pravk03"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+  - sig-autoscaling
+
+creation-date: "2025-12-22"
+reviewers:
+  - '@johnbelamaric'
+  - '@kad'
+  - '@ffromani'
+  - '@catblade'
+  - '@dom4ha'
+  - '@macsko'
+  - '@dchen1107'
+  - '@sergeykanzhelev'
+  - '@tallclair'
+  - '@jackfrancis'
+  - '@towca'
+approvers:
+  - '@johnbelamaric'
+  - '@kad'
+  - '@dchen1107'
+  - '@dom4ha'
+  - '@macsko'
+  - '@tallclair'
+  - '@sergeykanzhelev'
+status: implementable
+stage: beta
+latest-milestone: "v1.38"
+milestone:
+  alpha: "v1.36"
+  beta: "v1.38"
+  stable: "v1.41"
+
+feature-gates:
+  - name: DRANodeAllocatableResources
+    components:
+      - kube-scheduler
+      - kube-apiserver
+      - kubelet
+      - kube-controller-manager
+disable-supported: true
+metrics:
+  - scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}
+  - scheduler_plugin_execution_duration_seconds{plugin="NodeResourcesFit"}
+  - scheduler_unschedulable_pods{plugin="DynamicResources"}
+  - scheduler_unschedulable_pods{plugin="NodeResourcesFit"}
+  - scheduler_pending_pods
+  - kubelet_admission_rejections_total

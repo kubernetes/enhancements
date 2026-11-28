@@ -1,0 +1,42 @@
+title: Node Lifecycle Conditions
+kep-number: 5683
+authors:
+  - "@rthallisey"
+owning-sig: sig-node
+participating-sigs:
+  - sig-apps
+  - sig-cli
+status: implementable
+creation-date: 2026-06-04
+reviewers:
+  - johnbelamaric
+  - mrunalp
+  - soltysh
+  - haircommander
+  - mortent
+approvers:
+  - johnbelamaric
+  - mrunalp
+
+see-also:
+  - "/keps/sig-node/5394-psi-node-conditions"
+  - "https://github.com/kubernetes/enhancements/issues/6430"
+  - "https://github.com/kubernetes/enhancements/issues/6249"
+replaces: []
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: NodeLifecycleConditions
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kubectl
+disable-supported: true
+
+metrics: []

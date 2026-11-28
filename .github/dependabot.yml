@@ -4,6 +4,8 @@ updates:
   directory: "/"
   schedule:
     interval: daily
+    cooldown:
+      default-days: 7
   labels:
     - "area/dependency"
     - "release-note-none"
@@ -13,6 +15,8 @@ updates:
   directory: "/"
   schedule:
       interval: "daily"
+  cooldown:
+    default-days: 7
   labels:
     - "area/dependency"
     - "release-note-none"

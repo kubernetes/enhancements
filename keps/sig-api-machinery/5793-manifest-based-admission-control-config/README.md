@@ -14,6 +14,7 @@
     - [Story 3: Bootstrapping Cluster Security](#story-3-bootstrapping-cluster-security)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Unifying Excluded Virtual Resources for Webhook Admission](#unifying-excluded-virtual-resources-for-webhook-admission)
 - [Design Details](#design-details)
   - [New AdmissionConfiguration Schema](#new-admissionconfiguration-schema)
   - [Manifest File Format](#manifest-file-format)
@@ -21,7 +22,10 @@
   - [File Watching and Dynamic Reloading](#file-watching-and-dynamic-reloading)
   - [Decoding, Defaulting, and Validation](#decoding-defaulting-and-validation)
   - [Metrics and Audit Annotations](#metrics-and-audit-annotations)
+  - [Mutating Webhook Merge Order](#mutating-webhook-merge-order)
   - [Implementation](#implementation)
+  - [Webhook Virtual Resource Exclusion Implementation](#webhook-virtual-resource-exclusion-implementation)
+    - [Deprecation Warnings for Affected Webhook Configurations](#deprecation-warnings-for-affected-webhook-configurations)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -46,6 +50,7 @@
   - [Deny policies in RBAC](#deny-policies-in-rbac)
   - [Static admission plugins](#static-admission-plugins)
   - [External configuration management](#external-configuration-management)
+  - [Per-file or per-webhook ordering](#per-file-or-per-webhook-ordering)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -87,6 +92,12 @@ and platforms to implement admission controls that:
 This is achieved by augmenting the `AdmissionConfiguration` schema to include paths to manifest files
 containing webhook and policy configurations that are loaded at API server startup and watched for
 changes at runtime.
+
+For beta, this KEP also proposes excluding the same set of authentication and authorization
+virtual resources from `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` that
+`ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy` already exclude. See
+[Webhook Virtual Resource Exclusion](#unifying-excluded-virtual-resources-for-webhook-admission)
+for details.
 
 ## Motivation
 
@@ -139,6 +150,15 @@ controls that operates independently of the Kubernetes API.
    that cannot be used by REST-based objects. Existing REST-based configurations that need to
    be converted to manifest-based configurations must have the `.static.k8s.io` suffix added
    to their names.
+
+7. Consistent virtual resource exclusion across admission plugins:
+   `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` exclude the same authentication
+   and authorization virtual resources that `ValidatingAdmissionPolicy` and
+   `MutatingAdmissionPolicy` already exclude via `exclusion.Excluded()`. This closes the
+   inconsistency where a webhook intercepting these non-persisted resources can wedge a cluster
+   out of its own auth path. See
+   [kubernetes/kubernetes#122205](https://github.com/kubernetes/kubernetes/issues/122205) and
+   [kubernetes/kubernetes#123543](https://github.com/kubernetes/kubernetes/pull/123543).
 
 ### Non-Goals
 
@@ -290,6 +310,37 @@ for all relevant requests from API server startup, eliminating the bootstrap gap
 | Configuration drift | In HA setups, different API servers might have different manifest configurations. | This is documented as expected behavior (similar to other file-based configs). Operators must use external tooling to ensure consistency. |
 | Versioning | Manifest format must match API server version. | Standard API machinery decoding is used, supporting version conversion where applicable. |
 | Debugging difficulty | Manifest-based configurations are not visible via the API. | Dedicated metrics expose loaded configuration counts and health. Audit annotations indicate manifest-based sources. API server logs show loaded configurations at startup. |
+| Webhook behavior change from virtual resource exclusion | Clusters relying on a `ValidatingWebhookConfiguration` or `MutatingWebhookConfiguration` to intercept the excluded auth and authz virtual resources will stop receiving those requests when `ExcludeAdmissionWebhookVirtualResources` is enabled. | The feature gate is opt-out, so operators can disable it to restore prior behavior. Release notes and upgrade docs call this out so operators can audit existing webhook rules before upgrade. |
+
+### Unifying Excluded Virtual Resources for Webhook Admission
+
+[kubernetes/kubernetes#123543](https://github.com/kubernetes/kubernetes/pull/123543) introduced
+a fixed list of non-persisted authentication and authorization resources that
+`ValidatingAdmissionPolicy` skips to address the brickable resources problem
+([kubernetes/kubernetes#122205](https://github.com/kubernetes/kubernetes/issues/122205)): an
+admission control intercepting these resources can wedge a cluster out of its own auth path.
+The list lives in
+[`pkg/kubeapiserver/admission/exclusion`](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubeapiserver/admission/exclusion/resources.go)
+and is plumbed into admission plugins via the `WantsExcludedAdmissionResources` initializer.
+`MutatingAdmissionPolicy` inherits this exclusion because it shares the same `generic.Plugin`
+machinery.
+
+`ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` do not participate in this
+exclusion today. For beta, they will implement `WantsExcludedAdmissionResources` and skip
+dispatch for the same set, gated by a new `ExcludeAdmissionWebhookVirtualResources` feature
+gate that defaults to enabled in 1.37. The gate is opt-out as a short-term escape hatch for
+clusters that need the prior behavior; it is not intended to remain disabled long-term and
+will be locked at GA per the graduation criteria below.
+
+Excluded resources (from `exclusion.Excluded()`, all API versions):
+
+| Group | Resources |
+|-------|-----------|
+| `authentication.k8s.io` | `selfsubjectreviews`, `tokenreviews` |
+| `authorization.k8s.io`  | `localsubjectaccessreviews`, `selfsubjectaccessreviews`, `selfsubjectrulesreviews`, `subjectaccessreviews` |
+
+Using the existing list rather than introducing a webhook-specific one keeps the four
+admission plugins in sync if the set ever changes.
 
 ## Design Details
 
@@ -314,6 +365,8 @@ plugins:
     kind: WebhookAdmissionConfiguration
     kubeConfigFile: "<path-to-kubeconfig>"
     staticManifestsDir: "/etc/kubernetes/admission/mutating/"
+    # Optional; MutatingAdmissionWebhook only. See "Mutating Webhook Merge Order".
+    staticOrder: StaticFirst
 - name: ValidatingAdmissionPolicy
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
@@ -333,6 +386,12 @@ Glob patterns are not supported. Relative paths are not supported.
 
 Related objects (such as a ValidatingAdmissionPolicy and its associated ValidatingAdmissionPolicyBinding)
 should be placed in the same file to ensure they are loaded and reloaded together atomically.
+
+The `staticOrder` field is accepted only on the `MutatingAdmissionWebhook` plugin
+configuration. Setting it to a non-default value on `ValidatingAdmissionWebhook` is a
+configuration error and fails API server startup, because validating webhooks are dispatched
+in parallel and their order is not relevant for evaluation. See
+[Mutating Webhook Merge Order](#mutating-webhook-merge-order).
 
 ### Manifest File Format
 
@@ -402,8 +461,12 @@ The API server watches the configured manifest files/directories for changes:
    cause startup failure.
 
 2. Runtime reloading: Changes to manifest files trigger a reload:
-   - File modifications are detected using filesystem watching (similar to other config file
-     reloading in kube-apiserver such as authentication, authorization, encryption configs)
+   - File modifications are detected using fsnotify with a polling fallback (default 1 minute
+     interval), similar to other config file reloading in kube-apiserver such as authentication,
+     authorization, and encryption configs. The polling fallback ensures changes are detected
+     even on filesystems where fsnotify is unreliable (e.g., mounted ConfigMaps).
+   - A content hash of all manifest files is computed on each check; if the hash is unchanged,
+     no reload occurs (short-circuit optimization)
    - New configurations are validated before being applied
    - If validation fails, the error is logged, metrics are updated, and the previous valid
      configuration is retained
@@ -436,7 +499,7 @@ the REST API applies. This includes:
 
 In addition to standard validation, manifest-based configurations undergo additional restrictions:
 
-- Webhooks: `clientConfig.url` and `caBundle` required; `clientConfig.service` not allowed
+- Webhooks: `clientConfig.url` required; `clientConfig.service` not allowed
 - Policies: `spec.paramKind` not allowed
 - Bindings: `spec.paramRef` not allowed; referenced policy must exist in manifest file set
 
@@ -449,8 +512,9 @@ admission metrics can be reused. The `name` label in existing metrics is suffici
 whether a policy was loaded from disk.
 
 New metrics for manifest loading health:
-- `apiserver_admission_manifest_config_automatic_reloads_total{plugin, status}` - reload counter
-- `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds{plugin, status}` - last reload timestamp
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{plugin, status, apiserver_id_hash}` - reload counter
+- `apiserver_manifest_admission_config_controller_automatic_reload_last_timestamp_seconds{plugin, status, apiserver_id_hash}` - last reload timestamp
+- `apiserver_manifest_admission_config_controller_last_config_info{plugin, apiserver_id_hash, hash}` - current configuration hash for drift detection
 
 Audit annotations:
 
@@ -458,16 +522,85 @@ Existing audit annotations (e.g., `mutation.webhook.admission.k8s.io/*`, `valida
 already include the object name. Since manifest-based objects are required to have names ending in
 `.static.k8s.io`, operators can identify manifest-based admission decisions by filtering on this suffix.
 
-Evaluation order: Manifest-based configurations are evaluated before REST-based configurations.
-This ensures that platform-level policies enforced via static config take precedence.
+Evaluation order: For validating webhooks and for CEL policies, manifest-based configurations
+are evaluated before REST-based configurations. For mutating webhooks, the relative order is
+configurable; see [Mutating Webhook Merge Order](#mutating-webhook-merge-order).
+
+### Mutating Webhook Merge Order
+
+Mutating admission webhooks are dispatched sequentially in order of the name of the
+`MutatingWebhookConfiguration` that contains them, and this ordering is documented and relied
+upon. Placing all manifest-based webhooks ahead of all REST-based webhooks therefore makes it
+impossible to migrate webhooks from REST-based to manifest-based without changing
+the relative order in which webhooks run in the cluster.
+
+To enable order-preserving migration, the `MutatingAdmissionWebhook` plugin configuration
+accepts a `staticOrder` enum alongside `staticManifestsDir`:
+
+| Value | Behavior |
+|-------|----------|
+| `StaticFirst` | Manifest-based webhooks run before all REST-based webhooks. Default; this is the behavior shipped in 1.36/1.37. |
+| `StaticLast` | Manifest-based webhooks run after all REST-based webhooks. |
+| `ByName` | Manifest-based and REST-based webhooks are interleaved and stably sorted together by containing configuration name, exactly as REST-based webhooks are sorted today. |
+
+The empty value is equivalent to `StaticFirst`, so existing configurations are unaffected.
+Ordering is applied where the manifest-based and REST-based sources are merged, so it is
+decided once for all manifest-based webhooks rather than per file or per webhook.
+
+This addresses three distinct operator intents:
+
+- Manifest-based webhooks get to intercept objects before any REST-based webhook:
+  `StaticFirst`.
+- Manifest-based webhooks have the final say after REST-based webhooks: `StaticLast`, combined
+  with `reinvocationPolicy: IfNeeded` on the manifest-based webhooks.
+- A webhook migrated from REST-based to manifest-based keeps its previous relative position:
+  `ByName`, naming the manifest-based configuration after the REST-based one it replaces with
+  the required `.static.k8s.io` suffix appended.
+
+`ByName` depends on the pre-existing practice of ordering mutating webhooks by configuration
+name. Ordering dependencies are not recommended, but are enabled and supported by existing
+REST-based behavior; this option preserves it for migration. `StaticFirst` remains the default
+precisely so that the ordering guarantee for platform-level policies is not silently weakened.
+
+Only mutating webhooks get this option:
+
+- Validating webhooks and `ValidatingAdmissionPolicy` are evaluated in parallel against the
+  same input, so ordering dependencies between them cannot exist.
+- `MutatingAdmissionPolicy` explicitly documents that no deterministic order exists between
+  multiple mutating admission policies, and requires a reinvocation policy to be specified, so
+  manifest-based policies staying first is consistent with its documented contract.
 
 ### Implementation
 
 1. Configuration types: Add `StaticManifestsDir string` to webhook and policy admission configs
 2. Manifest loader: New package handling file reading, validation, watching, and atomic reload
-3. Composite accessor: Merge manifest and API-based configurations; evaluate manifest-based first
+3. Composite accessor: Merge manifest and API-based configurations; manifest-based first,
+   except for mutating webhooks where the merge order is set by `staticOrder`
 4. Feature gate: `ManifestBasedAdmissionControlConfig`, defaulting to false for alpha
 5. Metrics: Add reload metrics for manifest loading health
+
+### Webhook Virtual Resource Exclusion Implementation
+
+`ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` will implement
+`WantsExcludedAdmissionResources` and consume the same `exclusion.Excluded()` list that
+`generic.Plugin` already injects into `ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy`.
+At admit time, when the `ExcludeAdmissionWebhookVirtualResources` feature gate is enabled, a
+request whose GroupResource is in the excluded set is not dispatched to webhooks (both static
+and REST-based). When the gate is disabled, dispatch behaves as it does today.
+
+This change is independent of the `staticManifestsDir` machinery and does not require operators
+to configure manifest-based admission. It is grouped with this KEP at beta because we want
+webhook and CEL admission to behave consistently before manifest-based admission graduates to
+beta, and it shares review surface and rollout messaging with the broader manifest-based
+admission work.
+
+#### Deprecation Warnings for Affected Webhook Configurations
+
+To give cluster admins a pre-upgrade signal, the admission registration validator emits a
+deprecation warning on `CREATE`/`UPDATE` of `ValidatingWebhookConfiguration` /
+`MutatingWebhookConfiguration` whose rule explicitly names an excluded virtual resource in
+`apiGroups`, `apiVersions`, and `resources` (wildcards are not flagged because intent is
+ambiguous). At startup, pre-existing affected configurations are logged by name.
 
 ### Test Plan
 
@@ -484,25 +617,57 @@ admission chain.
 
 ##### Unit tests
 
-Coverage areas:
-- Manifest file loading, parsing, and validation
-- Error handling for missing/unreadable/malformed files
-- Composite accessor merging manifest and API-based configurations
+Manifest-based admission (alpha, already in tree; permalinks pinned at
+[`e136f393`](https://github.com/kubernetes/kubernetes/tree/e136f39334a72b7d35069a97d373ccaa0211dcae)):
+
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/loader/loader_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/loader/loader_test.go) — `TestLoadManifests`, `TestValidatingLoadResult_GetWebhookAccessors`, `TestMutatingLoadResult_GetWebhookAccessors` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestLoadManifests))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/source/source_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/source/source_test.go) — `TestValidatingSource_*` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestValidatingSource))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/loader/loader_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/loader/loader_test.go) — `TestLoadPolicyManifests` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestLoadPolicyManifests))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/source/source_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/source/source_test.go) — `TestStaticPolicySource_*` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStaticPolicySource))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/manifest/validation_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/manifest/validation_test.go) — `TestValidateStaticManifestsDir`, `TestValidateManifestName`, `TestValidateWebhookClientConfig`, `TestValidateBindingReferences` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestValidateStaticManifestsDir))
+
+`ExcludeAdmissionWebhookVirtualResources` (added at beta; links will be added when the
+implementation PR lands):
+
+- `k8s.io/apiserver/pkg/admission/plugin/webhook/validating`: unit tests covering `WantsExcludedAdmissionResources` initializer wiring and dispatcher skip behavior with the gate enabled and disabled.
+- `k8s.io/apiserver/pkg/admission/plugin/webhook/mutating`: same coverage as validating.
+
+`staticOrder` (added in 1.38; links will be added when the implementation PR
+lands):
+
+- `k8s.io/apiserver/pkg/admission/plugin/webhook/generic`: composite source tests covering all three merge orders, the empty value defaulting to `StaticFirst`, and cache invalidation when either underlying source changes.
+- `k8s.io/apiserver/pkg/admission/plugin/webhook/config`: config decoding and validation tests, including rejection of a non-default value on the `ValidatingAdmissionWebhook` plugin and rejection of unrecognized enum values.
 
 ##### Integration tests
 
-Test scenarios:
-- Bootstrap enforcement: Manifest policy active immediately at startup
-- Hot reload: Adding/removing manifest files updates enforcement
-- Invalid config handling: Server continues with previous valid config on reload errors
-- Coexistence: Both manifest and API-based configurations invoked
-- Metrics: Existing metrics include manifest-based admission with `.static.k8s.io` names
+Manifest-based admission (alpha, already in tree; permalinks pinned at
+[`e136f393`](https://github.com/kubernetes/kubernetes/tree/e136f39334a72b7d35069a97d373ccaa0211dcae)):
+
+- [`test/integration/apiserver/admissionwebhook/static_manifest_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/test/integration/apiserver/admissionwebhook/static_manifest_test.go) — `TestStaticWebhookBlocksAPICreation`, `TestStaticWebhookComprehensive` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStaticWebhookComprehensive))
+- [`test/integration/apiserver/cel/static_policy_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/test/integration/apiserver/cel/static_policy_test.go) — `TestStaticPolicyBlocksAPICreation`, `TestStaticPolicyComprehensive` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStaticPolicyComprehensive))
+
+VAP/MAP exclusion parity (existing, used as the reference for the new webhook tests):
+
+- [`test/integration/apiserver/cel/excludedresources_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/test/integration/apiserver/cel/excludedresources_test.go) — `TestExcludedResources` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestExcludedResources))
+
+`ExcludeAdmissionWebhookVirtualResources` (added at beta; links will be added when the
+implementation PR lands):
+
+- `test/integration/apiserver/admissionwebhook/`: new test mirroring `excludedresources_test.go`. Covers (a) gate enabled — webhook is not dispatched for any GroupResource in `exclusion.Excluded()`; (b) gate disabled — webhook is dispatched as before; (c) parity with the VAP/MAP exclusion list.
+
+`staticOrder` (added in 1.38; links will be added when the implementation PR
+lands):
+
+- `test/integration/apiserver/admissionwebhook/`: new test asserting the observed mutation order of interleaved manifest-based and REST-based mutating webhooks for each of `StaticFirst`, `StaticLast`, and `ByName`, and that a manifest-based configuration named `<rest-name>.static.k8s.io` occupies the same relative position under `ByName` as the REST-based configuration it replaces.
 
 ##### e2e tests
 
-Not possible. e2e tests run against a cluster configured outside of the test, so we cannot
-modify API server startup flags or place files on the control plane host. This feature is
-best tested via integration tests.
+Not applicable for either feature. The manifest-based path requires API server startup flags
+and on-disk files on the control plane host, which e2e tests (running against a cluster
+configured outside the test) cannot manipulate. The webhook virtual-resource exclusion is
+gate-toggled API-server-internal behavior with no user-visible API surface; the existing
+VAP/MAP exclusion (PR [kubernetes/kubernetes#123543](https://github.com/kubernetes/kubernetes/pull/123543))
+established the same integration-only precedent.
 
 ### Graduation Criteria
 
@@ -520,8 +685,25 @@ best tested via integration tests.
 
 #### Beta
 
-- Feature gate defaults to enabled
+- `ManifestBasedAdmissionControlConfig` defaults to enabled
+- `ExcludeAdmissionWebhookVirtualResources` introduced and defaults to enabled in 1.37
+- `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` implement
+  `WantsExcludedAdmissionResources` and skip dispatch for the resources in
+  `exclusion.Excluded()` when the gate is enabled
+- Deprecation warning on `CREATE`/`UPDATE` of webhook configurations whose rules
+  explicitly name an excluded virtual resource, plus a startup log for pre-existing
+  affected configurations
+- Integration tests covering webhook dispatch behavior with the gate enabled and disabled, and
+  parity with the `ValidatingAdmissionPolicy` / `MutatingAdmissionPolicy` exclusion list
 - All known alpha issues resolved
+
+Added in 1.38, remaining in beta:
+
+- `staticOrder` accepted on the `MutatingAdmissionWebhook` plugin configuration,
+  supporting `StaticFirst` (default), `StaticLast`, and `ByName`
+- Non-default values rejected on the `ValidatingAdmissionWebhook` plugin configuration
+- Integration tests covering observed mutation order for all three values
+- Feedback from beta users on manifest-based admission addressed
 
 #### GA
 
@@ -529,6 +711,13 @@ best tested via integration tests.
 - Stable usage in production environments for at least two releases
 - No regressions in API server startup time
 - All feedback from beta users addressed
+- `ExcludeAdmissionWebhookVirtualResources` gate handling:
+  - Consistent with Kubernetes behavior deprecation policies, the gate will remain unlocked
+    for 3 releases / 12 months before being locked to enabled at GA.
+  - If feedback prior to GA indicates webhook interception of `*SubjectAccessReview`
+    requests is being used and is still needed by the ecosystem, api-machinery will
+    consider adding admission configuration to allow cluster admins to opt back into
+    webhook interception of `*SubjectAccessReview` requests.
 
 ### Upgrade / Downgrade Strategy
 
@@ -536,6 +725,11 @@ Upgrade:
 - Enabling the feature and providing manifest configuration is opt-in
 - Existing clusters without manifest configuration see no change
 - Clusters can gradually adopt by adding manifest files without disruption
+- On upgrade to 1.37, `ExcludeAdmissionWebhookVirtualResources` is enabled by default. Existing
+  `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` rules that intercept any
+  resource in `exclusion.Excluded()` will stop receiving admission requests for those
+  resources. Operators should audit existing webhook rules before upgrade. Setting the gate to
+  `false` preserves the prior behavior.
 
 Downgrade:
 - Before downgrading to a version without this feature, operators must:
@@ -543,6 +737,10 @@ Downgrade:
   2. If relying on manifest-based policies, recreate them as API objects (where possible)
 - Downgrading without removing configuration will cause API server startup failure (unknown
   configuration field)
+- `staticOrder` is unknown to 1.37 and earlier. Operators must remove it from the
+  `MutatingAdmissionWebhook` plugin configuration before downgrading to those releases, or the
+  API server fails to start. Clusters that relied on `StaticLast` or `ByName` revert to
+  `StaticFirst` ordering on the downgraded release.
 
 ### Version Skew Strategy
 
@@ -554,6 +752,11 @@ In HA setups with multiple API servers:
 - All API servers should be upgraded together (standard practice)
 - During rolling upgrades, some API servers may have the feature while others don't
 - Manifest files should only be deployed after all API servers support the feature
+- `staticOrder` should only be set once all API servers are at 1.38 or later.
+  A 1.37 API server rejects the field at startup, so a mixed-version control plane configured
+  with it will have some instances failing to start; if the field is rolled out only to
+  upgraded instances, mutating webhooks run in a different order depending on which API server
+  serves the request.
 
 ## Production Readiness Review Questionnaire
 
@@ -564,6 +767,8 @@ In HA setups with multiple API servers:
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `ManifestBasedAdmissionControlConfig`
   - Components depending on the feature gate: `kube-apiserver`
+  - Feature gate name: `ExcludeAdmissionWebhookVirtualResources`
+  - Components depending on the feature gate: `kube-apiserver`
 - [x] Other
   - Mechanism: `--admission-control-config-file` pointing to an `AdmissionConfiguration` with
     `staticManifestsDir` configured
@@ -572,14 +777,26 @@ In HA setups with multiple API servers:
 
 ###### Does enabling the feature change any default behavior?
 
-No. Enabling the feature gate alone does not change behavior. Behavior changes only when manifest
-files are explicitly configured in `AdmissionConfiguration`.
+`ManifestBasedAdmissionControlConfig`: No. Behavior changes only when manifest files are
+configured in `AdmissionConfiguration`. `staticOrder` defaults to `StaticFirst`,
+which is the ordering already in effect in 1.36 and 1.37, so upgrading without setting the
+field changes nothing.
+
+`ExcludeAdmissionWebhookVirtualResources`: Yes. When enabled (the default in 1.37),
+`ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` no longer dispatch admission for
+the resources in `exclusion.Excluded()`, matching the behavior already in place for
+`ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy`. Clusters that need the prior
+behavior can set the gate to `false`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disable the `ManifestBasedAdmissionControlConfig` feature gate or remove the
+`ManifestBasedAdmissionControlConfig`: Yes. Disable the feature gate or remove the
 `staticManifestsDir` entries from `AdmissionConfiguration` and restart API server.
-Manifest-based admission controls will no longer be enforced.
+Manifest-based admission controls will no longer be enforced. No state is persisted.
+
+`ExcludeAdmissionWebhookVirtualResources`: Yes. Set the gate to `false` and restart API
+server. `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` will resume dispatching
+admission for resources in `exclusion.Excluded()`. No state is persisted.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -600,6 +817,12 @@ Rollout failures:
 - Misconfigured webhooks (unreachable URLs) will reject requests if `failurePolicy: Fail`
 - In HA setups, inconsistent manifest files across API servers cause inconsistent behavior
 
+Rollback failures:
+- Downgrading to a release that predates `ExcludeAdmissionWebhookVirtualResources` (i.e.,
+  pre-1.37) with the gate still listed in `--feature-gates` will fail API server startup
+  with an "unrecognized feature gate" error. Operators must remove the gate from
+  `--feature-gates` before rolling back to such a release.
+
 Impact on running workloads:
 - Already running workloads are not affected (admission only applies to API requests)
 - New requests may be rejected if policies are misconfigured
@@ -611,10 +834,14 @@ Mitigation:
 
 ###### What specific metrics should inform a rollback?
 
-- `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` increasing
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` increasing
 - `apiserver_admission_webhook_rejection_count{name=~".*\\.static\\.k8s\\.io"}` unexpectedly high
 - API server crash loops (check container restart count)
 - Increased API request latency (webhook timeouts)
+- For `ExcludeAdmissionWebhookVirtualResources`: any deprecation warning on webhook
+  configuration writes (or startup log line) names a config that will lose traffic after
+  upgrade. No runtime counter is exposed because the signal is statically derivable from
+  configuration.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -622,21 +849,32 @@ Will be tested during alpha/beta, including upgrade→downgrade→upgrade path.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No.
+Yes. As of 1.37, webhook admission's ability to intercept resources in
+`exclusion.Excluded()` (`SubjectAccessReview`, `SelfSubjectAccessReview`,
+`LocalSubjectAccessReview`, `SelfSubjectRulesReview`, `SelfSubjectReview`, `TokenReview`)
+is deprecated. The `ExcludeAdmissionWebhookVirtualResources` gate is opt-out for 3 releases
+/ 12 months (consistent with the Kubernetes deprecation policy) before being locked to
+enabled at GA, after which webhook admission can no longer be used to intercept these
+virtual resources. This brings webhook admission into parity with `ValidatingAdmissionPolicy`
+and `MutatingAdmissionPolicy`, which have always excluded these resources.
+
+A deprecation warning is emitted on `CREATE`/`UPDATE` of webhook configurations whose
+rules explicitly name an excluded virtual resource, and pre-existing affected
+configurations are logged at startup.
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- Metric: `apiserver_admission_manifest_config_automatic_reloads_total > 0`
+- Metric: `apiserver_manifest_admission_config_controller_automatic_reloads_total > 0`
 - Check `AdmissionConfiguration` for `staticManifestsDir` entries
 - Check API server logs for manifest loading messages at startup
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Metrics
-  - `apiserver_admission_manifest_config_automatic_reloads_total{status="success"}` shows successful reloads
-  - `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds` shows recent timestamp
+  - `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="success"}` shows successful reloads
+  - `apiserver_manifest_admission_config_controller_automatic_reload_last_timestamp_seconds` shows recent timestamp
   - Existing admission metrics show activity for names ending in `.static.k8s.io`
 - [x] API server logs
   - Log message at startup: "Loaded N manifest-based webhook configurations"
@@ -652,14 +890,13 @@ No.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- `apiserver_admission_manifest_config_automatic_reloads_total{status="success"}` - rate of successful reloads
-- `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` - rate of failed reloads (should be 0)
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="success"}` - rate of successful reloads
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` - rate of failed reloads (should be 0)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 Potentially useful future additions (deferred to avoid cardinality issues):
 - Per-file load status
-- Configuration hash for drift detection
 
 ### Dependencies
 
@@ -702,8 +939,13 @@ Minimal increase:
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-Unlikely with reasonable configurations. Uses inotify watchers (one per directory) and shares
-HTTP client pool with API-based webhooks.
+Unlikely with reasonable configurations. Uses [fsnotify](https://github.com/fsnotify/fsnotify)
+watchers (one per directory) with a polling fallback, and shares HTTP client pool with API-based
+webhooks. On Linux, fsnotify is backed by [inotify](https://man7.org/linux/man-pages/man7/inotify.7.html),
+so each watched directory consumes an inotify watch. Operators managing many directories should be
+aware of system inotify limits (`fs.inotify.max_user_watches`). See
+[fsnotify platform-specific notes](https://github.com/fsnotify/fsnotify#platform-specific-notes)
+for details on other platforms.
 
 ### Troubleshooting
 
@@ -720,13 +962,15 @@ HTTP client pool with API-based webhooks.
 | Invalid manifest at startup | API server fails to start | Fix manifest file; Restart | API server logs show validation errors |
 | Invalid manifest on reload  | Metrics and logs | Fix manifest file; Wait for reload or restart | API server logs show validation errors |
 | Webhook endpoint unreachable | `apiserver_admission_webhook_fail_open_count` increases | Fix webhook endpoint; or change `failurePolicy` | Check webhook URL connectivity |
-| File permission errors on startup | `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` | Fix file permissions; Restart | API server logs show permission errors |
-| File permission errors on reload | `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` | Fix file permissions; Wait for reload or restart | API server logs show permission errors |
+| File permission errors on startup | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Restart | API server logs show permission errors |
+| File permission errors on reload | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Wait for reload or restart | API server logs show permission errors |
 | Configuration drift across HA | Inconsistent admission decisions | Use configuration management | Compare manifest files across API servers |
+| Unexpected mutation results after changing `staticOrder` | Objects admitted with unexpected field values; mutating webhooks observe a different object than before | Revert to `StaticFirst`; if the intent was to give manifest-based webhooks the final say, set `reinvocationPolicy: IfNeeded` on them | `mutation.webhook.admission.k8s.io/*` audit annotations show the order webhooks were invoked in and the patches each applied |
+| Webhook silently stops receiving `*SubjectAccessReview` / `TokenReview` / `SelfSubjectReview` after 1.37 upgrade | Pre-upgrade deprecation warning on webhook config writes (and startup log) names affected configurations; webhook reports no such admission requests after upgrade | Set `ExcludeAdmissionWebhookVirtualResources=false` as a temporary escape hatch; remove webhook rules for those GroupResources as the long-term fix before the gate is locked at GA | Cross-reference webhook configuration `rules` against `pkg/kubeapiserver/admission/exclusion/resources.go`; webhook side has no observed admission requests for those resources |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` for reload failures
+1. Check `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` for reload failures
 2. Check API server logs for manifest-related errors
 3. Verify webhook endpoints are reachable and responding quickly
 4. Compare manifest configurations across API server instances
@@ -737,6 +981,15 @@ HTTP client pool with API-based webhooks.
 
 - 2020-04-21: Original KEP-1872 introduced for manifest-based admission webhooks
 - 2026-01-15: KEP-5793 created, expanding scope to include CEL-based policies (VAP/MAP)
+- 2026-03-12: Alpha implementation merged ([kubernetes/kubernetes#137346](https://github.com/kubernetes/kubernetes/pull/137346))
+- 2026-05-14: Beta KEP update to exclude the same auth and authz virtual resources from
+  `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` that
+  `ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy` already exclude, behind the
+  `ExcludeAdmissionWebhookVirtualResources` opt-out feature gate, targeting v1.37
+- 2026-06-25: Beta implementation merged
+  ([kubernetes/kubernetes#140019](https://github.com/kubernetes/kubernetes/pull/140019)),
+  enabling `ManifestBasedAdmissionControlConfig` by default and adding
+  `ExcludeAdmissionWebhookVirtualResources` in v1.37
 
 ## Drawbacks
 
@@ -779,6 +1032,18 @@ Using external tools (Helm, Kustomize, GitOps) to ensure webhook configurations 
 - Configurations can still be deleted via API
 - Relies on eventual consistency
 - Doesn't provide hard protection guarantees
+
+### Per-file or per-webhook ordering
+
+Rather than a single merge order for the whole `MutatingAdmissionWebhook` plugin, the ordering
+could be expressed per manifest file or per manifest-based webhook (for example, an explicit
+priority field). This was considered and rejected:
+- The three operator intents identified so far (intercepting first, final say,
+  order-preserving migration) are all satisfiable with a single plugin-level setting.
+- Per-file and per-webhook ordering introduces a second, manifest-only ordering mechanism that
+  has to be reconciled with the existing sort-by-configuration-name behavior.
+- The plugin-level setting is applied once where the manifest-based and REST-based sources are
+  merged, which keeps the implementation and its failure modes small.
 
 ## Infrastructure Needed (Optional)
 

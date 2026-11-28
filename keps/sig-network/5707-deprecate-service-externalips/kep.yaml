@@ -3,7 +3,7 @@ kep-number: 5707
 authors:
   - "@adrianmoisey"
 owning-sig: sig-network
-participating-sigs: []
+participating-sigs: [committee-security-response]
 status: implementable
 creation-date: 2026-02-02
 reviewers:

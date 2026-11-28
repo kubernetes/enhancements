@@ -2,4 +2,6 @@ kep-number: 2837
 alpha:
   approver: "@jpbetz"
 beta: 
-  approver: "@soltysh"  
+  approver: "@soltysh"
+stable:
+  approver: "@jpbetz"

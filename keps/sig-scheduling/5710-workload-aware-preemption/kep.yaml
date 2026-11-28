@@ -2,6 +2,8 @@ title: Workload-aware preemption
 kep-number: 5710
 authors:
   - "@wojtek-t"
+  - "@argh4k"
+  - "@dom4ha"
 owning-sig: sig-scheduling
 participating-sigs:
 status: implementable
@@ -9,24 +11,27 @@ creation-date: 2025-11-28
 reviewers:
   - "@macsko"
 approvers:
-  - "@dom4ha"
+  - "@macsko"
   - "@sanposhiho"
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
-  - "/keps/sig-scheduling/5832-decouple-podgroup-from-workload-api"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+  - "/keps/sig-scheduling/6012-composite-podgroup-api"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
 # and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.36"
+latest-milestone: "v1.38"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
+# Note: GenericWorkload graduates to stable in v1.39 (alpha: v1.36, beta: v1.37, stable: v1.39).
+# PodGroupPreemptionPolicy lagged one (alpha: v1.37) and is merged into GenericWorkload in v1.38.
 milestone:
   alpha: "v1.36"
   beta: "v1.37"
@@ -35,11 +40,18 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: WorkloadAwarePreemption
+  - name: GenericWorkload
     components:
       - kube-apiserver
       - kube-scheduler
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - scheduler_workload_preemption_attempts_total
+  - scheduler_workload_preemption_victims
+  - scheduler_preemption_workload_disruptions
+  - scheduler_preemption_evaluation_duration_seconds
+  - scheduler_preemption_execution_duration_seconds
+  - scheduler_preemption_pdb_violations_total

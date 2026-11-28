@@ -603,7 +603,7 @@ N/A
 - Implementation merged ([kubernetes/kubernetes#128240](https://github.com/kubernetes/kubernetes/pull/128240)): 2024-11-08
 - Released as an alpha feature behind a feature-gate: 2024-12-11 (Kubernetes v1.32)
 - Released as a beta feature with the feature-gate enabled by default: 2025-05-15 (Kubernetes v1.33)
-- Released as a stable feature: 2025-12-17 (Kubernetes v1.35)
+- Released as a stable feature: 2026-08-26 (Kubernetes v1.37)
 
 ## Drawbacks
 

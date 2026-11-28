@@ -1,0 +1,8 @@
+title: Missing Reviewer Fixture
+kep-number: 2
+owning-sig: sig-node
+status: implementable
+reviewers:
+  - "@someoneelse" # sig-node-assigned-reviewer
+approvers:
+  - "@tallclair" # sig-node-assigned-approver

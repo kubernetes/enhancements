@@ -139,8 +139,8 @@ For example, unlike standard YAML output,
 this dialect is not whitespace-sensitive,
 which makes it vastly easier to patch correctly in things like Helm charts.
 
-This KEP further proposes to make KYAML the standard format
-for all project-owned documentation and examples.
+This KEP further proposes to add KYAML as an additional, co-existing output
+alongside the existing YAML/JSON in project-owned documentation and examples.
 
 ## Motivation
 
@@ -185,9 +185,9 @@ The most frustrating part of YAML is that it doesn’t have to be this bad.
 YAML is a very broad specification.
 Inside that specification is a reasonable grammar screaming to be let out.
 
-If we change our tooling and examples to use a less error-prone dialect of YAML,
-we can encourage the ecosystem to avoid some of the YAML pitfalls
-and reduce common mistakes and frustration.
+If we teach our tooling this less error-prone dialect of YAML and surface it
+alongside our existing examples, we can encourage the ecosystem to avoid some
+of the YAML pitfalls and reduce common mistakes and frustration.
 
 ### Goals
 
@@ -195,7 +195,8 @@ and reduce common mistakes and frustration.
 2. Provide libraries and tooling for encoding and converting to this formatting, with
    stable (idempotent) conversion.
 3. Provide a KYAML output format for kubectl.
-4. Update examples and documentation throughout the project.
+4. Expand examples and documentation throughout the project to also show KYAML
+   alongside the existing output.
 5. Address common YAML pitfalls through an opinionated formatting approach.
 6. Document the design and reasons for KYAML and the 100% compatibility with tooling expecting arbitrary YAML.
 
@@ -251,16 +252,8 @@ To make this change, we will:
 1. Create new code (see details below) which serializes any object into KYAML.
 2. Introduce a kubectl output format, `-o=kyaml`, which uses this new package.
 3. Create tooling which reformats YAML or JSON as KYAML (see details below).
-4. Work with SIG Docs to update examples to this format, both example command-lines and examples of API objects.
-5. Look for other examples across kubernetes-affiliated git repositories, and offer PRs to convert to KYAML.
-6. Make a lot of noise about it, and try to get more people to use it
-
-The rationale for changing everything everywhere is simple.
-Many users start with examples,
-which they copy and modify.
-By changing the examples we seed the change in the ecosystem.
-One success metric might be
-that KYAML becomes the preferred format in the most common helm charts.
+4. Work with SIG Docs to expand output format, to also support displaying KYAML.
+5. Make a lot of noise about it, and try to get more people to use it.
 
 ### Notes/Constraints/Caveats
 
@@ -349,11 +342,11 @@ component which uses `k8s.io/cli-runtime/pkg/printers` and
 k/k has a CI verifier (hack/verify-yamlfmt.sh) which looks for YAML files and
 ensures they are formatted "correctly". The only meaning of "correct" is "block
 style", and it corrupts KYAML input today (aside: it also does not handle
-multi-documents).  If we intend to convert examples, we need to fix this.
+multi-documents).  If we intend to add KYAML examples, we need to fix this.
 
-We propose to add flags to it which specify to use "conventional" YAML or KYAML
-output, and set the default to KYAML (or to change the parent script to always
-specify KYAML).
+We propose to add flags to it which select "conventional" YAML or KYAML
+formatting, so each file is verified against its intended style. The default
+remains "conventional" YAML; KYAML files opt in.
 
 This tooling will preserve comments as best it can. Unfortunately, go-yaml (our
 YAML library) [does not always handle comments properly](https://github.com/yaml/go-yaml/issues/8).
@@ -1230,7 +1223,7 @@ The new env-var feature gate is removed, the "kyaml" output option is always
 available.
 
 - A proper specification is published
-- The majority of examples in the kubernetes GitHub orgs are converted to KYAML
+- The majority of examples in the kubernetes GitHub orgs offer a co-existing KYAML output
 - No new bug reports
 
 This KEP does not propose to add conformance tests.

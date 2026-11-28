@@ -16,11 +16,14 @@ reviewers:
   - "@mrunalp"
   - "@adisky"
   - "@liggitt"
+  - "@haircommander" # sig-node-assigned-reviewer
+  - "@mikebrow" # sig-node-assigned-reviewer
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
+  - "@samuelkarp" # sig-node-assigned-approver
 stage: beta
-latest-milestone: "v1.35"
+latest-milestone: "v1.37"
 milestone:
   alpha: "v1.33"
   beta: "v1.35"

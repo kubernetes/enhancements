@@ -1,0 +1,22 @@
+title: "DRA: Standard numaNode Device Attribute"
+kep-number: 6072
+authors:
+  - "@johnahull"
+owning-sig: sig-node
+participating-sigs:
+  - sig-scheduling
+status: implementable
+creation-date: 2026-05-12
+reviewers:
+  - "@ffromani"
+approvers:
+  - "@mrunalp"
+see-also:
+  - "/keps/sig-scheduling/5491-dra-list-types-for-attributes"
+stage: stable
+latest-milestone: "v1.37"
+milestone:
+  stable: "v1.37"
+feature-gates: []
+disable-supported: false
+metrics: []

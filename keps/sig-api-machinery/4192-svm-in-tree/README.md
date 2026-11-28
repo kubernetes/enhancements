@@ -28,6 +28,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -393,13 +394,18 @@ total:                                                                          
 
 #### Beta
 
-- Feature is enabled by default.
 - All of the above documented tests are complete.
 - Using Garbage Collection Cache means using RV as an integer to validate the freshness of the cache. Approval from SigArch is required on this RV semantics.
 - Unexpected event handling(i.e. interrupted migrations)
 - Usage of [RealFIFO](https://github.com/kubernetes/kubernetes/pull/129568) and gating on feature enablement
 - Ensuring that migration only runs for API objects that support Create/Update in its discovery document
 - Added support for automatically triggering an update on CRD storage version status field after migration is completed.
+
+#### Stable
+
+- Feature is enabled by default.
+- E2E testing of all associated APIs
+- GA of [RealFIFO](https://github.com/kubernetes/kubernetes/pull/136601)
 
 ### Upgrade / Downgrade Strategy
 The feature is enabled using the feature gate `StorageVersionMigrator`. During an upgrade, this gate must be set to true. During a downgrade, this gate must be set to false, and any remaining _StorageVersionMigration_ resources should be manually removed.

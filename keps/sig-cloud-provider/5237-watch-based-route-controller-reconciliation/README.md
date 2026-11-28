@@ -19,6 +19,7 @@
     - [Periodic reconcile](#periodic-reconcile)
     - [Workqueue singleton](#workqueue-singleton)
     - [Node update filters](#node-update-filters)
+    - [Metrics](#metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -145,8 +146,6 @@ This is mitigated by:
 
 We use a similar concept as already implemented in the node and service controller. Through node informers we register event handlers for the add, delete and update node events, where updates are filtered by certain criteria. To introduce the feature we establish a new feature gate called `CloudControllerManagerWatchBasedRoutesReconciliation`.
 
-Additionally, we introduce a new non-gated metric `route_controller_route_sync_total`, which tracks the number of route reconciliations. This metric can be used for A/B testing to evaluate the impact of watch based route reconciliation.
-
 #### Full reconcile
 
 The current route controller always does a “full reconcile”, looking at all routes inside the configured `ClusterCIDR` and all nodes and then taking action to create/update/delete any routes to match the expectation.
@@ -169,6 +168,16 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 1. `Node.Status.Addresses` maps to the `TargetNodeAddresses` field in the `Route` struct. It determines where packets for a given IP range should be sent. Changes to this field must trigger a reconcile.
 2. `Node.Spec.PodCIDRs` contains the IP ranges assigned to the node. These CIDRs are used as the destination in the created routes. Changes to this field must trigger a reconcile.
+
+#### Metrics
+
+A new non-gated metric `route_controller_route_sync_total` counts route reconciliations with the cloud provider. It has two labels:
+
+- `trigger`: `node_change` if the reconcile was caused by a relevant Node update, `periodic` if it was caused by the periodic resync (or by the sync period timer when the feature gate is disabled).
+- `outcome`: `error` if the reconcile failed, `changed` if at least one route was created or deleted, otherwise `noop`.
+
+The total rate is useful for A/B testing the impact of watch-based route reconciliation.
+With the feature gate enabled, `trigger="periodic",outcome="changed"` counts route corrections made during periodic reconciles. This signals whether our node update filters are accurate or need revision.
 
 ### Test Plan
 
@@ -197,7 +206,8 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 #### Beta
 
-- Multiple infrastructure provider have enabled the feature flag, and we are confident that the field selectors are correct.
+- A non-gated metric (`route_controller_route_sync_total`) is available to A/B test the feature's impact on the number of route reconciliations.
+- The `trigger` and `outcome` labels on `route_controller_route_sync_total` allow tracking the number of route corrections made during periodic reconciles (`trigger="periodic",outcome="changed"`).
 
 #### GA
 
@@ -254,6 +264,7 @@ This will not impact already running nodes/workloads, but they might be affected
 ###### What specific metrics should inform a rollback?
 
 The metric `route_controller_route_sync_total` can be used to determine if the route controller is syncing correctly, when new nodes are added. Furthermore, this metric can indicate if reconciles are happening more frequently than the previous 10s interval.
+An increase of `outcome="error"` or a sustained rate of `trigger="periodic",outcome="changed"` indicates that route reconciliation is failing or that Node updates are being missed.
 
 Note that these metrics are only available from the CCM.
 

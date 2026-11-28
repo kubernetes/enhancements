@@ -10,6 +10,8 @@ creation-date: 2023-09-05
 reviewers:
   - "@ffromani"
   - "@SergeyKanzhelev" # sig-node-assigned-reviewer
+  - "@tallclair" # sig-node-assigned-reviewer
+  - "@swatisehgal" # sig-node-assigned-reviewer
 approvers:
   - "@dchen1107" # sig-node-tl
   - "@mrunalp"
@@ -17,12 +19,12 @@ see-also: []
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -33,14 +35,14 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: PodInfoAPI
+  - name: PodsAPI
     components:
       - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - pod_status_endpoint_requests_total
-  - pod_status_endpoint_requests_list
-  - pod_status_endpoint_requests_get
-  - pod_status_endpoint_errors_get
+  - kubelet_pod_requests_total
+  - kubelet_pod_requests_list_total
+  - kubelet_pod_requests_get_total
+  - kubelet_pod_requests_watch_total

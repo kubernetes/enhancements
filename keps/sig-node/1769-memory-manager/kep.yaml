@@ -14,6 +14,7 @@ reviewers:
   - "@klueska"
   - "@derekwaynecarr"
 approvers:
+  - "@klueska" # sig-node-assigned-approver
   - "@derekwaynecarr"
 see-also:
 replaces:

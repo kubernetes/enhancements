@@ -1,0 +1,52 @@
+title: CompositePodGroup API
+kep-number: 6012
+authors:
+  - "@tosi3k"
+  - "@mm4tt"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-apps
+status: implementable
+creation-date: 2026-04-15
+reviewers:
+  - "@sanposhiho"
+  - "@dom4ha"
+approvers:
+  - "@sanposhiho"
+  - "@dom4ha"
+
+see-also:
+  - "/keps/sig-apps/5547-integrate-workload-with-job"
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/5729-resourceclaim-support-for-workloads"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+
+stage: beta
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
+
+feature-gates:
+  - name: CompositePodGroup
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+disable-supported: true
+
+metrics:
+  - scheduler_podgroup_schedule_attempts_total
+  - scheduler_podgroup_scheduling_algorithm_duration_seconds
+  - scheduler_podgroup_scheduling_attempt_duration_seconds
+  - scheduler_queue_incoming_entities_total
+  - scheduler_queued_entities
+  - scheduler_workload_preemption_attempts_total
+  - scheduler_workload_preemption_victims
+  - scheduler_generated_placements_total
+  - scheduler_placement_evaluation_duration_seconds
+  - scheduler_placement_evaluations_total

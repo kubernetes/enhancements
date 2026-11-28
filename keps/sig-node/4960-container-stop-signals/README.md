@@ -190,11 +190,11 @@ message ContainerConfig {
 }
 
 + enum Signal {
-+   RUNTIME_DEFAULT   = 0;
-+   SIGABRT           = 1;
-+   SIGALRM           = 2;
++   SIGNAL_RUNTIME_DEFAULT   = 0;
++   SIGNAL_SIGABRT           = 1;
++   SIGNAL_SIGALRM           = 2;
 +   ...
-+   SIGRTMAX          = 65;
++   SIGNAL_SIGRTMAX          = 65;
 + }
 ```
 

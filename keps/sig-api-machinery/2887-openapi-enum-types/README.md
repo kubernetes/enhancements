@@ -250,16 +250,16 @@ and make progress.
 This KEP does not provide support for validation that is more complicated than an enum type
 like regex or prefix. Instead, use other validation mechanism that is or will be supported.
 
-This KEP treat any enum type as a closed enum. Any change to the set of possible values should be
-treated as creating a new type and thus should follow the standard procedure of changing an API.
+This KEP does not make enum types closed. A later release may add a value to an existing enum type,
+following the API change guidelines, so clients should treat enum values as open-ended.
 
 ## Proposal
 
 When generating OpenAPI schema, the de facto enum types should be reflected as enums in the resulting schema.
 
 We define enum types with following properties:
-- All enum types are closed, i.e., the type includes a finite number of possible values.
-  However, for compatibility, a client may allow unknown values from responses.
+- An enum type lists the values it has when the schema is generated. Later releases may add
+  values, so clients must tolerate unknown values.
 - All enum types should be string. There can be no enum integers, floats, etc
 
 Additionally, This KEP makes the following assumptions on the implementation:
@@ -432,10 +432,11 @@ public class Foo {
 }
 ```
 If the `enum` field was not in the definition, the `Bar` field would be a String.
-Maintainers of the clients should include the change in a new major release.
-
-If, rather than update code generator or use of the generated client, a client would prefer enum fields to be strings as they were previously, a simple preprocessor
-will be provided to prune the enum information similar to that of `api-server` (see below).
+Clients generated with language-level enums reject values they do not know, so a client generated
+from one release would break when a later release adds an enum value. To avoid this, the OpenAPI
+spec checked into kubernetes/kubernetes, from which the official clients are generated, omits enum
+values regardless of the feature gate. Adding enums to the checked-in spec requires client
+generators that treat enums as open-ended, which is left to future work with the client maintainers.
 
 ### Enum Fields Pruning for Feature Disablement
 
@@ -484,10 +485,20 @@ there should be integration and e2e tests that validate present of enum fields.
 
 #### Stable
 
- - OpenAPI-level validation of enum types in built-in types removed in favor of that provided by the schema. 
+ - All issues and gaps identified as feedback during beta are resolved. In particular, adding a
+   value to an enum does not break clients generated from the OpenAPI spec checked into
+   kubernetes/kubernetes, which continues to omit enums. Today `hack/update-openapi-spec.sh`
+   omits them by disabling the feature gate. Before the gate is locked, the script instead strips
+   enums while post-processing the fetched spec, leaving the checked-in spec unchanged.
+ - Conformance tests verify that the served OpenAPI lists enum values for built-in types.
+
+The OpenAPI schema describes enum values but does not enforce them. The API server validates
+built-in types separately, with handwritten code or declarative validation
+([KEP-5073](https://kep.k8s.io/5073)), neither of which reads the schema. GA of this KEP
+therefore does not depend on how built-in enum types are validated.
 
 ### Upgrade / Downgrade Strategy
-Enable/disable the OpenAPIEnum feature gate.
+Enable/disable the OpenAPIEnums feature gate.
 
 ### Version Skew Strategy
 The API is still compatible even with enum types enabled.
@@ -531,7 +542,7 @@ Pick one of these and delete the rest.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `OpenAPIEnum`
+  - Feature gate name: `OpenAPIEnums`
   - Components depending on the feature gate: `kube-apiserver`
 
 ###### Does enabling the feature change any default behavior?
